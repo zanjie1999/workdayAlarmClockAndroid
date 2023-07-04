@@ -4,8 +4,9 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import java.io.*
-import java.lang.Exception
+import java.io.BufferedReader
+import java.io.InputStreamReader
+
 
 class MainActivity : AppCompatActivity() {
 
@@ -25,25 +26,25 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         // 复制一下到data分区下
-        try {
-            val inputStream: InputStream = assets.open("workdayAlarmClock-linux-arm")
-            val outputFile = File(filesDir, "workdayAlarmClock")
-            val outputStream: OutputStream = FileOutputStream(outputFile)
-            val buffer = ByteArray(1024)
-            var length: Int
-            while (inputStream.read(buffer).also { length = it } > 0) {
-                outputStream.write(buffer, 0, length)
-            }
-            outputStream.close()
-            inputStream.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
-            print2LogView(e.toString())
-        }
+//        try {
+//            val inputStream: InputStream = assets.open("workdayAlarmClock-linux-arm")
+//            val outputFile = File(filesDir, "workdayAlarmClock")
+//            val outputStream: OutputStream = FileOutputStream(outputFile)
+//            val buffer = ByteArray(1024)
+//            var length: Int
+//            while (inputStream.read(buffer).also { length = it } > 0) {
+//                outputStream.write(buffer, 0, length)
+//            }
+//            outputStream.close()
+//            inputStream.close()
+//        } catch (e: IOException) {
+//            e.printStackTrace()
+//            print2LogView(e.toString())
+//        }
 
         try {
-            val command =
-                "cd " + getFilesDir().getAbsolutePath() + ";pwd;whoami;chmod +x workdayAlarmClock;./workdayAlarmClock"
+            val command = "ls -l "+applicationInfo.nativeLibraryDir+" /data/data/com.zyyme.workdayalarmclock /data/user/0/com.zyyme.workdayalarmclock; "+
+                "cd " + getFilesDir().getAbsolutePath() + ";pwd;whoami;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so"
             val process = ProcessBuilder("sh", "-c", command)
                 .redirectErrorStream(true)
                 .start()
