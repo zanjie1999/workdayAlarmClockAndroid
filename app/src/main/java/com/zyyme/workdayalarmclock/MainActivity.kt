@@ -11,6 +11,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.io.*
 import android.Manifest
+import android.os.Build
+import androidx.annotation.RequiresApi
 
 
 class MainActivity : AppCompatActivity() {
@@ -39,11 +41,15 @@ class MainActivity : AppCompatActivity() {
 
         // 检查二进制文件更新
         try {
-            val updateFile = File(Environment.getExternalStorageDirectory().getPath() + "/Android", "libWorkdayAlarmClock.so")
+            val updateFile = File(Environment.getExternalStorageDirectory().absolutePath + "/libWorkdayAlarmClock.so")
             if (updateFile.exists()) {
-                print2LogView("找到 /sdcard/Android/libWorkdayAlarmClock.so 开始更新")
+                print2LogView("找到 /sdcard/libWorkdayAlarmClock.so 开始更新")
+                val libdir = File(applicationInfo.nativeLibraryDir)
+                if (!libdir.exists()) {
+                    libdir.mkdir()
+                }
                 val inputStream: InputStream = FileInputStream(updateFile)
-                val outputFile = File(applicationInfo.nativeLibraryDir, "libWorkdayAlarmClock.so")
+                val outputFile = File(libdir, "libWorkdayAlarmClock.so")
                 val outputStream: OutputStream = FileOutputStream(outputFile)
                 val buffer = ByteArray(1024)
                 var length: Int
@@ -54,7 +60,7 @@ class MainActivity : AppCompatActivity() {
                 inputStream.close()
                 print2LogView("更新完成")
             } else {
-                print2LogView("没有找到 /sdcard/Android/libWorkdayAlarmClock.so 不更新")
+                print2LogView("没有找到 /sdcard/libWorkdayAlarmClock.so 不更新")
             }
         } catch (e: IOException) {
             e.printStackTrace()
