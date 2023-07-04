@@ -1,11 +1,16 @@
 package com.zyyme.workdayalarmclock
 
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import java.io.*
+import java.util.jar.Manifest
 
 
 class MainActivity : AppCompatActivity() {
@@ -14,10 +19,12 @@ class MainActivity : AppCompatActivity() {
 
     fun print2LogView(s:String?) {
         if (s != null) {
-            Log.d("logView", s)
-            logViewB.append(s)
-            logViewB.append("\n")
-            findViewById<TextView>(R.id.logView).text = logViewB.toString()
+            runOnUiThread(Runnable {
+                Log.d("logView", s)
+                logViewB.append(s)
+                logViewB.append("\n")
+                findViewById<TextView>(R.id.logView).text = logViewB.toString()
+            })
         }
     }
 
@@ -25,38 +32,53 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 复制一下到data分区下
-//        try {
-//            val inputStream: InputStream = assets.open("workdayAlarmClock-linux-arm")
-//            val outputFile = File(filesDir, "workdayAlarmClock")
-//            val outputStream: OutputStream = FileOutputStream(outputFile)
-//            val buffer = ByteArray(1024)
-//            var length: Int
-//            while (inputStream.read(buffer).also { length = it } > 0) {
-//                outputStream.write(buffer, 0, length)
-//            }
-//            outputStream.close()
-//            inputStream.close()
-//        } catch (e: IOException) {
-//            e.printStackTrace()
-//            print2LogView(e.toString())
+        // 存储空间权限  android4不用申请
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
+//            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
 //        }
 
+        // 检查二进制文件更新
         try {
-            val command = "ls -l "+applicationInfo.nativeLibraryDir+" /data/data/com.zyyme.workdayalarmclock /data/user/0/com.zyyme.workdayalarmclock; "+
-                "cd " + getFilesDir().getAbsolutePath() + ";pwd;whoami;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so"
-            val process = ProcessBuilder("sh", "-c", command)
-                .redirectErrorStream(true)
-                .start()
-
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                print2LogView(line)
+            val updateFile = File(Environment.getExternalStorageDirectory().getPath() + "/Android", "libWorkdayAlarmClock.so")
+            if (updateFile.exists()) {
+                print2LogView("找到 /sdcard/Android/libWorkdayAlarmClock.so 开始更新")
+                val inputStream: InputStream = FileInputStream(updateFile)
+                val outputFile = File(applicationInfo.nativeLibraryDir, "libWorkdayAlarmClock.so")
+                val outputStream: OutputStream = FileOutputStream(outputFile)
+                val buffer = ByteArray(1024)
+                var length: Int
+                while (inputStream.read(buffer).also { length = it } > 0) {
+                    outputStream.write(buffer, 0, length)
+                }
+                outputStream.close()
+                inputStream.close()
+                print2LogView("更新完成")
+            } else {
+                print2LogView("没有找到 /sdcard/Android/libWorkdayAlarmClock.so 不更新")
             }
-        } catch (e: Exception) {
+        } catch (e: IOException) {
             e.printStackTrace()
             print2LogView(e.toString())
         }
+
+        // 开一个新线程跑shell
+        Thread(Runnable {
+            try {
+                val command = "ls -l " + applicationInfo.nativeLibraryDir + " /data/data/com.zyyme.workdayalarmclock /data/user/0/com.zyyme.workdayalarmclock; "+
+                    "cd " + getFilesDir().getAbsolutePath() + ";pwd;whoami;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so"
+                val process = ProcessBuilder("sh", "-c", command)
+                    .redirectErrorStream(true)
+                    .start()
+
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    print2LogView(line)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                print2LogView(e.toString())
+            }
+        }).start()
     }
 }
