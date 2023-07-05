@@ -41,7 +41,8 @@ class MainActivity : AppCompatActivity() {
                 playUrl(s.substring(5))
             } else if (s.startsWith("STOP")) {
                 print2LogView("停止播放")
-                player?.stop()
+                player?.release()
+                player = null
             } else if (s.startsWith("PAUSE")) {
                 print2LogView("暂停播放")
                 player?.pause()
@@ -61,35 +62,34 @@ class MainActivity : AppCompatActivity() {
         try {
             print2LogView("播放 " + url)
             player?.release()
-            player = null
-            player = MediaPlayer().apply {
-                setAudioStreamType(AudioManager.STREAM_MUSIC)
-                setOnCompletionListener({mediaPlayer ->
-                    //播放完成监听
-                    print2LogView("播放完成")
-                    toGo("next")
-                })
-                setDataSource(url)
-                prepare()
-                start()
-            }
-//            player = MediaPlayer()
-//            player.setDataSource(url)
-//            player.setOnCompletionListener({mediaPlayer ->
-//                //播放完成监听
-//                print2LogView("播放完成")
-//                toGo("next")
-//            })
-//            player.setOnPreparedListener(OnPreparedListener { mediaPlayer ->
-//                //异步准备监听
-//                print2LogView("加载完成 时长"+(mediaPlayer.duration / 1000).toString())
-//                mediaPlayer.start()
-//            })
-//            player.setOnBufferingUpdateListener(OnBufferingUpdateListener { mediaPlayer, i ->
-//                //文件缓冲监听
-//                print2LogView("加载音频 $i%")
-//            })
-//            player.prepareAsync()
+//            player = MediaPlayer().apply {
+//                setAudioStreamType(AudioManager.STREAM_MUSIC)
+//                setOnCompletionListener({mediaPlayer ->
+//                    //播放完成监听
+//                    print2LogView("播放完成")
+//                    toGo("next")
+//                })
+//                setDataSource(url)
+//                prepare()
+//                start()
+//            }
+            player = MediaPlayer()
+            player?.setDataSource(url)
+            player?.setOnCompletionListener({mediaPlayer ->
+                //播放完成监听
+                print2LogView("播放完成")
+                toGo("next")
+            })
+            player?.setOnPreparedListener(OnPreparedListener { mediaPlayer ->
+                //异步准备监听
+                print2LogView("加载完成 时长"+(mediaPlayer.duration / 1000).toString())
+                mediaPlayer.start()
+            })
+            player?.setOnBufferingUpdateListener(OnBufferingUpdateListener { mediaPlayer, i ->
+                //文件缓冲监听
+                print2LogView("加载音频 $i%")
+            })
+            player?.prepareAsync()
         } catch (e: Exception) {
             e.printStackTrace()
             print2LogView("播放失败" + e.toString())
