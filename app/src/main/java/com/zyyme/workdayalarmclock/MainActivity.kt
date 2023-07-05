@@ -159,8 +159,15 @@ class MainActivity : AppCompatActivity() {
         Thread(Runnable {
             try {
                 val conn = URL("http://127.0.0.1:8080/" + action).openConnection() as HttpURLConnection
-                conn.setRequestMethod("GET")
-                conn.connect()
+                conn.requestMethod = "GET"
+                if (conn.responseCode != HttpURLConnection.HTTP_OK) {
+                    print2LogView("Failed : HTTP error code : " + conn.responseCode)
+                }
+                val br = BufferedReader(InputStreamReader(conn.inputStream))
+                var output: String?
+                while (br.readLine().also { output = it } != null) {
+                    checkAction(output)
+                }
                 conn.disconnect()
             } catch (e: Exception) {
                 e.printStackTrace()
