@@ -1,6 +1,8 @@
 package com.zyyme.workdayalarmclock
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -11,6 +13,7 @@ import android.os.Environment
 import android.util.Log
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -51,6 +54,8 @@ class MainActivity : AppCompatActivity() {
                 player?.start()
             } else if (s.startsWith("EXIT")) {
                 finish()
+            } else if (s.startsWith("RESTART")) {
+                restartApp(this)
             } else {
                 print2LogView(s)
             }
@@ -102,6 +107,7 @@ class MainActivity : AppCompatActivity() {
 
         // 存储空间权限
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this,"请允许权限\n用于更新Go程序二进制文件", Toast.LENGTH_LONG).show()
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
         }
 
@@ -174,5 +180,16 @@ class MainActivity : AppCompatActivity() {
                 print2LogView(e.toString())
             }
         }).start()
+    }
+
+    /**
+     * 重启自己
+     */
+    fun restartApp(context: Context) {
+        val intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName())
+        if (intent != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            context.startActivity(intent)
+        }
     }
 }
