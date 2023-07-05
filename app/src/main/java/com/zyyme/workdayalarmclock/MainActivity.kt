@@ -1,32 +1,98 @@
 package com.zyyme.workdayalarmclock
 
-import android.annotation.SuppressLint
+import android.Manifest
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.media.MediaPlayer.OnBufferingUpdateListener
+import android.media.MediaPlayer.OnPreparedListener
 import android.os.Bundle
 import android.os.Environment
 import android.util.Log
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.io.*
-import android.Manifest
-import android.os.Build
-import androidx.annotation.RequiresApi
+import java.net.HttpURLConnection
+import java.net.URL
 
 
 class MainActivity : AppCompatActivity() {
 
-    val logViewB = StringBuilder()
+    var player : MediaPlayer? = null
 
     fun print2LogView(s:String?) {
         if (s != null) {
+            Log.d("logView", s)
             runOnUiThread(Runnable {
-                Log.d("logView", s)
-                logViewB.append(s)
-                logViewB.append("\n")
-                findViewById<TextView>(R.id.logView).text = logViewB.toString()
+                findViewById<TextView>(R.id.logView).append(s + "\n")
+                val scrollView = findViewById<ScrollView>(R.id.scrollView)
+                scrollView.post(Runnable { scrollView.fullScroll(ScrollView.FOCUS_DOWN) })
             })
+        }
+    }
+
+    // Go控制台输出调用App
+    fun checkAction(s: String?) {
+        if (s != null) {
+            if (s.startsWith("PLAY ")) {
+                playUrl(s.substring(5))
+            } else if (s.startsWith("STOP")) {
+                print2LogView("停止播放")
+                player?.stop()
+            } else if (s.startsWith("PAUSE")) {
+                print2LogView("暂停播放")
+                player?.pause()
+            } else if (s.startsWith("RESUME")) {
+                print2LogView("开始播放")
+                player?.start()
+            } else if (s.startsWith("EXIT")) {
+                finish()
+            } else {
+                print2LogView(s)
+            }
+        }
+    }
+
+    // 播放器播放url
+    fun playUrl(url:String) {
+        try {
+            print2LogView("播放 " + url)
+            player?.release()
+            player = null
+            player = MediaPlayer().apply {
+                setAudioStreamType(AudioManager.STREAM_MUSIC)
+                setOnCompletionListener({mediaPlayer ->
+                    //播放完成监听
+                    print2LogView("播放完成")
+                    toGo("next")
+                })
+                setDataSource(url)
+                prepare()
+                start()
+            }
+//            player = MediaPlayer()
+//            player.setDataSource(url)
+//            player.setOnCompletionListener({mediaPlayer ->
+//                //播放完成监听
+//                print2LogView("播放完成")
+//                toGo("next")
+//            })
+//            player.setOnPreparedListener(OnPreparedListener { mediaPlayer ->
+//                //异步准备监听
+//                print2LogView("加载完成 时长"+(mediaPlayer.duration / 1000).toString())
+//                mediaPlayer.start()
+//            })
+//            player.setOnBufferingUpdateListener(OnBufferingUpdateListener { mediaPlayer, i ->
+//                //文件缓冲监听
+//                print2LogView("加载音频 $i%")
+//            })
+//            player.prepareAsync()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            print2LogView("播放失败" + e.toString())
         }
     }
 
@@ -46,7 +112,7 @@ class MainActivity : AppCompatActivity() {
                 print2LogView("找到 /sdcard/libWorkdayAlarmClock.so 开始更新")
                 val libdir = File(applicationInfo.nativeLibraryDir)
                 if (!libdir.exists()) {
-                    libdir.mkdir()
+                    libdir.mkdirs()
                 }
                 val inputStream: InputStream = FileInputStream(updateFile)
                 val outputFile = File(libdir, "libWorkdayAlarmClock.so")
@@ -71,7 +137,7 @@ class MainActivity : AppCompatActivity() {
         Thread(Runnable {
             try {
                 val command = "ls -l " + applicationInfo.nativeLibraryDir + " /data/data/com.zyyme.workdayalarmclock /data/user/0/com.zyyme.workdayalarmclock; "+
-                    "cd " + getFilesDir().getAbsolutePath() + ";pwd;whoami;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so"
+                    "cd " + getFilesDir().getAbsolutePath() + ";pwd;whoami;ip addr;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app"
                 val process = ProcessBuilder("sh", "-c", command)
                     .redirectErrorStream(true)
                     .start()
@@ -79,8 +145,23 @@ class MainActivity : AppCompatActivity() {
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
-                    print2LogView(line)
+                    checkAction(line)
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                print2LogView(e.toString())
+            }
+        }).start()
+    }
+
+    // 调用Go Api
+    fun toGo(action : String) {
+        Thread(Runnable {
+            try {
+                val conn = URL("http://127.0.0.1:8080/" + action).openConnection() as HttpURLConnection
+                conn.setRequestMethod("GET")
+                conn.connect()
+                conn.disconnect()
             } catch (e: Exception) {
                 e.printStackTrace()
                 print2LogView(e.toString())
