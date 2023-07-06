@@ -2,6 +2,7 @@ package com.zyyme.workdayalarmclock
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.MediaPlayer.OnBufferingUpdateListener
 import android.media.MediaPlayer.OnPreparedListener
@@ -12,7 +13,8 @@ import android.util.Log
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import java.io.*
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -39,19 +41,34 @@ class MainActivity : AppCompatActivity() {
         if (s != null) {
             if (s.startsWith("PLAY ")) {
                 playUrl(s.substring(5))
-            } else if (s.startsWith("STOP")) {
+            } else if (s.startsWith("VOL ")) {
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val per = s.substring(4).toInt()
+                val set = (max * per / 100)
+                print2LogView("音量最高" + max + "对应" + per + "%设置为" + set)
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
+            } else if (s == "STOP") {
                 print2LogView("停止播放")
                 player?.release()
                 player = null
-            } else if (s.startsWith("PAUSE")) {
+            } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
                 player?.pause()
-            } else if (s.startsWith("RESUME")) {
+            } else if (s == "RESUME") {
                 print2LogView("开始播放")
                 player?.start()
-            } else if (s.startsWith("EXIT")) {
+            } else if (s == "VOLP") {
+                print2LogView("音量加")
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
+            } else if (s == "VOLM") {
+                print2LogView("音量减")
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
+            } else if (s == "EXIT") {
                 finish()
-            } else if (s.startsWith("RESTART")) {
+            } else if (s == "RESTART") {
                 restartApp(this)
             } else {
                 print2LogView(s)
