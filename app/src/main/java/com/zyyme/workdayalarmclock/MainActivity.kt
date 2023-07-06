@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
             player?.setOnPreparedListener(OnPreparedListener { mediaPlayer ->
                 //异步准备监听
                 print2LogView("加载完成 时长"+(mediaPlayer.duration / 1000).toString())
-//                mediaPlayer.start()
+                mediaPlayer.start()
             })
             player?.setOnBufferingUpdateListener(OnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
