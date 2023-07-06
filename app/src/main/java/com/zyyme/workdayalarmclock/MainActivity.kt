@@ -1,22 +1,17 @@
 package com.zyyme.workdayalarmclock
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.MediaPlayer.OnBufferingUpdateListener
 import android.media.MediaPlayer.OnPreparedListener
 import android.os.Bundle
-import android.os.Environment
+import android.os.PowerManager
+import android.os.PowerManager.WakeLock
 import android.util.Log
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
@@ -37,7 +32,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Go控制台输出调用App
+    /**
+     * Go控制台输出调用App
+     */
     fun checkAction(s: String?) {
         if (s != null) {
             if (s.startsWith("PLAY ")) {
@@ -62,7 +59,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 播放器播放url
+    /**
+     * 播放器播放url
+     */
     fun playUrl(url:String) {
         try {
             print2LogView("播放 " + url)
@@ -88,13 +87,16 @@ class MainActivity : AppCompatActivity() {
             player?.setOnPreparedListener(OnPreparedListener { mediaPlayer ->
                 //异步准备监听
                 print2LogView("加载完成 时长"+(mediaPlayer.duration / 1000).toString())
-                mediaPlayer.start()
+//                mediaPlayer.start()
             })
             player?.setOnBufferingUpdateListener(OnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
-                print2LogView("加载音频 $i%")
+                if (i != 100) {
+                    print2LogView("加载音频 $i%")
+                }
             })
             player?.prepareAsync()
+            player?.start()
         } catch (e: Exception) {
             e.printStackTrace()
             print2LogView("播放失败" + e.toString())
@@ -105,39 +107,51 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 存储空间权限
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this,"请允许权限\n用于更新Go程序二进制文件", Toast.LENGTH_LONG).show()
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
+        // 加cpu唤醒锁
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        val wl: WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
+        wl.acquire()
+
+        val amUrl = getIntent().getDataString();
+        if (amUrl != null) {
+            print2LogView("收到外部播放链接 将不启动服务\n" + amUrl)
+            playUrl(amUrl!!)
+            return
         }
 
-        // 检查二进制文件更新
-        try {
-            val updateFile = File(Environment.getExternalStorageDirectory().absolutePath + "/libWorkdayAlarmClock.so")
-            if (updateFile.exists()) {
-                print2LogView("找到 /sdcard/libWorkdayAlarmClock.so 开始更新")
-                val libdir = File(applicationInfo.nativeLibraryDir)
-                if (!libdir.exists()) {
-                    libdir.mkdirs()
-                }
-                val inputStream: InputStream = FileInputStream(updateFile)
-                val outputFile = File(libdir, "libWorkdayAlarmClock.so")
-                val outputStream: OutputStream = FileOutputStream(outputFile)
-                val buffer = ByteArray(1024)
-                var length: Int
-                while (inputStream.read(buffer).also { length = it } > 0) {
-                    outputStream.write(buffer, 0, length)
-                }
-                outputStream.close()
-                inputStream.close()
-                print2LogView("更新完成")
-            } else {
-                print2LogView("没有找到 /sdcard/libWorkdayAlarmClock.so 不更新")
-            }
-        } catch (e: IOException) {
-            e.printStackTrace()
-            print2LogView(e.toString())
-        }
+        // 存储空间权限
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
+//            Toast.makeText(this,"请允许权限\n用于更新Go程序二进制文件", Toast.LENGTH_LONG).show()
+//            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
+//        }
+
+        // 检查二进制文件更新  lib不可写入 写入了重启也会恢复 于是没有热更新了
+//        try {
+//            val updateFile = File(Environment.getExternalStorageDirectory().absolutePath + "/libWorkdayAlarmClock.so")
+//            if (updateFile.exists()) {
+//                print2LogView("找到 /sdcard/libWorkdayAlarmClock.so 开始更新")
+//                val libdir = File(applicationInfo.nativeLibraryDir)
+//                if (!libdir.exists()) {
+//                    libdir.mkdirs()
+//                }
+//                val inputStream: InputStream = FileInputStream(updateFile)
+//                val outputFile = File(libdir, "libWorkdayAlarmClock.so")
+//                val outputStream: OutputStream = FileOutputStream(outputFile)
+//                val buffer = ByteArray(1024)
+//                var length: Int
+//                while (inputStream.read(buffer).also { length = it } > 0) {
+//                    outputStream.write(buffer, 0, length)
+//                }
+//                outputStream.close()
+//                inputStream.close()
+//                print2LogView("更新完成")
+//            } else {
+//                print2LogView("没有找到 /sdcard/libWorkdayAlarmClock.so 不更新")
+//            }
+//        } catch (e: IOException) {
+//            e.printStackTrace()
+//            print2LogView(e.toString())
+//        }
 
         // 开一个新线程跑shell
         Thread(Runnable {
@@ -160,7 +174,9 @@ class MainActivity : AppCompatActivity() {
         }).start()
     }
 
-    // 调用Go Api
+    /**
+     * 调用Go Api
+     */
     fun toGo(action : String) {
         Thread(Runnable {
             try {
