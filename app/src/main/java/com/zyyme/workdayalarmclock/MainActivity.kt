@@ -93,10 +93,13 @@ class MainActivity : AppCompatActivity() {
                 //文件缓冲监听
                 if (i != 100) {
                     print2LogView("加载音频 $i%")
+                    if (i > 1) {
+                        // 其实是支持边缓冲边放的 得让他先冲一会再调播放
+                        mediaPlayer.start()
+                    }
                 }
             })
             player?.prepareAsync()
-            player?.start()
         } catch (e: Exception) {
             e.printStackTrace()
             print2LogView("播放失败" + e.toString())
@@ -112,6 +115,7 @@ class MainActivity : AppCompatActivity() {
         val wl: WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
         wl.acquire()
 
+        // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
         val amUrl = getIntent().getDataString();
         if (amUrl != null) {
             print2LogView("收到外部播放链接 将不启动服务\n" + amUrl)
