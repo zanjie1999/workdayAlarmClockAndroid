@@ -110,7 +110,7 @@ class MainActivity : AppCompatActivity() {
                 //文件缓冲监听
                 if (i != 100) {
                     print2LogView("加载音频 $i%")
-                    if (i > 1) {
+                    if (i > 10) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
                         mediaPlayer.start()
                     }
@@ -209,7 +209,7 @@ class MainActivity : AppCompatActivity() {
                 val br = BufferedReader(InputStreamReader(conn.inputStream))
                 var output: String?
                 while (br.readLine().also { output = it } != null) {
-                    checkAction(output)
+//                    checkAction(output)
                 }
                 conn.disconnect()
             } catch (e: Exception) {
