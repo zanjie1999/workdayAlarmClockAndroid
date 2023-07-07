@@ -1,5 +1,7 @@
 package com.zyyme.workdayalarmclock
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -69,7 +71,7 @@ class MainActivity : AppCompatActivity() {
             } else if (s == "EXIT") {
                 finish()
             } else if (s == "RESTART") {
-                restartApp(this)
+                 restartApp()
             } else {
                 print2LogView(s)
             }
@@ -222,11 +224,18 @@ class MainActivity : AppCompatActivity() {
     /**
      * 重启自己
      */
-    fun restartApp(context: Context) {
-        val intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName())
-        if (intent != null) {
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            context.startActivity(intent)
-        }
+    fun restartApp() {
+        val intent = Intent(this, MainActivity::class.java)
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+                    or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+        )
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent, PendingIntent.FLAG_ONE_SHOT
+        )
+        val manager = getSystemService(ALARM_SERVICE) as AlarmManager
+        manager[AlarmManager.RTC, System.currentTimeMillis() + 1000] = pendingIntent
+        System.exit(0)
     }
 }
