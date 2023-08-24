@@ -27,6 +27,8 @@ import java.net.URL
 class MainActivity : AppCompatActivity() {
 
     var player : MediaPlayer? = null
+    var writer : PrintWriter? = null
+    var lastUrl : String? = null
 
     fun print2LogView(s:String?) {
         if (s != null) {
@@ -61,8 +63,12 @@ class MainActivity : AppCompatActivity() {
                 print2LogView("暂停播放")
                 player?.pause()
             } else if (s == "RESUME") {
-                print2LogView("开始播放")
-                player?.start()
+                print2LogView("恢复播放")
+                if (player != null) {
+                    player?.start()
+                } else if (lastUrl != null) {
+                    playUrl(lastUrl!!)
+                }
             } else if (s == "VOLP") {
                 print2LogView("音量加")
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
@@ -87,6 +93,7 @@ class MainActivity : AppCompatActivity() {
     fun playUrl(url:String) {
         try {
             print2LogView("播放 " + url)
+            lastUrl = url
             player?.release()
 //            player = MediaPlayer().apply {
 //                setAudioStreamType(AudioManager.STREAM_MUSIC)
@@ -103,6 +110,8 @@ class MainActivity : AppCompatActivity() {
             player?.setDataSource(url)
             player?.setOnCompletionListener({mediaPlayer ->
                 //播放完成监听
+                player?.release()
+                player = null
                 print2LogView("播放完成")
                 toGo("next")
             })
@@ -188,9 +197,9 @@ class MainActivity : AppCompatActivity() {
                     .start()
 
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
-                val writer = PrintWriter(process.outputStream)
-                writer.println(command)
-                writer.flush()
+                writer = PrintWriter(process.outputStream)
+                writer?.println(command)
+                writer?.flush()
 
                 // Shell输入框
                 findViewById<EditText>(R.id.shellInput).setOnEditorActionListener { _, actionId, ketEvent ->
@@ -198,8 +207,8 @@ class MainActivity : AppCompatActivity() {
                         val cmd = findViewById<EditText>(R.id.shellInput).text.toString()
                             findViewById<android.widget.EditText>(com.zyyme.workdayalarmclock.R.id.shellInput).setText("")
                             print2LogView("> $cmd")
-                            writer.println(cmd)
-                            writer.flush()
+                            writer?.println(cmd)
+                            writer?.flush()
                         true
                     }
                     false
@@ -220,24 +229,27 @@ class MainActivity : AppCompatActivity() {
      * 调用Go Api
      */
     fun toGo(action : String) {
-        Thread(Runnable {
-            try {
-                val conn = URL("http://127.0.0.1:8080/" + action).openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                if (conn.responseCode != HttpURLConnection.HTTP_OK) {
-                    print2LogView("Failed : HTTP error code : " + conn.responseCode)
-                }
-                val br = BufferedReader(InputStreamReader(conn.inputStream))
-                var output: String?
-                while (br.readLine().also { output = it } != null) {
-//                    checkAction(output)
-                }
-                conn.disconnect()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                print2LogView(e.toString())
-            }
-        }).start()
+        // 改用shell通信
+        writer?.println(action)
+        writer?.flush()
+//        Thread(Runnable {
+//            try {
+//                val conn = URL("http://127.0.0.1:8080/" + action).openConnection() as HttpURLConnection
+//                conn.requestMethod = "GET"
+//                if (conn.responseCode != HttpURLConnection.HTTP_OK) {
+//                    print2LogView("Failed : HTTP error code : " + conn.responseCode)
+//                }
+//                val br = BufferedReader(InputStreamReader(conn.inputStream))
+//                var output: String?
+//                while (br.readLine().also { output = it } != null) {
+////                    checkAction(output)
+//                }
+//                conn.disconnect()
+//            } catch (e: Exception) {
+//                e.printStackTrace()
+//                print2LogView(e.toString())
+//            }
+//        }).start()
     }
 
     /**
