@@ -6,26 +6,36 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <LinearLayout
+    <ScrollView
+        android:id="@+id/scrollView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical" >
+        tools:layout_editor_absoluteX="1dp"
+        tools:layout_editor_absoluteY="1dp">
 
-        <ScrollView
-            android:id="@+id/scrollView"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            tools:layout_editor_absoluteX="1dp"
-            tools:layout_editor_absoluteY="1dp">
+            android:orientation="vertical">
 
             <TextView
                 android:id="@+id/logView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textIsSelectable="true"
-                android:text="" />
+                android:minHeight="32dp"
+                android:text=""
+                android:textIsSelectable="true" />
 
-        </ScrollView>
-    </LinearLayout>
+            <EditText
+                android:id="@+id/shellInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:autofillHints=""
+                android:imeOptions="actionSend"
+                android:inputType="text"
+                android:hint="> Send to Shell" />
 
+        </LinearLayout>
+
+    </ScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

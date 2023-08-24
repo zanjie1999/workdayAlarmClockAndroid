@@ -1,8 +1,8 @@
 package com.zyyme.workdayalarmclock
 
+import android.R.attr
 import android.app.AlarmManager
 import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -12,11 +12,14 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.os.PowerManager.WakeLock
 import android.util.Log
+import android.view.KeyEvent
+import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.io.PrintWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -179,13 +182,29 @@ class MainActivity : AppCompatActivity() {
         // 开一个新线程跑shell
         Thread(Runnable {
             try {
-                val command = "ls -l " + applicationInfo.nativeLibraryDir + " /data/data/com.zyyme.workdayalarmclock /data/user/0/com.zyyme.workdayalarmclock; "+
-                    "cd " + getFilesDir().getAbsolutePath() + ";pwd;whoami;ip addr;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app"
-                val process = ProcessBuilder("sh", "-c", command)
+                val command = "cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app"
+                val process = ProcessBuilder("sh")
                     .redirectErrorStream(true)
                     .start()
 
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
+                val writer = PrintWriter(process.outputStream)
+                writer.println(command)
+                writer.flush()
+
+                // Shell输入框
+                findViewById<EditText>(R.id.shellInput).setOnEditorActionListener { _, actionId, ketEvent ->
+                    if (ketEvent != null && ketEvent.keyCode == KeyEvent.KEYCODE_ENTER){
+                        val cmd = findViewById<EditText>(R.id.shellInput).text.toString()
+                            findViewById<android.widget.EditText>(com.zyyme.workdayalarmclock.R.id.shellInput).setText("")
+                            print2LogView("> $cmd")
+                            writer.println(cmd)
+                            writer.flush()
+                        true
+                    }
+                    false
+                }
+
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
                     checkAction(line)
