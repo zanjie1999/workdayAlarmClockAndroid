@@ -1,6 +1,5 @@
 package com.zyyme.workdayalarmclock
 
-import android.R.attr
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Intent
@@ -16,12 +15,11 @@ import android.view.KeyEvent
 import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
-import java.net.HttpURLConnection
-import java.net.URL
 
 
 class MainActivity : AppCompatActivity() {
@@ -29,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     var player : MediaPlayer? = null
     var writer : PrintWriter? = null
     var lastUrl : String? = null
+    var shellThread : Thread? = null
 
     fun print2LogView(s:String?) {
         if (s != null) {
@@ -189,7 +188,7 @@ class MainActivity : AppCompatActivity() {
 //        }
 
         // 开一个新线程跑shell
-        Thread(Runnable {
+        shellThread = Thread(Runnable {
             try {
                 val command = "cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app"
                 val process = ProcessBuilder("sh")
@@ -206,15 +205,13 @@ class MainActivity : AppCompatActivity() {
                     if (ketEvent != null && ketEvent.keyCode == KeyEvent.KEYCODE_ENTER){
                         try {
                             val cmd = findViewById<EditText>(R.id.shellInput).text.toString()
-                            findViewById<android.widget.EditText>(com.zyyme.workdayalarmclock.R.id.shellInput).setText(
-                                ""
-                            )
+                            findViewById<android.widget.EditText>(com.zyyme.workdayalarmclock.R.id.shellInput).setText("")
                             print2LogView("> $cmd")
                             writer?.println(cmd)
                             writer?.flush()
                         } catch (e: Exception) {
                             e.printStackTrace()
-                            print2LogView("Shell执行出错" + e.toString())
+                            print2LogView("Shell执行出错 $e")
                         }
                         true
                     }
@@ -227,14 +224,32 @@ class MainActivity : AppCompatActivity() {
                         checkAction(line)
                     } catch (e: Exception) {
                         e.printStackTrace()
-                        print2LogView("Shell解析出错" + e.toString())
+                        print2LogView("Shell解析出错 $e")
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                print2LogView("Shell运行出错" + e.toString())
+                print2LogView("Shell运行出错 $e")
             }
-        }).start()
+        })
+        shellThread?.start()
+    }
+
+    override fun onDestroy() {
+        print2LogView("即将退出...")
+        shellThread?.interrupt()
+        shellThread?.stop()
+        Toast.makeText(this, "${R.string.app_name} 已退出", Toast.LENGTH_SHORT).show()
+        super.onDestroy()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            Toast.makeText(this, "${R.string.app_name} 在后台运行", Toast.LENGTH_SHORT).show()
+            moveTaskToBack(false)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     /**
