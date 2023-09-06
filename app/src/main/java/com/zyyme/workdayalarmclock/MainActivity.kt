@@ -239,13 +239,13 @@ class MainActivity : AppCompatActivity() {
         print2LogView("即将退出...")
         shellThread?.interrupt()
         shellThread?.stop()
-        Toast.makeText(this, "${R.string.app_name} 已退出", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "${this.getString(R.string.app_name)} 已退出", Toast.LENGTH_SHORT).show()
         super.onDestroy()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            Toast.makeText(this, "${R.string.app_name} 在后台运行", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
             moveTaskToBack(false)
             return true
         }
