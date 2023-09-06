@@ -204,11 +204,18 @@ class MainActivity : AppCompatActivity() {
                 // Shell输入框
                 findViewById<EditText>(R.id.shellInput).setOnEditorActionListener { _, actionId, ketEvent ->
                     if (ketEvent != null && ketEvent.keyCode == KeyEvent.KEYCODE_ENTER){
-                        val cmd = findViewById<EditText>(R.id.shellInput).text.toString()
-                            findViewById<android.widget.EditText>(com.zyyme.workdayalarmclock.R.id.shellInput).setText("")
+                        try {
+                            val cmd = findViewById<EditText>(R.id.shellInput).text.toString()
+                            findViewById<android.widget.EditText>(com.zyyme.workdayalarmclock.R.id.shellInput).setText(
+                                ""
+                            )
                             print2LogView("> $cmd")
                             writer?.println(cmd)
                             writer?.flush()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            print2LogView("Shell执行出错" + e.toString())
+                        }
                         true
                     }
                     false
@@ -216,11 +223,16 @@ class MainActivity : AppCompatActivity() {
 
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
-                    checkAction(line)
+                    try {
+                        checkAction(line)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        print2LogView("Shell解析出错" + e.toString())
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                print2LogView(e.toString())
+                print2LogView("Shell运行出错" + e.toString())
             }
         }).start()
     }
