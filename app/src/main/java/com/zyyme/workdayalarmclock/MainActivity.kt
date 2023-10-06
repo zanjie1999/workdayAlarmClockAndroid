@@ -24,10 +24,11 @@ import java.io.PrintWriter
 
 class MainActivity : AppCompatActivity() {
 
-    var player : MediaPlayer? = null
+    var player : MediaPlayer? = MediaPlayer()
     var writer : PrintWriter? = null
     var lastUrl : String? = null
     var shellThread : Thread? = null
+    var isStop = true
 
     fun print2LogView(s:String?) {
         if (s != null) {
@@ -56,14 +57,15 @@ class MainActivity : AppCompatActivity() {
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
             } else if (s == "STOP") {
                 print2LogView("停止播放")
-                player?.release()
-                player = null
+                isStop = true
+                player?.reset()
+//                player = null
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
                 player?.pause()
             } else if (s == "RESUME") {
                 print2LogView("恢复播放")
-                if (player != null) {
+                if (!isStop) {
                     player?.start()
                 } else if (lastUrl != null) {
                     playUrl(lastUrl!!)
@@ -93,24 +95,16 @@ class MainActivity : AppCompatActivity() {
         try {
             print2LogView("播放 " + url)
             lastUrl = url
-            player?.release()
-//            player = MediaPlayer().apply {
-//                setAudioStreamType(AudioManager.STREAM_MUSIC)
-//                setOnCompletionListener({mediaPlayer ->
-//                    //播放完成监听
-//                    print2LogView("播放完成")
-//                    toGo("next")
-//                })
-//                setDataSource(url)
-//                prepare()
-//                start()
-//            }
-            player = MediaPlayer()
+            if (!isStop) {
+                player?.reset()
+            }
+            isStop = false
             player?.setDataSource(url)
             player?.setOnCompletionListener({mediaPlayer ->
                 //播放完成监听
-                player?.release()
-                player = null
+                isStop = true
+                player?.reset()
+//                player = null
                 print2LogView("播放完成")
                 toGo("next")
             })
@@ -289,9 +283,12 @@ class MainActivity : AppCompatActivity() {
                     or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
         )
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent, PendingIntent.FLAG_ONE_SHOT
-        )
+        var pendingIntent:PendingIntent;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        } else {
+            pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_ONE_SHOT);
+        }
         val manager = getSystemService(ALARM_SERVICE) as AlarmManager
         manager[AlarmManager.RTC, System.currentTimeMillis() + 1000] = pendingIntent
         System.exit(0)
