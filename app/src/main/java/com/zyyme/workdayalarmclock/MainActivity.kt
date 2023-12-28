@@ -30,7 +30,10 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 
 
-class MainActivity : AppCompatActivity(), MediaButtonReceiver.MeMBRInterface {
+class MainActivity : AppCompatActivity() {
+    companion object {
+        var mbrHandler: Handler? = null
+    }
 
     var player : MediaPlayer? = MediaPlayer()
     var writer : PrintWriter? = null
@@ -69,7 +72,6 @@ class MainActivity : AppCompatActivity(), MediaButtonReceiver.MeMBRInterface {
                 print2LogView("停止播放")
                 isStop = true
                 player?.reset()
-//                player = null
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
                 player?.pause()
@@ -195,10 +197,14 @@ class MainActivity : AppCompatActivity(), MediaButtonReceiver.MeMBRInterface {
         mediaButtonReceiverInit()
         runShell()
 
-        val mbr = MediaButtonReceiver()
-        val filter = IntentFilter("android.intent.action.MEDIA_BUTTON")
-        registerReceiver(mbr, filter)
-        mbr.itf = this
+        // 抢夺音频焦点
+        player?.start()
+        player?.stop()
+
+        mbrHandler = Handler(android.os.Looper.getMainLooper()) { msg ->
+            keyHandle(msg.obj as Int)
+            true
+        }
     }
 
     override fun onDestroy() {
@@ -329,8 +335,7 @@ class MainActivity : AppCompatActivity(), MediaButtonReceiver.MeMBRInterface {
      * 响应按键
      * 重写了监听器里的接口
      */
-    @Override
-    override fun keyHandle(keyCode: Int): Boolean {
+    fun keyHandle(keyCode: Int): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_BACK -> {
                 Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
@@ -345,10 +350,26 @@ class MainActivity : AppCompatActivity(), MediaButtonReceiver.MeMBRInterface {
                     } else {
                         player?.start()
                     }
+                } else if (lastUrl != null) {
+                    playUrl(lastUrl!!)
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                print2LogView("媒体按键 播放")
+                if (player != null && !player!!.isPlaying && lastUrl == null && isStop) {
+                    print2LogView("初次启动 触发上一首")
+                    toGo("prev")
+                } else if (!isStop) {
                     player?.start()
                 } else if (lastUrl != null) {
                     playUrl(lastUrl!!)
                 }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                print2LogView("媒体按键 暂停")
+                player?.pause()
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {

@@ -3,6 +3,9 @@ package com.zyyme.workdayalarmclock
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.os.Message
 import android.util.Log
 import android.view.KeyEvent
 
@@ -11,10 +14,6 @@ import android.view.KeyEvent
  * 这传入参数是什么逆天写法
  */
 class MediaButtonReceiver : BroadcastReceiver() {
-    var itf : MeMBRInterface? = null
-        set(value) {
-            field = value
-        }
     override fun onReceive(context: Context?, intent: Intent?) {
 
         val action = intent?.action ?: return
@@ -23,10 +22,11 @@ class MediaButtonReceiver : BroadcastReceiver() {
                 val keyEvent =intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent ?: return
                 when (keyEvent.action) {
                     KeyEvent.ACTION_DOWN -> {
-                        Log.d("MediaButtonReceiver", "itf: $itf code: $keyEvent.keyCode")
-                        // 回调实现的方法
-//                        itf?.keyHandle(keyEvent.keyCode)
-                        // TODO: interface传不进来 因为只能静态注册监听器 无法进行交互
+                        Log.d("MediaButtonReceiver", "mbrHandler: $MainActivity.mbrHandler code: $keyEvent.keyCode")
+                        // 回调
+                        val message = Message.obtain()
+                        message.obj = keyEvent.keyCode
+                        MainActivity.mbrHandler?.sendMessage(message)
                     }
                 }
 
@@ -34,12 +34,4 @@ class MediaButtonReceiver : BroadcastReceiver() {
         }
 
     }
-
-    /**
-     * 用于实现回调的接口
-     */
-    interface MeMBRInterface {
-        fun keyHandle(keyCode: Int): Boolean
-    }
-
 }
