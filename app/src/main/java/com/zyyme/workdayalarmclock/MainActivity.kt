@@ -2,12 +2,18 @@ package com.zyyme.workdayalarmclock
 
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.MediaPlayer.OnBufferingUpdateListener
 import android.media.MediaPlayer.OnPreparedListener
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.PowerManager.WakeLock
 import android.support.v4.media.session.MediaSessionCompat
@@ -24,13 +30,15 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), MediaButtonReceiver.MeMBRInterface {
 
     var player : MediaPlayer? = MediaPlayer()
     var writer : PrintWriter? = null
     var lastUrl : String? = null
     var shellThread : Thread? = null
     var isStop = true
+    var mediaSessionCompat: MediaSessionCompat? = null
+    var mediaComponentName: ComponentName? = null
 
     fun print2LogView(s:String?) {
         if (s != null) {
@@ -184,6 +192,35 @@ class MainActivity : AppCompatActivity() {
 //        }
 
         // 开一个新线程跑shell
+        mediaButtonReceiverInit()
+        runShell()
+
+        val mbr = MediaButtonReceiver()
+        val filter = IntentFilter("android.intent.action.MEDIA_BUTTON")
+        registerReceiver(mbr, filter)
+        mbr.itf = this
+    }
+
+    override fun onDestroy() {
+        print2LogView("即将退出...")
+        shellThread?.interrupt()
+        shellThread?.stop()
+        mediaButtonReceiverDestroy()
+        Toast.makeText(this, "${this.getString(R.string.app_name)} 已退出", Toast.LENGTH_SHORT).show()
+        super.onDestroy()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyHandle(keyCode)) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    /**
+     * 在shell中运行主程序
+     */
+    private fun runShell() {
         shellThread = Thread(Runnable {
             try {
                 val command = "cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app"
@@ -229,93 +266,110 @@ class MainActivity : AppCompatActivity() {
             }
         })
         shellThread?.start()
+    }
 
-        // 媒体按键 在后台也能监听
-        MediaSessionCompat (this, "WorkdayAlarmClock").apply {
-            setCallback(object : MediaSessionCompat.Callback() {
-                override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
-                    if (mediaButtonEvent != null) {
-                        val keyEvent = mediaButtonEvent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
-                        if (keyEvent != null) {
-                            if (keyEvent.action == KeyEvent.ACTION_DOWN) {
-                                when (keyEvent.keyCode) {
-                                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                                        print2LogView("媒体按键 播放暂停")
-                                        if (!isStop) {
-                                            if (player?.isPlaying == true) {
-                                                player?.pause()
-                                            } else {
-                                                player?.start()
-                                            }
-                                            player?.start()
-                                        } else if (lastUrl != null) {
-                                            playUrl(lastUrl!!)
-                                        }
-                                        return true
-                                    }
-                                    KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                                        print2LogView("媒体按键 下一首")
-                                        toGo("next")
-                                        return true
-                                    }
-                                    KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                                        print2LogView("媒体按键 上一首")
-                                        toGo("prev")
-                                        return true
-                                    }
-                                }
+    /**
+     * 初始化媒体按键监听
+     * 是的，除了写个监听器还要超麻烦的初始化
+     */
+    private fun mediaButtonReceiverInit() {
+        val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
+        mediaComponentName = ComponentName(packageName, MediaButtonReceiver::class.java.name).apply {
+            packageManager.setComponentEnabledSetting(
+                this,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP
+            )
+            // Android 5.0
+            if (Build.VERSION.SDK_INT >= 21) {
+                mediaSessionCompat =
+                    MediaSessionCompat(this@MainActivity, "WorkdayAlarmClock", this, null).apply {
+                        //指明支持的按键信息类型
+                        setFlags(
+                            MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+                        )
+
+                        setCallback(object : MediaSessionCompat.Callback() {
+                            override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
+                                MediaButtonReceiver().onReceive(this@MainActivity, mediaButtonEvent)
+                                return true
                             }
-                        }
+                        }, Handler(Looper.getMainLooper()))
+                        isActive = true
                     }
-                    return super.onMediaButtonEvent(mediaButtonEvent)
+
+            } else {
+                audioManager.registerMediaButtonEventReceiver(this)
+            }
+        }
+
+    }
+
+    /**
+     * 销毁媒体按键监听
+     */
+    private fun mediaButtonReceiverDestroy() {
+        val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
+        // Android 5.0
+        if (Build.VERSION.SDK_INT >= 21) {
+            mediaSessionCompat?.let {
+                it.setCallback(null)
+                it.release()
+            }
+        } else { //5.0以下
+            mediaComponentName?.let {
+                audioManager.unregisterMediaButtonEventReceiver(it)
+            }
+
+        }
+    }
+
+
+    /**
+     * 响应按键
+     * 重写了监听器里的接口
+     */
+    @Override
+    override fun keyHandle(keyCode: Int): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_BACK -> {
+                Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+                moveTaskToBack(false)
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                print2LogView("媒体按键 播放暂停")
+                if (!isStop) {
+                    if (player?.isPlaying == true) {
+                        player?.pause()
+                    } else {
+                        player?.start()
+                    }
+                    player?.start()
+                } else if (lastUrl != null) {
+                    playUrl(lastUrl!!)
                 }
-            })
-            setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
-            val state = PlaybackStateCompat.Builder()
-                .setActions(
-                    PlaybackStateCompat.ACTION_PLAY
-                            or PlaybackStateCompat.ACTION_PAUSE
-                            or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
-                            or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-                )
-                .setState(PlaybackStateCompat.STATE_PLAYING, 0, 1.0f)
-                .build()
-            setPlaybackState(state)
-            isActive = true
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                print2LogView("媒体按键 下一首")
+                toGo("next")
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                print2LogView("媒体按键 上一首")
+                toGo("prev")
+                return true
+            }
         }
-
-
-    }
-
-    override fun onDestroy() {
-        print2LogView("即将退出...")
-        shellThread?.interrupt()
-        shellThread?.stop()
-        Toast.makeText(this, "${this.getString(R.string.app_name)} 已退出", Toast.LENGTH_SHORT).show()
-        super.onDestroy()
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
-            moveTaskToBack(false)
-            return true
-//        } else if (keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-//            Toast.makeText(this, "上一首", Toast.LENGTH_SHORT).show()
-//            toGo("prev")
-//            return true
-//        } else if (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
-//            Toast.makeText(this, "下一首", Toast.LENGTH_SHORT).show()
-//            toGo("next")
-//            return true
-        }
-        return super.onKeyDown(keyCode, event)
+        print2LogView("未知按键 $keyCode")
+        return false
     }
 
     /**
      * 调用Go Api
      */
-    fun toGo(action : String) {
+     fun toGo(action : String) {
         // 改用shell通信
         writer?.println(action)
         writer?.flush()

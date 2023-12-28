@@ -6,6 +6,9 @@ import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 
+/**
+ * 开机启动监听器
+ */
 class StartReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
