@@ -10,6 +10,8 @@ import android.media.MediaPlayer.OnPreparedListener
 import android.os.Bundle
 import android.os.PowerManager
 import android.os.PowerManager.WakeLock
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.view.KeyEvent
 import android.widget.EditText
@@ -227,6 +229,62 @@ class MainActivity : AppCompatActivity() {
             }
         })
         shellThread?.start()
+
+        // 媒体按键 在后台也能监听
+        MediaSessionCompat (this, "WorkdayAlarmClock").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
+                    if (mediaButtonEvent != null) {
+                        val keyEvent = mediaButtonEvent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                        if (keyEvent != null) {
+                            if (keyEvent.action == KeyEvent.ACTION_DOWN) {
+                                when (keyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                                        print2LogView("媒体按键 播放暂停")
+                                        if (!isStop) {
+                                            if (player?.isPlaying == true) {
+                                                player?.pause()
+                                            } else {
+                                                player?.start()
+                                            }
+                                            player?.start()
+                                        } else if (lastUrl != null) {
+                                            playUrl(lastUrl!!)
+                                        }
+                                        return true
+                                    }
+                                    KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                                        print2LogView("媒体按键 下一首")
+                                        toGo("next")
+                                        return true
+                                    }
+                                    KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                                        print2LogView("媒体按键 上一首")
+                                        toGo("prev")
+                                        return true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return super.onMediaButtonEvent(mediaButtonEvent)
+                }
+            })
+            setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
+            val state = PlaybackStateCompat.Builder()
+                .setActions(
+                    PlaybackStateCompat.ACTION_PLAY
+                            or PlaybackStateCompat.ACTION_PAUSE
+                            or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+                            or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+                )
+                .setState(PlaybackStateCompat.STATE_PLAYING, 0, 1.0f)
+                .build()
+            setPlaybackState(state)
+            isActive = true
+        }
+
+
     }
 
     override fun onDestroy() {
@@ -242,6 +300,14 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
             moveTaskToBack(false)
             return true
+//        } else if (keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+//            Toast.makeText(this, "上一首", Toast.LENGTH_SHORT).show()
+//            toGo("prev")
+//            return true
+//        } else if (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+//            Toast.makeText(this, "下一首", Toast.LENGTH_SHORT).show()
+//            toGo("next")
+//            return true
         }
         return super.onKeyDown(keyCode, event)
     }
