@@ -344,7 +344,10 @@ class MainActivity : AppCompatActivity() {
             }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                 print2LogView("媒体按键 播放暂停")
-                if (!isStop) {
+                if (!player.isPlaying && lastUrl == null && isStop) {
+                    print2LogView("初次启动 触发上一首")
+                    toGo("prev")
+                } else if (!isStop) {
                     if (player.isPlaying == true) {
                         player.pause()
                     } else {
@@ -392,6 +395,11 @@ class MainActivity : AppCompatActivity() {
                 print2LogView("媒体按键 音量减")
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_STOP -> {
+                print2LogView("媒体按键 停止")
+                toGo("stop")
                 return true
             }
             KeyEvent.KEYCODE_FOCUS -> {
