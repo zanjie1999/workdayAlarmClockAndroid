@@ -35,7 +35,7 @@ class MainActivity : AppCompatActivity() {
         var mbrHandler: Handler? = null
     }
 
-    var player : MediaPlayer? = MediaPlayer()
+    var player : MediaPlayer = MediaPlayer()
     var writer : PrintWriter? = null
     var lastUrl : String? = null
     var shellThread : Thread? = null
@@ -71,14 +71,14 @@ class MainActivity : AppCompatActivity() {
             } else if (s == "STOP") {
                 print2LogView("停止播放")
                 isStop = true
-                player?.reset()
+                player.reset()
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
-                player?.pause()
+                player.pause()
             } else if (s == "RESUME") {
                 print2LogView("恢复播放")
                 if (!isStop) {
-                    player?.start()
+                    player.start()
                 } else if (lastUrl != null) {
                     playUrl(lastUrl!!)
                 }
@@ -108,24 +108,24 @@ class MainActivity : AppCompatActivity() {
             print2LogView("播放 " + url)
             lastUrl = url
             if (!isStop) {
-                player?.reset()
+                player.reset()
             }
             isStop = false
-            player?.setDataSource(url)
-            player?.setOnCompletionListener({mediaPlayer ->
+            player.setDataSource(url)
+            player.setOnCompletionListener({mediaPlayer ->
                 //播放完成监听
                 isStop = true
-                player?.reset()
+                player.reset()
 //                player = null
                 print2LogView("播放完成")
                 toGo("next")
             })
-            player?.setOnPreparedListener(OnPreparedListener { mediaPlayer ->
+            player.setOnPreparedListener(OnPreparedListener { mediaPlayer ->
                 //异步准备监听
                 print2LogView("加载完成 时长"+(mediaPlayer.duration / 1000).toString())
                 mediaPlayer.start()
             })
-            player?.setOnBufferingUpdateListener(OnBufferingUpdateListener { mediaPlayer, i ->
+            player.setOnBufferingUpdateListener(OnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
                 if (i != 100) {
                     print2LogView("加载音频 $i%")
@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             })
-            player?.prepareAsync()
+            player.prepareAsync()
         } catch (e: Exception) {
             e.printStackTrace()
             print2LogView("播放失败" + e.toString())
@@ -198,10 +198,10 @@ class MainActivity : AppCompatActivity() {
         runShell()
 
         // 抢夺音频焦点
-        player?.start()
-        player?.stop()
+        player.start()
+        player.stop()
 
-        mbrHandler = Handler(android.os.Looper.getMainLooper()) { msg ->
+        mbrHandler = Handler(Looper.getMainLooper()) { msg ->
             keyHandle(msg.obj as Int)
             true
         }
@@ -322,7 +322,7 @@ class MainActivity : AppCompatActivity() {
                 it.setCallback(null)
                 it.release()
             }
-        } else { //5.0以下
+        } else {
             mediaComponentName?.let {
                 audioManager.unregisterMediaButtonEventReceiver(it)
             }
@@ -345,10 +345,10 @@ class MainActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                 print2LogView("媒体按键 播放暂停")
                 if (!isStop) {
-                    if (player?.isPlaying == true) {
-                        player?.pause()
+                    if (player.isPlaying == true) {
+                        player.pause()
                     } else {
-                        player?.start()
+                        player.start()
                     }
                 } else if (lastUrl != null) {
                     playUrl(lastUrl!!)
@@ -357,11 +357,11 @@ class MainActivity : AppCompatActivity() {
             }
             KeyEvent.KEYCODE_MEDIA_PLAY -> {
                 print2LogView("媒体按键 播放")
-                if (player != null && !player!!.isPlaying && lastUrl == null && isStop) {
+                if (!player.isPlaying && lastUrl == null && isStop) {
                     print2LogView("初次启动 触发上一首")
                     toGo("prev")
                 } else if (!isStop) {
-                    player?.start()
+                    player.start()
                 } else if (lastUrl != null) {
                     playUrl(lastUrl!!)
                 }
@@ -369,7 +369,7 @@ class MainActivity : AppCompatActivity() {
             }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 print2LogView("媒体按键 暂停")
-                player?.pause()
+                player.pause()
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
@@ -425,7 +425,7 @@ class MainActivity : AppCompatActivity() {
                     or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
         )
         var pendingIntent:PendingIntent;
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
         } else {
             pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_ONE_SHOT);
