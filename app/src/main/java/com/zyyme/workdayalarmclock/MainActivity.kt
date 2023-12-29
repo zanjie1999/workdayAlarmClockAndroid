@@ -382,6 +382,24 @@ class MainActivity : AppCompatActivity() {
                 toGo("prev")
                 return true
             }
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                print2LogView("媒体按键 音量加")
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
+                return true
+            }
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                print2LogView("媒体按键 音量减")
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
+                return true
+            }
+            KeyEvent.KEYCODE_FOCUS -> {
+                // 实际是拍照对焦键
+                print2LogView("媒体按键 鼻子")
+                toGo("stop")
+                return true
+            }
         }
         print2LogView("未知按键 $keyCode")
         return false
