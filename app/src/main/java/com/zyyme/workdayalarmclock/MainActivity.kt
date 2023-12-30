@@ -17,7 +17,6 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.PowerManager.WakeLock
 import android.support.v4.media.session.MediaSessionCompat
-import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.view.KeyEvent
 import android.widget.EditText
@@ -344,7 +343,10 @@ class MainActivity : AppCompatActivity() {
             }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                 print2LogView("媒体按键 播放暂停")
-                if (!isStop) {
+                if (player != null && !player!!.isPlaying && lastUrl == null && isStop) {
+                    print2LogView("初次启动 触发上一首")
+                    toGo("prev")
+                } else if (!isStop) {
                     if (player?.isPlaying == true) {
                         player?.pause()
                     } else {
