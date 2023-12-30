@@ -71,6 +71,9 @@ class MainActivity : AppCompatActivity() {
             } else if (s == "STOP") {
                 print2LogView("停止播放")
                 isStop = true
+                // 规避播放后停止再播放同一个url进度不对的问题
+                player.reset()
+                player.setDataSource("http://127.0.0.1:1")
                 player.reset()
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
@@ -198,8 +201,10 @@ class MainActivity : AppCompatActivity() {
         runShell()
 
         // 抢夺音频焦点
+        player.setDataSource("http://127.0.0.1:1")
         player.start()
         player.stop()
+        player.reset()
 
         mbrHandler = Handler(Looper.getMainLooper()) { msg ->
             keyHandle(msg.obj as Int)
