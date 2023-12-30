@@ -71,9 +71,6 @@ class MainActivity : AppCompatActivity() {
             } else if (s == "STOP") {
                 print2LogView("停止播放")
                 isStop = true
-                // 规避播放后停止再播放同一个url进度不对的问题
-                player.reset()
-                player.setDataSource("http://127.0.0.1:1")
                 player.reset()
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
@@ -126,14 +123,22 @@ class MainActivity : AppCompatActivity() {
             player.setOnPreparedListener(OnPreparedListener { mediaPlayer ->
                 //异步准备监听
                 print2LogView("加载完成 时长"+(mediaPlayer.duration / 1000).toString())
-                mediaPlayer.start()
+                if (!mediaPlayer.isPlaying) {
+                    // 规避Android停止又播放同一首进度不对的bug
+                    mediaPlayer.seekTo(0)
+                    mediaPlayer.start()
+                }
             })
             player.setOnBufferingUpdateListener(OnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
                 if (i != 100) {
-                    print2LogView("加载音频 $i%")
-                    if (i > 10) {
+                    if (i != 99) {
+                        // 规避Android停止又播放同一首会一直加载99%的bug
+                        print2LogView("加载音频 $i%")
+                    }
+                    if (i > 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
+                        mediaPlayer.seekTo(0)
                         mediaPlayer.start()
                     }
                 }
