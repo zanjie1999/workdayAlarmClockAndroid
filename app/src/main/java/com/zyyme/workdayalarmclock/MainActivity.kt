@@ -138,7 +138,6 @@ class MainActivity : AppCompatActivity() {
                     }
                     if (i > 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
-                        mediaPlayer.seekTo(0)
                         mediaPlayer.start()
                     }
                 }
