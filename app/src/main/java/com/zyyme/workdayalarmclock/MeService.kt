@@ -1,0 +1,350 @@
+package com.zyyme.workdayalarmclock
+
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.support.v4.media.session.MediaSessionCompat
+import android.util.Log
+import android.view.KeyEvent
+import android.widget.EditText
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.PrintWriter
+
+
+class MeService : Service() {
+    companion object {
+//        var mediaButtonReceiverHandler: Handler? = null
+        var me: MeService? = null
+    }
+
+    var player : MediaPlayer = MediaPlayer()
+    var writer : PrintWriter? = null
+    var lastUrl : String? = null
+    var shellThread : Thread? = null
+    var isStop = true
+
+    override fun onBind(intent: Intent): IBinder {
+        me = this
+        TODO("Return the communication channel to the service.")
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 如果不需要启动Go服务，这个服务将只有播放音频url的功能
+        if (!MainActivity.startService) {
+            return super.onStartCommand(intent, flags, startId)
+        }
+
+        // 抢夺音频焦点
+        player.setDataSource("http://127.0.0.1:1")
+        player.start()
+        player.stop()
+        player.reset()
+
+        // 开一个新线程跑shell
+        runShell()
+
+//        mediaButtonReceiverHandler = Handler(Looper.getMainLooper()) { msg ->
+//            keyHandle(msg.obj as Int)
+//            true
+//        }
+        me = this
+
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    override fun onDestroy() {
+        shellThread?.interrupt()
+        shellThread?.stop()
+        super.onDestroy()
+    }
+
+
+    fun print2LogView(s:String) {
+        MainActivity.me?.print2LogView(s)
+    }
+
+    /**
+     * Go控制台输出调用App
+     */
+    fun checkAction(s: String?) {
+        if (s != null) {
+            if (s.startsWith("PLAY ")) {
+                playUrl(s.substring(5))
+            } else if (s.startsWith("VOL ")) {
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val per = s.substring(4).toInt()
+                val set = (max * per / 100)
+                print2LogView("音量最高" + max + "对应" + per + "%设置为" + set)
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
+            } else if (s == "STOP") {
+                print2LogView("停止播放")
+                isStop = true
+                player.reset()
+            } else if (s == "PAUSE") {
+                print2LogView("暂停播放")
+                player.pause()
+            } else if (s == "RESUME") {
+                print2LogView("恢复播放")
+                if (!isStop) {
+                    player.start()
+                } else if (lastUrl != null) {
+                    playUrl(lastUrl!!)
+                }
+            } else if (s == "VOLP") {
+                print2LogView("音量加")
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.adjustStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.ADJUST_RAISE,
+                    AudioManager.FLAG_SHOW_UI);
+            } else if (s == "VOLM") {
+                print2LogView("音量减")
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.adjustStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.ADJUST_LOWER,
+                    AudioManager.FLAG_SHOW_UI);
+            } else if (s == "EXIT") {
+                MainActivity.me?.finish()
+            } else if (s == "RESTART") {
+                restartApp()
+            } else {
+                print2LogView(s)
+            }
+        }
+    }
+
+    /**
+     * 播放器播放url
+     */
+    fun playUrl(url:String) {
+        try {
+            print2LogView("播放 " + url)
+            lastUrl = url
+            if (!isStop) {
+                player.reset()
+            }
+            isStop = false
+            player.setDataSource(url)
+            player.setOnCompletionListener({mediaPlayer ->
+                //播放完成监听
+                isStop = true
+                player.reset()
+//                player = null
+                print2LogView("播放完成")
+                toGo("next")
+            })
+            player.setOnPreparedListener(MediaPlayer.OnPreparedListener { mediaPlayer ->
+                //异步准备监听
+                print2LogView("加载完成 时长" + (mediaPlayer.duration / 1000).toString())
+                if (!mediaPlayer.isPlaying) {
+                    // 规避Android停止又播放同一首进度不对的bug
+                    mediaPlayer.seekTo(0)
+                    mediaPlayer.start()
+                }
+            })
+            player.setOnBufferingUpdateListener(MediaPlayer.OnBufferingUpdateListener { mediaPlayer, i ->
+                //文件缓冲监听
+                if (i != 100) {
+                    if (i != 99) {
+                        // 规避Android停止又播放同一首会一直加载99%的bug
+                        print2LogView("加载音频 $i%")
+                    }
+                    if (i > 10 && !mediaPlayer.isPlaying) {
+                        // 其实是支持边缓冲边放的 得让他先冲一会再调播放
+                        mediaPlayer.start()
+                    }
+                }
+            })
+            player.prepareAsync()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            print2LogView("播放失败" + e.toString())
+        }
+    }
+
+    /**
+     * 在shell中运行主程序
+     */
+    private fun runShell() {
+        shellThread = Thread(Runnable {
+            try {
+                val command = "cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app"
+                val process = ProcessBuilder("sh")
+                    .redirectErrorStream(true)
+                    .start()
+
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                writer = PrintWriter(process.outputStream)
+                send2Shell(command)
+
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    try {
+                        checkAction(line)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        print2LogView("Shell解析出错 $e")
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                print2LogView("Shell运行出错 $e")
+            }
+        })
+        shellThread?.start()
+    }
+
+    /**
+     * 向shell输入
+     */
+    fun send2Shell(cmd: String) {
+        try {
+            writer?.println(cmd)
+            writer?.flush()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            print2LogView("Shell执行出错 $e")
+        }
+    }
+
+
+    /**
+     * 响应按键
+     * 重写了监听器里的接口
+     */
+    fun keyHandle(keyCode: Int): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                print2LogView("媒体按键 播放暂停")
+                if (!player.isPlaying && lastUrl == null && isStop) {
+                    print2LogView("初次启动 触发上一首")
+                    toGo("prev")
+                } else if (!isStop) {
+                    if (player.isPlaying == true) {
+                        player.pause()
+                    } else {
+                        player.start()
+                    }
+                } else if (lastUrl != null) {
+                    playUrl(lastUrl!!)
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                print2LogView("媒体按键 播放")
+                if (!player.isPlaying && lastUrl == null && isStop) {
+                    print2LogView("初次启动 触发上一首")
+                    toGo("prev")
+                } else if (!isStop) {
+                    player.start()
+                } else if (lastUrl != null) {
+                    playUrl(lastUrl!!)
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                print2LogView("媒体按键 暂停")
+                player.pause()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                print2LogView("媒体按键 下一首")
+                toGo("next")
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                print2LogView("媒体按键 上一首")
+                toGo("prev")
+                return true
+            }
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                print2LogView("媒体按键 音量加")
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
+                return true
+            }
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                print2LogView("媒体按键 音量减")
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_STOP -> {
+                print2LogView("媒体按键 停止")
+                toGo("stop")
+                return true
+            }
+            KeyEvent.KEYCODE_FOCUS -> {
+                // 实际是拍照对焦键
+                print2LogView("媒体按键 鼻子")
+                toGo("stop")
+                return true
+            }
+        }
+        print2LogView("未知按键 $keyCode")
+        return false
+    }
+
+    /**
+     * 调用Go Api
+     */
+    fun toGo(action : String) {
+        // 改用shell通信
+        writer?.println(action)
+        writer?.flush()
+//        Thread(Runnable {
+//            try {
+//                val conn = URL("http://127.0.0.1:8080/" + action).openConnection() as HttpURLConnection
+//                conn.requestMethod = "GET"
+//                if (conn.responseCode != HttpURLConnection.HTTP_OK) {
+//                    print2LogView("Failed : HTTP error code : " + conn.responseCode)
+//                }
+//                val br = BufferedReader(InputStreamReader(conn.inputStream))
+//                var output: String?
+//                while (br.readLine().also { output = it } != null) {
+////                    checkAction(output)
+//                }
+//                conn.disconnect()
+//            } catch (e: Exception) {
+//                e.printStackTrace()
+//                print2LogView(e.toString())
+//            }
+//        }).start()
+    }
+
+    /**
+     * 重启自己
+     */
+    fun restartApp() {
+        val intent = Intent(this, MainActivity::class.java)
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+                    or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+        )
+        var pendingIntent: PendingIntent;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        } else {
+            pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_ONE_SHOT);
+        }
+        val manager = getSystemService(ALARM_SERVICE) as AlarmManager
+        manager[AlarmManager.RTC, System.currentTimeMillis() + 1000] = pendingIntent
+        System.exit(0)
+    }
+}

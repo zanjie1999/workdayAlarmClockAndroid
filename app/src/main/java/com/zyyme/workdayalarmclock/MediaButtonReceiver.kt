@@ -24,9 +24,10 @@ class MediaButtonReceiver : BroadcastReceiver() {
                     KeyEvent.ACTION_DOWN -> {
                         Log.d("MediaButtonReceiver", "mbrHandler: $MainActivity.mbrHandler code: $keyEvent.keyCode")
                         // 回调
-                        val message = Message.obtain()
-                        message.obj = keyEvent.keyCode
-                        MainActivity.mbrHandler?.sendMessage(message)
+//                        val message = Message.obtain()
+//                        message.obj = keyEvent.keyCode
+//                        MeService.mediaButtonReceiverHandler?.sendMessage(message)
+                        MeService.me?.keyHandle(keyEvent.keyCode)
                     }
                 }
 
