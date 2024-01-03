@@ -169,7 +169,7 @@ class MeService : Service() {
                     AudioManager.ADJUST_LOWER,
                     AudioManager.FLAG_SHOW_UI);
             } else if (s.startsWith("YSLED ")) {
-                ysSetLedsValue(s.substring(4).toInt())
+                ysSetLedsValue(s.substring(6).toInt())
             } else if (s == "EXIT") {
                 MainActivity.me?.finish()
             } else if (s == "RESTART") {
@@ -272,8 +272,8 @@ class MeService : Service() {
         try {
             // 内部指令
             if (cmd.startsWith("ysled ")) {
-                print2LogView("设置一说led $mBreathLedsManager " + cmd.substring(4))
-                ysSetLedsValue(cmd.substring(4).toInt())
+                print2LogView("设置一说led $mBreathLedsManager " + cmd.substring(6))
+                ysSetLedsValue(cmd.substring(6).toInt())
                 return
             }
             writer?.println(cmd)
