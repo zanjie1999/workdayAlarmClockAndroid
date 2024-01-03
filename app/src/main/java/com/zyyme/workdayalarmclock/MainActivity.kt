@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     var mediaComponentName: ComponentName? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        me = this
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -39,8 +40,14 @@ class MainActivity : AppCompatActivity() {
         if (amUrl != null) {
             startService = false
             startService(Intent(this, MeService::class.java))
-            print2LogView("收到外部播放链接 将不启动服务\n" + amUrl)
-            MeService.me?.playUrl(amUrl!!)
+            print2LogView("收到外部播放链接 将不启动服务 放完自动退出\n" + amUrl)
+            Thread(Runnable {
+                while (MeService.me == null) {
+                    print2LogView("等待服务启动...")
+                    Thread.sleep(1000)
+                }
+                MeService.me!!.playUrl(amUrl!!)
+            }).start()
             return
         }
 
@@ -99,7 +106,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         mediaButtonReceiverInit()
-        me = this
 
     }
 

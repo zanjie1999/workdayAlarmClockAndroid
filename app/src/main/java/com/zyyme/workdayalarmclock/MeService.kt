@@ -39,6 +39,7 @@ class MeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        me = this
         // 加cpu唤醒锁
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
@@ -87,7 +88,6 @@ class MeService : Service() {
 //            true
 //        }
 
-        me = this
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -172,6 +172,10 @@ class MeService : Service() {
                 player.reset()
 //                player = null
                 print2LogView("播放完成")
+                if (!MainActivity.startService) {
+                    // 无需启服务 放完就退出
+                    MainActivity.me?.finish()
+                }
                 toGo("next")
             })
             player.setOnPreparedListener(MediaPlayer.OnPreparedListener { mediaPlayer ->
