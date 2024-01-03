@@ -1,17 +1,13 @@
 package com.zyyme.workdayalarmclock
 
-import android.app.AlarmManager
-import android.app.PendingIntent
-import android.app.Service
+import android.app.*
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.os.Build
-import android.os.Handler
-import android.os.IBinder
-import android.os.Looper
+import android.os.*
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import android.view.KeyEvent
@@ -19,6 +15,7 @@ import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -42,6 +39,35 @@ class MeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 加cpu唤醒锁
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
+        wl.acquire()
+
+        // 保活通知 8.0开始channel不是个字符串
+        val channelId = "me_bg"
+        if (Build.VERSION.SDK_INT >= 26) {
+            val importance = NotificationManager.IMPORTANCE_LOW
+            val notificationChannel = NotificationChannel(channelId, "保活通知", importance).apply {
+                description = "保活通知"
+            }
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(notificationChannel)
+        }
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSubText("正在运行")
+            .setContentTitle("诶嘿")
+            .setContentText(this.getString(R.string.app_name))
+            .setUsesChronometer(true)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .build()
+        try {
+            startForeground(1, notification)
+        } catch (e: Exception) {
+            print2LogView("切换前台服务失败 $e")
+            e.printStackTrace()
+        }
+
         // 如果不需要启动Go服务，这个服务将只有播放音频url的功能
         if (!MainActivity.startService) {
             return super.onStartCommand(intent, flags, startId)
@@ -60,14 +86,14 @@ class MeService : Service() {
 //            keyHandle(msg.obj as Int)
 //            true
 //        }
-        me = this
 
+        me = this
         return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onDestroy() {
         shellThread?.interrupt()
-        shellThread?.stop()
+//        shellThread?.stop()
         super.onDestroy()
     }
 
