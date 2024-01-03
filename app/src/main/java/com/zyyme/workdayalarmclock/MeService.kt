@@ -1,24 +1,24 @@
 package com.zyyme.workdayalarmclock
 
-import android.app.*
-import android.content.ComponentName
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.os.*
-import android.support.v4.media.session.MediaSessionCompat
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import android.view.KeyEvent
-import android.widget.EditText
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.lang.reflect.Method
 
 
 class MeService : Service() {
@@ -32,6 +32,7 @@ class MeService : Service() {
     var lastUrl : String? = null
     var shellThread : Thread? = null
     var isStop = true
+    var mBreathLedsManager: Any? = null
 
     override fun onBind(intent: Intent): IBinder {
         me = this
@@ -88,6 +89,17 @@ class MeService : Service() {
 //            true
 //        }
 
+        // 一说宝宝特有系统服务用于控制led灯板
+        try {
+            mBreathLedsManager = getSystemService("breath_leds")
+            Log.d("mBreathLedsManager", "获取成功 $mBreathLedsManager")
+            // 关灯
+            ysSetLedsValue(MeYsLed.EMPTY)
+        } catch (e: Exception) {
+            Log.d("mBreathLedsManager", "获取失败")
+            e.printStackTrace()
+        }
+
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -95,6 +107,18 @@ class MeService : Service() {
         shellThread?.interrupt()
 //        shellThread?.stop()
         super.onDestroy()
+    }
+
+    /**
+     * 反射调用一说宝宝设置灯板
+     */
+    fun ysSetLedsValue(value: Int) {
+        if (mBreathLedsManager != null) {
+            val c = Class.forName("android.app.BreathLedsManager")
+            val m = c.getDeclaredMethod("setLedsValue", Int::class.javaPrimitiveType)
+            m.setAccessible(true)
+            m.invoke(mBreathLedsManager, value)
+        }
     }
 
 
@@ -144,6 +168,8 @@ class MeService : Service() {
                     AudioManager.STREAM_MUSIC,
                     AudioManager.ADJUST_LOWER,
                     AudioManager.FLAG_SHOW_UI);
+            } else if (s.startsWith("YSLED ")) {
+                ysSetLedsValue(s.substring(4).toInt())
             } else if (s == "EXIT") {
                 MainActivity.me?.finish()
             } else if (s == "RESTART") {
@@ -244,6 +270,12 @@ class MeService : Service() {
      */
     fun send2Shell(cmd: String) {
         try {
+            // 内部指令
+            if (cmd.startsWith("ysled ")) {
+                print2LogView("设置一说led $mBreathLedsManager " + cmd.substring(4))
+                ysSetLedsValue(cmd.substring(4).toInt())
+                return
+            }
             writer?.println(cmd)
             writer?.flush()
         } catch (e: Exception) {

@@ -14,6 +14,10 @@ import android.view.KeyEvent
  * 这传入参数是什么逆天写法
  */
 class MediaButtonReceiver : BroadcastReceiver() {
+    companion object {
+        // 逆天 系统每调用一次new一个 只能放这
+        var lastT: Long = 0
+    }
     override fun onReceive(context: Context?, intent: Intent?) {
 
         val action = intent?.action ?: return
@@ -22,6 +26,17 @@ class MediaButtonReceiver : BroadcastReceiver() {
                 val keyEvent =intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent ?: return
                 when (keyEvent.action) {
                     KeyEvent.ACTION_DOWN -> {
+                        val t = System.currentTimeMillis()
+                        // 息屏收到的会重复 过滤掉重复的
+                        if (t - lastT < 600) {
+                            Log.d("MediaButtonReceiver", "跳过重复按键 ${keyEvent.keyCode}")
+                            return
+//                        } else {
+//                            MainActivity.me?.print2LogView((t - lastT).toString())
+                        }
+                        lastT = t
+
+
                         Log.d("MediaButtonReceiver", "mbrHandler: $MainActivity.mbrHandler code: $keyEvent.keyCode")
                         // 回调
 //                        val message = Message.obtain()
