@@ -39,7 +39,11 @@ class MainActivity : AppCompatActivity() {
         val amUrl = getIntent().getDataString();
         if (amUrl != null) {
             startService = false
-            startService(Intent(this, MeService::class.java))
+            if (MeService.me == null) {
+                startService(Intent(this, MeService::class.java))
+            } else {
+                print2LogView("服务已经在运行了")
+            }
             print2LogView("收到外部播放链接 将不启动服务 放完自动退出\n" + amUrl)
             Thread(Runnable {
                 while (MeService.me == null) {
@@ -51,8 +55,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // 启动服务
-        startService(Intent(this, MeService::class.java))
+        // 启动服务 如果Activity不是重载的话
+        if (MeService.me == null) {
+            startService(Intent(this, MeService::class.java))
+        }
 
         // 存储空间权限
 //        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
@@ -112,16 +118,18 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         print2LogView("即将退出...")
         mediaButtonReceiverDestroy()
-        stopService(Intent(this, MeService::class.java))
+//        stopService(Intent(this, MeService::class.java))
         Toast.makeText(this, "${this.getString(R.string.app_name)} 已退出", Toast.LENGTH_SHORT).show()
         super.onDestroy()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
-            moveTaskToBack(false)
-        } else if (MeService.me?.keyHandle(keyCode) == true) {
+        // MeService允许无头运行 所以不需要将Activity放后台了 可以直接销毁
+//        if (keyCode == KeyEvent.KEYCODE_BACK) {
+//            Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+//            moveTaskToBack(false)
+//        } else
+        if (MeService.me?.keyHandle(keyCode) == true) {
             return true
         }
         return super.onKeyDown(keyCode, event)

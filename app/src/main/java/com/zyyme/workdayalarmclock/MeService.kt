@@ -1,14 +1,11 @@
 package com.zyyme.workdayalarmclock
 
-import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
+import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -18,7 +15,6 @@ import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
-import java.lang.reflect.Method
 
 
 class MeService : Service() {
@@ -105,7 +101,7 @@ class MeService : Service() {
 
     override fun onDestroy() {
         shellThread?.interrupt()
-//        shellThread?.stop()
+        shellThread?.stop()
         super.onDestroy()
     }
 
@@ -172,6 +168,7 @@ class MeService : Service() {
                 ysSetLedsValue(s.substring(6).toInt())
             } else if (s == "EXIT") {
                 MainActivity.me?.finish()
+                stopSelf()
             } else if (s == "RESTART") {
                 restartApp()
             } else {
@@ -185,6 +182,11 @@ class MeService : Service() {
      */
     fun playUrl(url:String) {
         try {
+            // 因为待机可能导致音乐无法进行下一首播放（服务运行正常就音乐放不了）需要重新给cpu加唤醒锁
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
+            wl.acquire()
+
             print2LogView("播放 " + url)
             lastUrl = url
             if (!isStop) {
