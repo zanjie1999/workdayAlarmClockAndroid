@@ -101,19 +101,40 @@ class MeService : Service() {
 
     override fun onDestroy() {
         shellThread?.interrupt()
-        shellThread?.stop()
         super.onDestroy()
     }
 
     /**
      * 反射调用一说宝宝设置灯板
+     * end小于start的时候将直接设置
      */
-    fun ysSetLedsValue(value: Int) {
+    var ysLedThread: Thread? = null
+    fun ysSetLedsValue(start: Int, end: Int =0) {
         if (mBreathLedsManager != null) {
+            if (ysLedThread != null) {
+                ysLedThread?.interrupt()
+                ysLedThread = null
+            }
             val c = Class.forName("android.app.BreathLedsManager")
             val m = c.getDeclaredMethod("setLedsValue", Int::class.javaPrimitiveType)
             m.setAccessible(true)
-            m.invoke(mBreathLedsManager, value)
+            if (end > start) {
+                ysLedThread = Thread(Runnable {
+                    try {
+                        while (true) {
+                            for (i in start..end) {
+                                m.invoke(mBreathLedsManager, i)
+                                Thread.sleep(300)
+                            }
+                        }
+                    } catch (e: InterruptedException) {
+                        // interrupt必会抛出异常
+                    }
+                })
+                ysLedThread!!.start()
+            } else {
+                m.invoke(mBreathLedsManager, start)
+            }
         }
     }
 
@@ -140,6 +161,7 @@ class MeService : Service() {
                 print2LogView("停止播放")
                 isStop = true
                 player.reset()
+                ysSetLedsValue(MeYsLed.EMPTY)
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
                 player.pause()
@@ -165,7 +187,8 @@ class MeService : Service() {
                     AudioManager.ADJUST_LOWER,
                     AudioManager.FLAG_SHOW_UI);
             } else if (s.startsWith("YSLED ")) {
-                ysSetLedsValue(s.substring(6).toInt())
+                val n = s.substring(6).split("-")
+                ysSetLedsValue(n[0].toInt(), n.last().toInt())
             } else if (s == "EXIT") {
                 MainActivity.me?.finish()
                 stopSelf()
@@ -187,6 +210,7 @@ class MeService : Service() {
             val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
             wl.acquire()
 
+            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_6)
             print2LogView("播放 " + url)
             lastUrl = url
             if (!isStop) {
@@ -213,6 +237,7 @@ class MeService : Service() {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
                     mediaPlayer.start()
+                    ysSetLedsValue(MeYsLed.EMPTY)
                 }
             })
             player.setOnBufferingUpdateListener(MediaPlayer.OnBufferingUpdateListener { mediaPlayer, i ->
@@ -225,6 +250,7 @@ class MeService : Service() {
                     if (i > 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
                         mediaPlayer.start()
+                        ysSetLedsValue(MeYsLed.EMPTY)
                     }
                 }
             })
@@ -240,31 +266,39 @@ class MeService : Service() {
      */
     private fun runShell() {
         shellThread = Thread(Runnable {
+            var process: Process? = null
             try {
                 val command = "cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app"
-                val process = ProcessBuilder("sh")
+                process = ProcessBuilder("sh")
                     .redirectErrorStream(true)
                     .start()
 
-                val reader = BufferedReader(InputStreamReader(process.inputStream))
-                writer = PrintWriter(process.outputStream)
+                val reader = BufferedReader(InputStreamReader(process!!.inputStream))
+                writer = PrintWriter(process!!.outputStream)
                 send2Shell(command)
 
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
                     try {
                         checkAction(line)
+                    } catch (e: InterruptedException) {
+                        // interrupt必会抛出异常
+                        process.destroy()
+                        break
                     } catch (e: Exception) {
                         e.printStackTrace()
                         print2LogView("Shell解析出错 $e")
                     }
                 }
+            } catch (e: InterruptedException) {
+                // interrupt必会抛出异常
+                process?.destroy()
             } catch (e: Exception) {
                 e.printStackTrace()
                 print2LogView("Shell运行出错 $e")
             }
         })
-        shellThread?.start()
+        shellThread!!.start()
     }
 
     /**
@@ -275,7 +309,8 @@ class MeService : Service() {
             // 内部指令
             if (cmd.startsWith("ysled ")) {
                 print2LogView("设置一说led $mBreathLedsManager " + cmd.substring(6))
-                ysSetLedsValue(cmd.substring(6).toInt())
+                val n = cmd.substring(6).split("-")
+                ysSetLedsValue(n[0].toInt(), n.last().toInt())
                 return
             }
             writer?.println(cmd)
