@@ -3,12 +3,12 @@ package com.zyyme.workdayalarmclock;
 public class MeYsLed {
     public static final int ALL = 41;
     public static final int BASIC = 1;
-    public static final int CALLING_1 = 42;
-    public static final int CALLING_2 = 43;
-    public static final int CALLING_3 = 44;
-    public static final int CALLING_4 = 45;
-    public static final int CALLING_5 = 46;
-    public static final int CALLING_6 = 47;
+//    public static final int CALLING_1 = 42;
+//    public static final int CALLING_2 = 43;
+//    public static final int CALLING_3 = 44;
+//    public static final int CALLING_4 = 45;
+//    public static final int CALLING_5 = 46;
+//    public static final int CALLING_6 = 47;
     public static final int CONNECT_1 = 35;
     public static final int CONNECT_2 = 36;
     public static final int CONNECT_3 = 37;

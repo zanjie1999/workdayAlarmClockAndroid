@@ -109,7 +109,7 @@ class MeService : Service() {
      * end小于start的时候将直接设置
      */
     var ysLedThread: Thread? = null
-    fun ysSetLedsValue(start: Int, end: Int =0) {
+    fun ysSetLedsValue(start: Int, end: Int =0, delay: Long=300, reverse: Boolean=false) {
         if (mBreathLedsManager != null) {
             if (ysLedThread != null) {
                 ysLedThread?.interrupt()
@@ -118,13 +118,19 @@ class MeService : Service() {
             val c = Class.forName("android.app.BreathLedsManager")
             val m = c.getDeclaredMethod("setLedsValue", Int::class.javaPrimitiveType)
             m.setAccessible(true)
-            if (end > start) {
+            if (end != start) {
                 ysLedThread = Thread(Runnable {
                     try {
                         while (true) {
                             for (i in start..end) {
                                 m.invoke(mBreathLedsManager, i)
-                                Thread.sleep(300)
+                                Thread.sleep(delay)
+                            }
+                            if (reverse) {
+                                for (i in end downTo start) {
+                                    m.invoke(mBreathLedsManager, i)
+                                    Thread.sleep(delay)
+                                }
                             }
                         }
                     } catch (e: InterruptedException) {
@@ -189,6 +195,9 @@ class MeService : Service() {
             } else if (s.startsWith("YSLED ")) {
                 val n = s.substring(6).split("-")
                 ysSetLedsValue(n[0].toInt(), n.last().toInt())
+            } else if (s.startsWith("YSLED ")) {
+                val n = s.substring(8).split("-")
+                ysSetLedsValue(n[0].toInt(), n.last().toInt(), n[1].toLong(), true)
             } else if (s == "EXIT") {
                 MainActivity.me?.finish()
                 stopSelf()
@@ -210,7 +219,7 @@ class MeService : Service() {
             val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
             wl.acquire()
 
-            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_6)
+            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
             print2LogView("播放 " + url)
             lastUrl = url
             if (!isStop) {
@@ -308,9 +317,14 @@ class MeService : Service() {
         try {
             // 内部指令
             if (cmd.startsWith("ysled ")) {
-                print2LogView("设置一说led $mBreathLedsManager " + cmd.substring(6))
                 val n = cmd.substring(6).split("-")
+                print2LogView("设置一说led ${n[0]}到${n.last()} $mBreathLedsManager")
                 ysSetLedsValue(n[0].toInt(), n.last().toInt())
+                return
+            } else if (cmd.startsWith("ysledre ")) {
+                val n = cmd.substring(8).split("-")
+                print2LogView("设置一说led重复 ${n[0]}到${n.last()} 延迟${n[1]}ms ")
+                ysSetLedsValue(n[0].toInt(), n.last().toInt(), n[1].toLong(), true)
                 return
             }
             writer?.println(cmd)
@@ -395,7 +409,10 @@ class MeService : Service() {
                 return true
             }
         }
-        print2LogView("未知按键 $keyCode")
+        // 菜单 返回 退格
+        if (keyCode !in intArrayOf(82, 4, 67)) {
+            print2LogView("未知按键 $keyCode")
+        }
         return false
     }
 
