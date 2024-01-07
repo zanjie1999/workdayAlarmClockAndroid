@@ -109,7 +109,7 @@ class MeService : Service() {
      * end小于start的时候将直接设置
      */
     var ysLedThread: Thread? = null
-    fun ysSetLedsValue(start: Int, end: Int =0, delay: Long=300, reverse: Boolean=false) {
+    fun ysSetLedsValue(start: Int, end: Int=start, delay: Long=300, reverse: Boolean=false) {
         if (mBreathLedsManager != null) {
             if (ysLedThread != null) {
                 ysLedThread?.interrupt()
@@ -195,12 +195,13 @@ class MeService : Service() {
             } else if (s.startsWith("YSLED ")) {
                 val n = s.substring(6).split("-")
                 ysSetLedsValue(n[0].toInt(), n.last().toInt())
-            } else if (s.startsWith("YSLED ")) {
+            } else if (s.startsWith("YSLEDRE ")) {
                 val n = s.substring(8).split("-")
                 ysSetLedsValue(n[0].toInt(), n.last().toInt(), n[1].toLong(), true)
             } else if (s == "EXIT") {
-                MainActivity.me?.finish()
-                stopSelf()
+//                MainActivity.me?.finish()
+//                stopSelf()
+                System.exit(0)
             } else if (s == "RESTART") {
                 restartApp()
             } else {
@@ -219,7 +220,9 @@ class MeService : Service() {
             val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
             wl.acquire()
 
-            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
+//            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_6)
+//            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
+            ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
             print2LogView("播放 " + url)
             lastUrl = url
             if (!isStop) {
