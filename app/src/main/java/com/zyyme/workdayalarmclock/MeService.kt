@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -29,6 +28,8 @@ class MeService : Service() {
     var shellThread : Thread? = null
     var isStop = true
     var mBreathLedsManager: Any? = null
+    var wakeLock: PowerManager.WakeLock? = null
+    var alarmManager: AlarmManager? = null
 
     override fun onBind(intent: Intent): IBinder {
         me = this
@@ -37,10 +38,12 @@ class MeService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         me = this
-        // 加cpu唤醒锁
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
-        wl.acquire()
+        // 加cpu唤醒锁 2000mah电池平均每小时耗电1% 但工作稳定
+        wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
+            newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeService").apply {
+                acquire()
+            }
+        }
 
         // 保活通知 8.0开始channel不是个字符串
         val channelId = "me_bg"
@@ -95,6 +98,11 @@ class MeService : Service() {
             Log.d("mBreathLedsManager", "获取失败")
             e.printStackTrace()
         }
+
+        // 每分钟唤醒一下
+//        alarmManager = applicationContext.getSystemService(ALARM_SERVICE) as AlarmManager
+////        val pendingIntent = PendingIntent.getService(this, 0, intent!!, PendingIntent.FLAG_IMMUTABLE);
+//        alarmManager!!.setRepeating(AlarmManager.RTC_WAKEUP, 60000 - System.currentTimeMillis()%60000, 60000, null)
 
         return super.onStartCommand(intent, flags, startId)
     }
@@ -216,9 +224,9 @@ class MeService : Service() {
     fun playUrl(url:String) {
         try {
             // 因为待机可能导致音乐无法进行下一首播放（服务运行正常就音乐放不了）需要重新给cpu加唤醒锁
-            val pm = getSystemService(POWER_SERVICE) as PowerManager
-            val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
-            wl.acquire()
+//            val pm = getSystemService(POWER_SERVICE) as PowerManager
+//            val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
+//            wl.acquire()
 
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_6)
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
@@ -229,6 +237,8 @@ class MeService : Service() {
                 player.reset()
             }
             isStop = false
+            // 在播放时保持唤醒，暂停和停止时自动销毁
+            player.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
             player.setDataSource(url)
             player.setOnCompletionListener({mediaPlayer ->
                 //播放完成监听
@@ -280,7 +290,10 @@ class MeService : Service() {
         shellThread = Thread(Runnable {
             var process: Process? = null
             try {
-                val command = "cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app"
+                // 输入start可以启动 exit可以退出
+                val command = "alias exit='echo EXIT'\n" +
+                        "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
+                        "start"
                 process = ProcessBuilder("sh")
                     .redirectErrorStream(true)
                     .start()
