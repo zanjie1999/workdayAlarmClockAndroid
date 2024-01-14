@@ -26,3 +26,4 @@ exit
 # 启动
 start
 ```
+更多指令可以看[workdayAlarmClockGo](https://github.com/zanjie1999/workdayAlarmClockGo)
