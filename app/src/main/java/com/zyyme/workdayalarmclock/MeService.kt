@@ -29,7 +29,7 @@ class MeService : Service() {
     var isStop = true
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
-    var alarmManager: AlarmManager? = null
+    var shellProcess: Process? = null
 
     override fun onBind(intent: Intent): IBinder {
         me = this
@@ -108,8 +108,14 @@ class MeService : Service() {
     }
 
     override fun onDestroy() {
+        shellProcess?.destroy()
         shellThread?.interrupt()
+        MainActivity.me?.finish()
+        wakeLock?.release()
+        stopForeground(true)
         super.onDestroy()
+        // 不知道为什么服务进程不退出 给他退出强制回收掉
+        System.exit(0)
     }
 
     /**
@@ -207,9 +213,8 @@ class MeService : Service() {
                 val n = s.substring(8).split("-")
                 ysSetLedsValue(n[0].toInt(), n.last().toInt(), n[1].toLong(), true)
             } else if (s == "EXIT") {
-//                MainActivity.me?.finish()
-//                stopSelf()
-                System.exit(0)
+                stopSelf()
+//                System.exit(0)
             } else if (s == "RESTART") {
                 restartApp()
             } else {
@@ -288,36 +293,28 @@ class MeService : Service() {
      */
     private fun runShell() {
         shellThread = Thread(Runnable {
-            var process: Process? = null
             try {
                 // 输入start可以启动 exit可以退出
                 val command = "alias exit='echo EXIT'\n" +
                         "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
                         "start"
-                process = ProcessBuilder("sh")
+                shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)
                     .start()
 
-                val reader = BufferedReader(InputStreamReader(process!!.inputStream))
-                writer = PrintWriter(process!!.outputStream)
+                val reader = BufferedReader(InputStreamReader(shellProcess!!.inputStream))
+                writer = PrintWriter(shellProcess!!.outputStream)
                 send2Shell(command)
 
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
                     try {
                         checkAction(line)
-                    } catch (e: InterruptedException) {
-                        // interrupt必会抛出异常
-                        process.destroy()
-                        break
                     } catch (e: Exception) {
                         e.printStackTrace()
                         print2LogView("Shell解析出错 $e")
                     }
                 }
-            } catch (e: InterruptedException) {
-                // interrupt必会抛出异常
-                process?.destroy()
             } catch (e: Exception) {
                 e.printStackTrace()
                 print2LogView("Shell运行出错 $e")
@@ -477,6 +474,7 @@ class MeService : Service() {
         }
         val manager = getSystemService(ALARM_SERVICE) as AlarmManager
         manager[AlarmManager.RTC, System.currentTimeMillis() + 1000] = pendingIntent
-        System.exit(0)
+//        System.exit(0)
+        stopSelf()
     }
 }

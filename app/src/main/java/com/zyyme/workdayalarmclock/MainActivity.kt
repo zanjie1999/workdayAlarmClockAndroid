@@ -97,10 +97,12 @@ class MainActivity : AppCompatActivity() {
         // Shell输入框
         findViewById<EditText>(R.id.shellInput).setOnEditorActionListener { _, actionId, ketEvent ->
             if (ketEvent != null && ketEvent.keyCode == KeyEvent.KEYCODE_ENTER){
-                val cmd = findViewById<EditText>(R.id.shellInput).text.toString()
-                findViewById<android.widget.EditText>(com.zyyme.workdayalarmclock.R.id.shellInput).setText("")
+                val shellInput = findViewById<EditText>(R.id.shellInput)
+                val cmd = shellInput.text.toString()
+                shellInput.setText("")
                 print2LogView("> $cmd")
                 MeService.me?.send2Shell(cmd)
+                shellInput.requestFocus()
                 true
             }
             false
