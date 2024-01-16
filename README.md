@@ -27,3 +27,7 @@ exit
 start
 ```
 更多指令可以看[workdayAlarmClockGo](https://github.com/zanjie1999/workdayAlarmClockGo)
+
+## 一说宝宝1s
+摸额头的触摸区域将瞬间显示当前电量强度，分为6格，越往右电量越高，18%左右的时候会显示一个（T T）的表情，后续显示表情动画  
+按下鼻子为停止播放

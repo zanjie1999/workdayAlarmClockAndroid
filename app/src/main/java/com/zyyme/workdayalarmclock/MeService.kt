@@ -5,11 +5,13 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import android.view.KeyEvent
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -133,7 +135,8 @@ class MeService : Service() {
             val m = c.getDeclaredMethod("setLedsValue", Int::class.javaPrimitiveType)
             m.setAccessible(true)
             if (end != start) {
-                ysLedThread = Thread(Runnable {
+                var meThread: Thread? = null
+                meThread = Thread(Runnable {
                     try {
                         while (true) {
                             for (i in start..end) {
@@ -146,15 +149,71 @@ class MeService : Service() {
                                     Thread.sleep(delay)
                                 }
                             }
+                            if (meThread != this.ysLedThread) {
+                                // 防止多线程冲突没interrupt到
+                                m.invoke(mBreathLedsManager, MeYsLed.EMPTY)
+                                break
+                            }
                         }
                     } catch (e: InterruptedException) {
                         // interrupt必会抛出异常
                     }
                 })
-                ysLedThread!!.start()
+                ysLedThread = meThread
+                meThread.start()
             } else {
                 m.invoke(mBreathLedsManager, start)
             }
+        }
+    }
+
+    /**
+     * 使用灯板展示状态
+     */
+    fun ysLedStatus() {
+        if (mBreathLedsManager != null && ysLedThread == null && Build.VERSION.SDK_INT >= 21) {
+             ysLedThread = Thread(Runnable {
+                try {
+                    val c = Class.forName("android.app.BreathLedsManager")
+                    val m = c.getDeclaredMethod("setLedsValue", Int::class.javaPrimitiveType)
+                    m.setAccessible(true)
+                    // 因为一说系统6.0并且其他设备也不走这里那就怎么简单怎么来了
+                    val batLevel =(applicationContext.getSystemService(BATTERY_SERVICE) as BatteryManager)
+                        .getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    val v :Int =  16 + (6 * batLevel / 100)
+                    if (v == 16) {
+                        m.invoke(mBreathLedsManager, MeYsLed.CRY_1)
+                        Thread.sleep(200)
+                        m.invoke(mBreathLedsManager, MeYsLed.CRY_2)
+                        Thread.sleep(200)
+                    } else {
+                        m.invoke(mBreathLedsManager, v)
+                        Thread.sleep(400)
+                    }
+                    m.invoke(mBreathLedsManager, MeYsLed.EMPTY)
+                    Thread.sleep(150)
+                    for (three in 1..2) {
+                        for (i in 4 downTo 1) {
+                            if (i == 2) {continue}
+                            m.invoke(mBreathLedsManager, i)
+                            Thread.sleep(200)
+                        }
+                        Thread.sleep(1000)
+                        for (i in 1..4) {
+                            if (i == 2) {continue}
+                            m.invoke(mBreathLedsManager, i)
+                            Thread.sleep(200)
+                        }
+                        m.invoke(mBreathLedsManager, MeYsLed.EMPTY)
+                        Thread.sleep(200)
+                    }
+                } catch (e: InterruptedException) {
+                    // interrupt必会抛出异常
+                } finally {
+                    ysLedThread = null
+                }
+            })
+            ysLedThread!!.start()
         }
     }
 
@@ -419,6 +478,11 @@ class MeService : Service() {
                 // 实际是拍照对焦键
                 print2LogView("媒体按键 鼻子")
                 toGo("stop")
+                return true
+            }
+            KeyEvent.KEYCODE_MENU -> {
+                print2LogView("一说宝宝摸头")
+                ysLedStatus()
                 return true
             }
         }
