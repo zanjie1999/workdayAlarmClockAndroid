@@ -1,5 +1,6 @@
 package com.zyyme.workdayalarmclock
 
+import android.annotation.SuppressLint
 import android.app.*
 import android.content.Context
 import android.content.Intent
@@ -38,6 +39,7 @@ class MeService : Service() {
         TODO("Return the communication channel to the service.")
     }
 
+    @SuppressLint("WrongConstant")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         me = this
         // 加cpu唤醒锁 2000mah电池平均每小时耗电1% 但工作稳定
@@ -296,6 +298,7 @@ class MeService : Service() {
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
             ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
             print2LogView("播放 " + url)
+            val isPlayLastUrl = lastUrl == url
             lastUrl = url
             if (!isStop) {
                 player.reset()
@@ -307,24 +310,23 @@ class MeService : Service() {
             player.setOnCompletionListener({mediaPlayer ->
                 //播放完成监听
                 isStop = true
-                player.reset()
-//                player = null
                 print2LogView("播放完成")
                 if (!MainActivity.startService) {
                     // 无需启服务 放完就退出
                     MainActivity.me?.finish()
                 }
                 toGo("next")
+                player.reset()
             })
             player.setOnPreparedListener(MediaPlayer.OnPreparedListener { mediaPlayer ->
                 //异步准备监听
                 print2LogView("加载完成 时长" + (mediaPlayer.duration / 1000).toString())
-                if (!mediaPlayer.isPlaying) {
+                if (isPlayLastUrl && !mediaPlayer.isPlaying) {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
-                    mediaPlayer.start()
-                    ysSetLedsValue(MeYsLed.EMPTY)
                 }
+                mediaPlayer.start()
+                ysSetLedsValue(MeYsLed.EMPTY)
             })
             player.setOnBufferingUpdateListener(MediaPlayer.OnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
