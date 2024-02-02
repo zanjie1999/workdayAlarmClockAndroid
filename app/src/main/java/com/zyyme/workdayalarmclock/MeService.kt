@@ -42,14 +42,8 @@ class MeService : Service() {
     @SuppressLint("WrongConstant")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         me = this
-        // 加cpu唤醒锁 2000mah电池平均每小时耗电1% 但工作稳定
-        wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
-            newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeService").apply {
-                acquire()
-            }
-        }
 
-        // 保活通知 8.0开始channel不是个字符串
+        // 保活通知 8.0开始channel不是个字符串 不会保持唤醒
         val channelId = "me_bg"
         if (Build.VERSION.SDK_INT >= 26) {
             val importance = NotificationManager.IMPORTANCE_LOW
@@ -194,7 +188,7 @@ class MeService : Service() {
                     }
                     m.invoke(mBreathLedsManager, MeYsLed.EMPTY)
                     Thread.sleep(150)
-                    for (three in 1..2) {
+//                    for (three in 1..2) {
                         for (i in 4 downTo 1) {
                             if (i == 2) {continue}
                             m.invoke(mBreathLedsManager, i)
@@ -208,7 +202,7 @@ class MeService : Service() {
                         }
                         m.invoke(mBreathLedsManager, MeYsLed.EMPTY)
                         Thread.sleep(200)
-                    }
+//                    }
                 } catch (e: InterruptedException) {
                     // interrupt必会抛出异常
                 } finally {
@@ -273,6 +267,14 @@ class MeService : Service() {
             } else if (s.startsWith("YSLEDRE ")) {
                 val n = s.substring(8).split("-")
                 ysSetLedsValue(n[0].toInt(), n.last().toInt(), n[1].toLong(), true)
+            } else if (s == "WAKELOCK") {
+                // 加cpu唤醒锁 2000mah电池平均每小时耗电1% 但工作稳定
+                wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
+                    newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeService").apply {
+                        acquire()
+                        print2LogView("已启用CPU唤醒锁")
+                    }
+                }
             } else if (s == "EXIT") {
                 stopSelf()
 //                System.exit(0)
