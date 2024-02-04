@@ -13,7 +13,11 @@
 项目目录/app/libs/armeabi/libWorkdayAlarmClock.so
 项目目录/app/libs/arm64-v8a/libWorkdayAlarmClock.so
 ```
-你可以把文件换成你自己的程序，使用本程序作为启动器
+你可以把文件换成你自己的程序，使用本程序作为启动器  
+需要打包release包二进制文件才会被打包进去，然后安装启动  
+```
+adb install -r .\app\release\app-release.apk ; adb shell am start -n com.zyyme.workdayalarmclock/.MainActivity
+```
 
 ## 使用用法
 在右边Releases下载apk安装，部分系统比如MIUI需要设置允许自启动，电池不优化，然后打开 http://127.0.0.1:8080 进行配置，如果使用别的设备打开，需要将127.0.0.1换成设备的ip地址
