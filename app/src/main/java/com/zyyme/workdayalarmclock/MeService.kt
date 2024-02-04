@@ -462,11 +462,13 @@ class MeService : Service() {
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
                 print2LogView("媒体按键 下一首")
+                player?.stop()
                 toGo("next")
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
                 print2LogView("媒体按键 上一首")
+                player?.stop()
                 toGo("prev")
                 return true
             }
@@ -484,12 +486,14 @@ class MeService : Service() {
             }
             KeyEvent.KEYCODE_MEDIA_STOP -> {
                 print2LogView("媒体按键 停止")
+                player?.stop()
                 toGo("stop")
                 return true
             }
             KeyEvent.KEYCODE_FOCUS -> {
                 // 实际是拍照对焦键
                 print2LogView("媒体按键 鼻子")
+                player?.stop()
                 toGo("stop")
                 return true
             }
