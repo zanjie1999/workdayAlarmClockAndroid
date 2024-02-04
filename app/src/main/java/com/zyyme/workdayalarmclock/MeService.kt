@@ -25,7 +25,7 @@ class MeService : Service() {
         var me: MeService? = null
     }
 
-    var player : MediaPlayer = MediaPlayer()
+    var player : MediaPlayer? = null
     var writer : PrintWriter? = null
     var lastUrl : String? = null
     var shellThread : Thread? = null
@@ -73,10 +73,12 @@ class MeService : Service() {
         }
 
         // 抢夺音频焦点
-        player.setDataSource("http://127.0.0.1:1")
-        player.start()
-        player.stop()
-        player.reset()
+        player = MediaPlayer()
+        player!!.setDataSource("http://127.0.0.1:1")
+        player!!.start()
+        player!!.stop()
+        player!!.release()
+        player = null
 
         // 开一个新线程跑shell
         runShell()
@@ -235,15 +237,16 @@ class MeService : Service() {
             } else if (s == "STOP") {
                 print2LogView("停止播放")
                 isStop = true
-                player.reset()
+                player?.release()
+                player = null
                 ysSetLedsValue(MeYsLed.EMPTY)
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
-                player.pause()
+                player?.pause()
             } else if (s == "RESUME") {
                 print2LogView("恢复播放")
                 if (!isStop) {
-                    player.start()
+                    player?.start()
                 } else if (lastUrl != null) {
                     playUrl(lastUrl!!)
                 }
@@ -302,14 +305,16 @@ class MeService : Service() {
             print2LogView("播放 " + url)
             val isPlayLastUrl = lastUrl == url
             lastUrl = url
-            if (!isStop) {
-                player.reset()
+            if (player == null) {
+                player = MediaPlayer()
+            } else {
+                player!!.reset()
             }
             isStop = false
             // 在播放时保持唤醒，暂停和停止时自动销毁
-            player.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-            player.setDataSource(url)
-            player.setOnCompletionListener({mediaPlayer ->
+            player!!.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+            player!!.setDataSource(url)
+            player!!.setOnCompletionListener({mediaPlayer ->
                 //播放完成监听
                 isStop = true
                 print2LogView("播放完成")
@@ -318,9 +323,9 @@ class MeService : Service() {
                     MainActivity.me?.finish()
                 }
                 toGo("next")
-                player.reset()
+                // 此处等待返回决定是回收还是reset
             })
-            player.setOnPreparedListener(MediaPlayer.OnPreparedListener { mediaPlayer ->
+            player!!.setOnPreparedListener(MediaPlayer.OnPreparedListener { mediaPlayer ->
                 //异步准备监听
                 print2LogView("加载完成 时长" + (mediaPlayer.duration / 1000).toString())
                 if (isPlayLastUrl && !mediaPlayer.isPlaying) {
@@ -330,7 +335,7 @@ class MeService : Service() {
                 mediaPlayer.start()
                 ysSetLedsValue(MeYsLed.EMPTY)
             })
-            player.setOnBufferingUpdateListener(MediaPlayer.OnBufferingUpdateListener { mediaPlayer, i ->
+            player!!.setOnBufferingUpdateListener(MediaPlayer.OnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
                 if (i != 100) {
                     if (i != 99) {
@@ -344,7 +349,7 @@ class MeService : Service() {
                     }
                 }
             })
-            player.prepareAsync()
+            player!!.prepareAsync()
         } catch (e: Exception) {
             e.printStackTrace()
             print2LogView("播放失败" + e.toString())
@@ -420,35 +425,39 @@ class MeService : Service() {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                 print2LogView("媒体按键 播放暂停")
-                if (!player.isPlaying && lastUrl == null && isStop) {
-                    print2LogView("初次启动 触发上一首")
-                    toGo("prev")
-                } else if (!isStop) {
-                    if (player.isPlaying == true) {
-                        player.pause()
-                    } else {
-                        player.start()
+                if (player != null) {
+                    if (!player!!.isPlaying && lastUrl == null && isStop) {
+                        print2LogView("初次启动 触发上一首")
+                        toGo("prev")
+                    } else if (!isStop) {
+                        if (player!!.isPlaying == true) {
+                            player!!.pause()
+                        } else {
+                            player!!.start()
+                        }
+                    } else if (lastUrl != null) {
+                        playUrl(lastUrl!!)
                     }
-                } else if (lastUrl != null) {
-                    playUrl(lastUrl!!)
                 }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PLAY -> {
                 print2LogView("媒体按键 播放")
-                if (!player.isPlaying && lastUrl == null && isStop) {
-                    print2LogView("初次启动 触发上一首")
-                    toGo("prev")
-                } else if (!isStop) {
-                    player.start()
-                } else if (lastUrl != null) {
-                    playUrl(lastUrl!!)
+                if (player != null) {
+                    if (!player!!.isPlaying && lastUrl == null && isStop) {
+                        print2LogView("初次启动 触发上一首")
+                        toGo("prev")
+                    } else if (!isStop) {
+                        player!!.start()
+                    } else if (lastUrl != null) {
+                        playUrl(lastUrl!!)
+                    }
                 }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 print2LogView("媒体按键 暂停")
-                player.pause()
+                player?.pause()
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
