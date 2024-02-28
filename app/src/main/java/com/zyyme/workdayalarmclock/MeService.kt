@@ -58,7 +58,6 @@ class MeService : Service() {
             .setContentTitle("诶嘿")
             .setContentText(this.getString(R.string.app_name))
             .setUsesChronometer(true)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .build()
         try {
             startForeground(1, notification)
