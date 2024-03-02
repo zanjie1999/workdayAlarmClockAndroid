@@ -307,6 +307,8 @@ class MeService : Service() {
             if (player == null) {
                 player = MediaPlayer()
             } else {
+                // 可以打断正在进行的prepareAsync加载避免阻塞
+                player!!.pause()
                 player!!.reset()
             }
             isStop = false
