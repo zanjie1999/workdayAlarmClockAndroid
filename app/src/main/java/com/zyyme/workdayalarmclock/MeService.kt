@@ -460,7 +460,7 @@ class MeService : Service() {
             }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 print2LogView("媒体按键 暂停")
-                if (player?.isPlaying == true) player!!.pause()
+                if (!isStop && player?.isPlaying == true) player!!.pause()
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
@@ -478,7 +478,7 @@ class MeService : Service() {
             }
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
                 print2LogView("媒体按键 上一首")
-                if (player?.isPlaying == true) player!!.pause()
+                if (!isStop &&player?.isPlaying == true) player!!.pause()
                 toGo("prev")
                 return true
             }

@@ -130,6 +130,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.iconExit).setOnClickListener {
             Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
             MeService.me?.stopSelf()
+            onDestroy()
         }
 
     }
