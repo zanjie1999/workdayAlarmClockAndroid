@@ -310,7 +310,7 @@ class MeService : Service() {
                 player = MediaPlayer()
             } else {
                 // 可以打断正在进行的prepareAsync加载避免阻塞
-                player!!.pause()
+                if (player!!.isPlaying) player!!.pause()
                 player!!.reset()
             }
             isStop = false
@@ -451,7 +451,7 @@ class MeService : Service() {
                         print2LogView("初次启动 触发上一首")
                         toGo("prev")
                     } else if (!isStop) {
-                        player!!.start()
+                        if (player?.isPlaying == false) player!!.start()
                     } else if (lastUrl != null) {
                         playUrl(lastUrl!!)
                     }
@@ -460,7 +460,7 @@ class MeService : Service() {
             }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 print2LogView("媒体按键 暂停")
-                player?.pause()
+                if (player?.isPlaying == true) player!!.pause()
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
@@ -478,7 +478,7 @@ class MeService : Service() {
             }
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
                 print2LogView("媒体按键 上一首")
-                player?.pause()
+                if (player?.isPlaying == true) player!!.pause()
                 toGo("prev")
                 return true
             }
