@@ -6,6 +6,7 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <!-- 下面的滚动日志 -->
     <ScrollView
         android:id="@+id/scrollView"
         android:layout_width="match_parent"
@@ -14,6 +15,7 @@
         tools:layout_editor_absoluteY="1dp">
 
         <LinearLayout
+            android:paddingTop="?attr/actionBarSize"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical">
@@ -38,4 +40,46 @@
         </LinearLayout>
 
     </ScrollView>
+
+    <!-- 顶栏 放下面他就会渲染在上层 -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:background="#90000000"
+        app:subtitle="咩咩"
+        app:title="@string/app_name" >
+
+        <ImageView
+            android:id="@+id/iconExit"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:src="@android:drawable/ic_menu_close_clear_cancel" />
+
+        <ImageView
+            android:id="@+id/iconNext"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:src="@android:drawable/ic_media_next" />
+
+        <ImageView
+            android:id="@+id/iconPlay"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:src="@android:drawable/ic_media_play" />
+
+        <ImageView
+            android:id="@+id/iconPrev"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:src="@android:drawable/ic_media_previous" />
+
+    </androidx.appcompat.widget.Toolbar>
 </androidx.constraintlayout.widget.ConstraintLayout>

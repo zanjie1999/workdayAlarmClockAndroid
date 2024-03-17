@@ -54,6 +54,8 @@ class MeService : Service() {
             notificationManager.createNotificationChannel(notificationChannel)
         }
         val notification = NotificationCompat.Builder(this, channelId)
+            // 他一定要设置一个图标
+            .setSmallIcon(com.google.android.material.R.drawable.ic_clock_black_24dp)
             .setSubText("正在运行")
             .setContentTitle("诶嘿")
             .setContentText(this.getString(R.string.app_name))
@@ -462,14 +464,21 @@ class MeService : Service() {
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                print2LogView("媒体按键 下一首")
-                player?.stop()
-                toGo("next")
+                // 如果没有在播放，触发停止
+                if (player?.isPlaying == true) {
+                    print2LogView("媒体按键 下一首")
+                    player?.pause()
+                    toGo("next")
+                } else {
+                    print2LogView("媒体按键 下一首 触发停止")
+                    player?.pause()
+                    toGo("stop")
+                }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
                 print2LogView("媒体按键 上一首")
-                player?.stop()
+                player?.pause()
                 toGo("prev")
                 return true
             }

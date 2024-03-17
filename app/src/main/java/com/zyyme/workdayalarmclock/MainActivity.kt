@@ -13,6 +13,7 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import android.view.KeyEvent
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -33,6 +34,7 @@ class MainActivity : AppCompatActivity() {
         me = this
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        setSupportActionBar(findViewById(R.id.toolbar));
 
 
         // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
@@ -115,13 +117,28 @@ class MainActivity : AppCompatActivity() {
 
         mediaButtonReceiverInit()
 
+        // toolbar的控制按钮
+        findViewById<ImageView>(R.id.iconPrev).setOnClickListener {
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+        }
+        findViewById<ImageView>(R.id.iconPlay).setOnClickListener {
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        }
+        findViewById<ImageView>(R.id.iconNext).setOnClickListener {
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT)
+        }
+        findViewById<ImageView>(R.id.iconExit).setOnClickListener {
+            Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
+            MeService.me?.stopSelf()
+        }
+
     }
 
     override fun onDestroy() {
         print2LogView("即将退出...")
         mediaButtonReceiverDestroy()
 //        stopService(Intent(this, MeService::class.java))
-        Toast.makeText(this, "${this.getString(R.string.app_name)} 已退出", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
         super.onDestroy()
     }
 
