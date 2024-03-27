@@ -367,7 +367,7 @@ class MeService : Service() {
             try {
                 // 输入start可以启动 exit可以退出
                 val command = "alias exit='echo EXIT'\n" +
-                        "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
+                        "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
                         "start"
                 shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)
@@ -448,13 +448,16 @@ class MeService : Service() {
                 print2LogView("媒体按键 播放")
                 if (player != null) {
                     if (!player!!.isPlaying && lastUrl == null && isStop) {
-                        print2LogView("初次启动 触发上一首")
+                        print2LogView("触发上一首")
                         toGo("prev")
                     } else if (!isStop) {
                         if (player?.isPlaying == false) player!!.start()
                     } else if (lastUrl != null) {
                         playUrl(lastUrl!!)
                     }
+                } else {
+                    print2LogView("触发上一首")
+                    toGo("prev")
                 }
                 return true
             }
@@ -512,9 +515,28 @@ class MeService : Service() {
                 ysLedStatus()
                 return true
             }
+            KeyEvent.KEYCODE_SOFT_SLEEP -> {
+                print2LogView("媒体按键 叮咚Play睡眠")
+                if (player != null) {
+                    if (!player!!.isPlaying && isStop) {
+                        print2LogView("触发上一首")
+                        toGo("prev")
+                    } else if (!isStop) {
+                        if (player!!.isPlaying == true) {
+                            player!!.pause()
+                        } else {
+                            player!!.start()
+                        }
+                    }
+                } else {
+                    print2LogView("触发上一首")
+                    toGo("prev")
+                }
+                return true
+            }
         }
         // 菜单 返回 退格
-        if (keyCode !in intArrayOf(82, 4, 67)) {
+        if (keyCode !in intArrayOf(0, 82, 4, 67)) {
             print2LogView("未知按键 $keyCode")
         }
         return false

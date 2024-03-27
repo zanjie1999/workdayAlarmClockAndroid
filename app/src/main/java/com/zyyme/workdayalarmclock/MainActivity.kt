@@ -127,10 +127,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.iconNext).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT)
         }
+        findViewById<ImageView>(R.id.iconStop).setOnClickListener {
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP)
+        }
         findViewById<ImageView>(R.id.iconExit).setOnClickListener {
             Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
-            MeService.me?.stopSelf()
             onDestroy()
+            MeService.me?.stopSelf()
         }
 
     }

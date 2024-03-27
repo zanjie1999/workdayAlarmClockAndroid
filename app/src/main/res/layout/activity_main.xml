@@ -81,5 +81,12 @@
             android:layout_gravity="end"
             android:src="@android:drawable/ic_media_previous" />
 
+        <ImageView
+            android:id="@+id/iconStop"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:src="@android:drawable/ic_menu_rotate" />
+
     </androidx.appcompat.widget.Toolbar>
 </androidx.constraintlayout.widget.ConstraintLayout>
