@@ -158,6 +158,17 @@ class MainActivity : AppCompatActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent?): Boolean {
+        // 修复一说宝宝摸头无反应
+        if (KeyEvent.ACTION_UP == event?.action
+            && KeyEvent.KEYCODE_MENU == event.keyCode) {
+            if (MeService.me?.keyHandle(KeyEvent.KEYCODE_MENU) == true) {
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     /**
      * 将日志打印到logView
      */
