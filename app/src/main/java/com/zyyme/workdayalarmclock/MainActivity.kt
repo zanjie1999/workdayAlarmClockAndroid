@@ -1,14 +1,10 @@
 package com.zyyme.workdayalarmclock
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.*
-import android.os.PowerManager.WakeLock
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import android.view.KeyEvent
@@ -25,6 +21,7 @@ class MainActivity : AppCompatActivity() {
         var print2LogViewHandler: Handler? = null
         var me: MainActivity? = null
         var startService = true
+        var keyDownTime = 0L
     }
 
     var mediaSessionCompat: MediaSessionCompat? = null
@@ -119,16 +116,16 @@ class MainActivity : AppCompatActivity() {
 
         // toolbar的控制按钮
         findViewById<ImageView>(R.id.iconPrev).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
         }
         findViewById<ImageView>(R.id.iconPlay).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
         }
         findViewById<ImageView>(R.id.iconNext).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
         }
         findViewById<ImageView>(R.id.iconStop).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
         }
         findViewById<ImageView>(R.id.iconExit).setOnClickListener {
             Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
@@ -146,27 +143,18 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        // MeService允许无头运行 所以不需要将Activity放后台了 可以直接销毁
-//        if (keyCode == KeyEvent.KEYCODE_BACK) {
-//            Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
-//            moveTaskToBack(false)
-//        } else
-        if (MeService.me?.keyHandle(keyCode) == true) {
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
-    }
-
-    override fun dispatchKeyEvent(event: KeyEvent?): Boolean {
-        // 修复一说宝宝摸头无反应
-        if (KeyEvent.ACTION_UP == event?.action
-            && KeyEvent.KEYCODE_MENU == event.keyCode) {
-            if (MeService.me?.keyHandle(KeyEvent.KEYCODE_MENU) == true) {
-                return true
+    override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
+        when (keyEvent?.action) {
+            KeyEvent.ACTION_DOWN -> {
+                keyDownTime = System.currentTimeMillis()
+            }
+            KeyEvent.ACTION_UP -> {
+                if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
+                    return true
+                }
             }
         }
-        return super.dispatchKeyEvent(event)
+        return super.dispatchKeyEvent(keyEvent)
     }
 
     /**

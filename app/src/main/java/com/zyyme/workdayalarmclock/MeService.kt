@@ -12,7 +12,6 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import android.view.KeyEvent
-import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -424,7 +423,8 @@ class MeService : Service() {
      * 响应按键
      * 重写了监听器里的接口
      */
-    fun keyHandle(keyCode: Int): Boolean {
+    fun keyHandle(keyCode: Int, holdTime: Long): Boolean {
+        print2LogView("holdTime $holdTime")
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                 print2LogView("媒体按键 播放暂停")
@@ -522,7 +522,12 @@ class MeService : Service() {
                         print2LogView("触发上一首")
                         toGo("prev")
                     } else if (!isStop) {
-                        if (player!!.isPlaying == true) {
+                        if (holdTime > 1200) {
+                            toGo("prev")
+                        } else if (holdTime > 500) {
+                            player?.stop()
+                            toGo("stop")
+                        } else if (player!!.isPlaying == true) {
                             player!!.pause()
                         } else {
                             player!!.start()
@@ -536,9 +541,9 @@ class MeService : Service() {
             }
         }
         // 菜单 返回 退格
-        if (keyCode !in intArrayOf(0, 82, 4, 67)) {
+//        if (keyCode !in intArrayOf(0, 82, 4, 67)) {
             print2LogView("未知按键 $keyCode")
-        }
+//        }
         return false
     }
 
