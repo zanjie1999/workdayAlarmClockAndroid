@@ -59,9 +59,12 @@ class MainActivity : AppCompatActivity() {
             startService(Intent(this, MeService::class.java))
         }
 
-        // 存储空间权限
-//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
-//            Toast.makeText(this,"请允许权限\n用于更新Go程序二进制文件", Toast.LENGTH_LONG).show()
+        // 存储空间权限 Android11
+//        if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
+//            Toast.makeText(this,"请允许权限\n用于保存文件", Toast.LENGTH_LONG).show()
+//            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${BuildConfig.APPLICATION_ID}")))
+//        } else if (Build.VERSION.SDK_INT < 30 && ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
+//            Toast.makeText(this,"请允许权限\n用于保存文件", Toast.LENGTH_LONG).show()
 //            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
 //        }
 
