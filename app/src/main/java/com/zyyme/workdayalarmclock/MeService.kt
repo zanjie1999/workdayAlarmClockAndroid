@@ -52,6 +52,16 @@ class MeService : Service() {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(notificationChannel)
         }
+
+        val mainIntent = Intent(applicationContext, MainActivity::class.java)
+        // 避免重复创建Activity
+//        mainIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            0,
+            mainIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
         val notification = NotificationCompat.Builder(this, channelId)
             // 他一定要设置一个图标
             .setSmallIcon(com.google.android.material.R.drawable.ic_clock_black_24dp)
@@ -59,6 +69,7 @@ class MeService : Service() {
             .setContentTitle("诶嘿")
             .setContentText(this.getString(R.string.app_name))
             .setUsesChronometer(true)
+            .setContentIntent(pendingIntent)
             .build()
         try {
             startForeground(1, notification)
