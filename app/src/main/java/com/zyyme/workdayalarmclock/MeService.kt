@@ -64,7 +64,7 @@ class MeService : Service() {
         )
         val notification = NotificationCompat.Builder(this, channelId)
             // 他一定要设置一个图标
-            .setSmallIcon(com.google.android.material.R.drawable.ic_clock_black_24dp)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setSubText("正在运行")
             .setContentTitle("诶嘿")
             .setContentText(this.getString(R.string.app_name))
@@ -179,7 +179,7 @@ class MeService : Service() {
     /**
      * 使用灯板展示状态
      */
-    fun ysLedStatus() {
+    fun ysLedStatus(): Boolean {
         if (mBreathLedsManager != null && ysLedThread == null && Build.VERSION.SDK_INT >= 21) {
              ysLedThread = Thread(Runnable {
                 try {
@@ -223,7 +223,9 @@ class MeService : Service() {
                 }
             })
             ysLedThread!!.start()
+            return true
         }
+        return false
     }
 
 
@@ -437,7 +439,7 @@ class MeService : Service() {
     fun keyHandle(keyCode: Int, holdTime: Long): Boolean {
         print2LogView("holdTime $holdTime")
         when (keyCode) {
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
                 print2LogView("媒体按键 播放暂停")
                 if (player != null) {
                     if (!player!!.isPlaying && lastUrl == null && isStop) {
@@ -477,7 +479,7 @@ class MeService : Service() {
                 if (!isStop && player?.isPlaying == true) player!!.pause()
                 return true
             }
-            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+            KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 // 如果没有在播放，触发停止
                 if (player?.isPlaying == true) {
                     print2LogView("媒体按键 下一首")
@@ -490,19 +492,19 @@ class MeService : Service() {
                 }
                 return true
             }
-            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_DPAD_LEFT -> {
                 print2LogView("媒体按键 上一首")
                 if (!isStop &&player?.isPlaying == true) player!!.pause()
                 toGo("prev")
                 return true
             }
-            KeyEvent.KEYCODE_VOLUME_UP -> {
+            KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_DPAD_UP -> {
                 print2LogView("媒体按键 音量加")
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
                 return true
             }
-            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+            KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_DPAD_DOWN -> {
                 print2LogView("媒体按键 音量减")
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
@@ -522,8 +524,13 @@ class MeService : Service() {
                 return true
             }
             KeyEvent.KEYCODE_MENU -> {
-                print2LogView("一说宝宝摸头")
-                ysLedStatus()
+                if (ysLedStatus()) {
+                    print2LogView("菜单 一说宝宝摸头")
+                } else {
+                    print2LogView("菜单 停止")
+                    player?.stop()
+                    toGo("stop")
+                }
                 return true
             }
             KeyEvent.KEYCODE_SOFT_SLEEP -> {
