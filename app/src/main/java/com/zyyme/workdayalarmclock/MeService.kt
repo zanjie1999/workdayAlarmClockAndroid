@@ -53,9 +53,9 @@ class MeService : Service() {
             notificationManager.createNotificationChannel(notificationChannel)
         }
 
-        val mainIntent = Intent(applicationContext, MainActivity::class.java)
-        // 避免重复创建Activity
-//        mainIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val mainIntent: Intent = Intent(applicationContext, ClockActivity::class.java)
+        // 清除任务栈并创建新任务
+        mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
             0,
