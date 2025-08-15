@@ -22,11 +22,15 @@
         android:theme="@style/Theme.WorkdayAlarmClock"
         android:usesCleartextTraffic="true"
         tools:targetApi="m">
+        <activity
+            android:name=".ClockActivity"
+            android:exported="false" />
+
         <service
             android:name=".MeService"
-            android:foregroundServiceType="mediaPlayback"
             android:enabled="true"
-            android:exported="true" />
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback" />
 
         <receiver
             android:name=".StartReceiver"
@@ -39,7 +43,7 @@
                 <action android:name="android.intent.action.MEDIA_MOUNTED" />
                 <action android:name="android.intent.action.MEDIA_UNMOUNTED" />
 
-                <data android:scheme="file"></data>
+                <data android:scheme="file" />
             </intent-filter>
         </receiver>
         <receiver

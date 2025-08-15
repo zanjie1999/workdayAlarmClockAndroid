@@ -83,10 +83,17 @@
 
         <ImageView
             android:id="@+id/iconStop"
-            android:layout_width="wrap_content"
+            android:layout_width="32dp"
             android:layout_height="match_parent"
             android:layout_gravity="end"
-            android:src="@android:drawable/ic_menu_rotate" />
+            android:src="@drawable/icon_stop" />
+
+<!--        <ImageView-->
+<!--            android:id="@+id/iconClock"-->
+<!--            android:layout_width="28dp"-->
+<!--            android:layout_height="match_parent"-->
+<!--            android:layout_gravity="end"-->
+<!--            android:src="@android:drawable/ic_lock_idle_alarm" />-->
 
     </androidx.appcompat.widget.Toolbar>
 </androidx.constraintlayout.widget.ConstraintLayout>

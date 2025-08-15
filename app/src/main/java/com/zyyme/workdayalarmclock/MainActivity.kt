@@ -14,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.Toolbar
 
 
 class MainActivity : AppCompatActivity() {
@@ -134,6 +135,12 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
             onDestroy()
             MeService.me?.stopSelf()
+        }
+        findViewById<Toolbar>(R.id.toolbar).setOnClickListener {
+            val intent: Intent = Intent(this, ClockActivity::class.java)
+            // 清除任务栈并创建新任务
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            startActivity(intent)
         }
 
     }
