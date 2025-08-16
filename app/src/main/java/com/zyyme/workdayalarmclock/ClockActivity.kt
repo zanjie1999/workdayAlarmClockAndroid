@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -16,6 +17,7 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import com.zyyme.workdayalarmclock.MainActivity.Companion.keyDownTime
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -87,6 +89,14 @@ class ClockActivity : AppCompatActivity() {
             } else {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 Toast.makeText(this, "关闭保持亮屏", Toast.LENGTH_SHORT).show()
+            }
+        }
+        findViewById<TextView>(R.id.tv_date).setOnClickListener {
+            // 切换暗色模式
+            if (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            } else {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             }
         }
 
