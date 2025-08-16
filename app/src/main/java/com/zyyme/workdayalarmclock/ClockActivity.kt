@@ -10,6 +10,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.support.v4.media.session.MediaSessionCompat
+import android.util.DisplayMetrics
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -97,6 +99,24 @@ class ClockActivity : AppCompatActivity() {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             } else {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            }
+        }
+
+        // 给Android8以下设备设置字体大小（无法自动缩放）
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            val displayMetrics = DisplayMetrics()
+            windowManager.defaultDisplay.getMetrics(displayMetrics)
+            val height =  displayMetrics.heightPixels / resources.displayMetrics.density
+            val width = displayMetrics.widthPixels / resources.displayMetrics.density
+            Log.d("ClockActivity", "height: $height width: $width density: ${resources.displayMetrics.density}")
+            if (height > width) {
+                if (resources.displayMetrics.density < 161) {
+                    findViewById<TextView>(R.id.tv_time).textSize = width * 0.2f
+                } else {
+                    findViewById<TextView>(R.id.tv_time).textSize = width * 0.26f
+                }
+            } else {
+                findViewById<TextView>(R.id.tv_time).textSize = height * 0.3f
             }
         }
 

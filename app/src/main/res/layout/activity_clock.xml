@@ -71,7 +71,7 @@
             android:text="2月30日 周⑨"
             android:textSize="25sp"
             android:autoSizeTextType="uniform"
-            android:autoSizeMaxTextSize="150sp"
+            android:autoSizeMaxTextSize="50sp"
             android:includeFontPadding="false"
             android:textAlignment="center"
             android:clickable="true"
