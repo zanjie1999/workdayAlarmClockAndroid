@@ -127,16 +127,16 @@ class ClockActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
-        when (keyEvent?.action) {
-            KeyEvent.ACTION_DOWN -> {
-                keyDownTime = System.currentTimeMillis()
-            }
-            KeyEvent.ACTION_UP -> {
-                if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
-                    return true
-                }
-            }
-        }
+//        when (keyEvent?.action) {
+//            KeyEvent.ACTION_DOWN -> {
+//                keyDownTime = System.currentTimeMillis()
+//            }
+//            KeyEvent.ACTION_UP -> {
+//                if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
+//                    return true
+//                }
+//            }
+//        }
         return super.dispatchKeyEvent(keyEvent)
     }
 

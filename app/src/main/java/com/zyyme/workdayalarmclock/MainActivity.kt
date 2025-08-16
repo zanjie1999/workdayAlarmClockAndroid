@@ -156,10 +156,37 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
         when (keyEvent?.action) {
             KeyEvent.ACTION_DOWN -> {
-                keyDownTime = System.currentTimeMillis()
+                // 每增加一个按键 就要维护一次这个
+                if (keyEvent.keyCode in setOf(
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                        KeyEvent.KEYCODE_MEDIA_PLAY,
+                        KeyEvent.KEYCODE_MEDIA_PAUSE,
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                        KeyEvent.KEYCODE_MEDIA_NEXT,
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_DPAD_RIGHT,
+                        KeyEvent.KEYCODE_DPAD_LEFT,
+                        KeyEvent.KEYCODE_DPAD_UP,
+                        KeyEvent.KEYCODE_DPAD_DOWN,
+                        KeyEvent.KEYCODE_MEDIA_STOP,
+                        KeyEvent.KEYCODE_FOCUS,
+                        KeyEvent.KEYCODE_MENU,
+                        KeyEvent.KEYCODE_SOFT_SLEEP,
+                        2147483647,
+                        2147483646,
+                    )) {
+                    keyDownTime = System.currentTimeMillis()
+                    return true
+                }
             }
             KeyEvent.ACTION_UP -> {
-                if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
+                if (keyEvent.keyCode == KeyEvent.KEYCODE_CALL) {
+                    // 拨号键退出
+                    Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
+                    onDestroy()
+                    MeService.Companion.me?.stopSelf()
+                    return true
+                }else if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
                     return true
                 }
             }
