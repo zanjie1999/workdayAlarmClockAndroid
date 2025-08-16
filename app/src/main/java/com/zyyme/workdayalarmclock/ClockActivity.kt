@@ -113,7 +113,7 @@ class ClockActivity : AppCompatActivity() {
                 if (resources.displayMetrics.density < 161) {
                     findViewById<TextView>(R.id.tv_time).textSize = width * 0.2f
                 } else {
-                    findViewById<TextView>(R.id.tv_time).textSize = width * 0.26f
+                    findViewById<TextView>(R.id.tv_time).textSize = width * 0.25f
                 }
             } else {
                 findViewById<TextView>(R.id.tv_time).textSize = height * 0.3f
