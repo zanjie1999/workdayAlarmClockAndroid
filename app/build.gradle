@@ -11,15 +11,16 @@ android {
         applicationId "com.zyyme.workdayalarmclock"
         minSdk 16
         targetSdk 32
-        versionCode 34
-        versionName "15.0"
+        versionCode 35
+        versionName "15.1"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }

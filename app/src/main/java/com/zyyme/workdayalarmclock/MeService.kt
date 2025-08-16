@@ -379,7 +379,7 @@ class MeService : Service() {
             try {
                 // 输入start可以启动 exit可以退出
                 val command = "alias exit='echo EXIT'\n" +
-                        "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
+                        "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
                         "start"
                 shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)
@@ -498,13 +498,14 @@ class MeService : Service() {
                 toGo("prev")
                 return true
             }
-            KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_DPAD_UP -> {
+            // 好像系统都会强制响应音量键 那这就用int最大值来代替这个位置
+            2147483647, KeyEvent.KEYCODE_DPAD_UP -> {
                 print2LogView("媒体按键 音量加")
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
                 return true
             }
-            KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_DPAD_DOWN -> {
+            2147483646, KeyEvent.KEYCODE_DPAD_DOWN -> {
                 print2LogView("媒体按键 音量减")
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);

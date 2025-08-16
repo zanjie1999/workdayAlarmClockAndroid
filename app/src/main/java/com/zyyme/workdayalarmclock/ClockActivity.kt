@@ -10,17 +10,16 @@ import android.os.Handler
 import android.os.Looper
 import android.support.v4.media.session.MediaSessionCompat
 import android.view.KeyEvent
+import android.view.View
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import com.zyyme.workdayalarmclock.MainActivity.Companion.keyDownTime
 import java.text.SimpleDateFormat
 import java.util.Date
+
 
 class ClockActivity : AppCompatActivity() {
 
@@ -35,15 +34,19 @@ class ClockActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 去除状态栏
-        window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        setContentView(R.layout.activity_clock)
-//        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-//            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-//            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-//            insets
-//        }
 
+        // 去除状态栏
+        val decorView = getWindow().getDecorView()
+        decorView.setSystemUiVisibility(
+            (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION // 隐藏导航栏的关键标志
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN)
+        )
+
+        setContentView(R.layout.activity_clock)
         mediaButtonReceiverInit()
 
         // 按钮控制
@@ -71,10 +74,10 @@ class ClockActivity : AppCompatActivity() {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
         }
         findViewById<Button>(R.id.btn_volm).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_VOLUME_DOWN, 0)
+            MeService.me?.keyHandle(2147483646, 0)
         }
         findViewById<Button>(R.id.btn_volp).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_VOLUME_UP, 0)
+            MeService.me?.keyHandle(2147483647, 0)
         }
         findViewById<TextView>(R.id.tv_time).setOnClickListener {
             isKeepScreenOn = !isKeepScreenOn
