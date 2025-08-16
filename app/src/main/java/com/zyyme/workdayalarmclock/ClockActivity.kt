@@ -17,10 +17,8 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import com.zyyme.workdayalarmclock.MainActivity.Companion.keyDownTime
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -35,6 +33,12 @@ class ClockActivity : AppCompatActivity() {
     var sdfHmsmde = SimpleDateFormat("h:mm:ss.M月d日 E")
 
     var isKeepScreenOn = false
+    
+    var showMsgFlag = false
+    fun showMsg(msg: String) {
+        showMsgFlag = true
+        findViewById<TextView>(R.id.tv_date).text = msg
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,30 +71,38 @@ class ClockActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btn_prev).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
+            showMsg("上一首")
         }
         findViewById<Button>(R.id.btn_play).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
+            showMsg("播放暂停")
         }
         findViewById<Button>(R.id.btn_next).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
+            showMsg("下一首")
         }
         findViewById<Button>(R.id.btn_stop).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
+            showMsg("停止")
         }
         findViewById<Button>(R.id.btn_volm).setOnClickListener {
             MeService.me?.keyHandle(2147483646, 0)
+            showMsg("音量减")
         }
         findViewById<Button>(R.id.btn_volp).setOnClickListener {
             MeService.me?.keyHandle(2147483647, 0)
+            showMsg("音量加")
         }
         findViewById<TextView>(R.id.tv_time).setOnClickListener {
             isKeepScreenOn = !isKeepScreenOn
             if (isKeepScreenOn) {
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                Toast.makeText(this, "保持亮屏打开", Toast.LENGTH_SHORT).show()
+//                Toast.makeText(this, "保持亮屏打开", Toast.LENGTH_SHORT).show()
+                showMsg("保持亮屏 打开")
             } else {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                Toast.makeText(this, "关闭保持亮屏", Toast.LENGTH_SHORT).show()
+//                Toast.makeText(this, "关闭保持亮屏", Toast.LENGTH_SHORT).show()
+                showMsg("关闭 保持亮屏")
             }
         }
         findViewById<TextView>(R.id.tv_date).setOnClickListener {
@@ -126,7 +138,16 @@ class ClockActivity : AppCompatActivity() {
             override fun run() {
                 val hmsmde = sdfHmsmde.format(Date()).split(".")
                 findViewById<TextView>(R.id.tv_time).text = hmsmde[0]
-                findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
+                if (showMsgFlag) {
+                    showMsgFlag = false
+                } else {
+                    val millis = MeService.me?.player?.currentPosition;
+                    if (millis != null) {
+                        findViewById<TextView>(R.id.tv_date).text = hmsmde[1] + " >" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
+                    } else {
+                        findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
+                    }
+                }
 
                 timeHandler.postDelayed(this, 1000)
             }
@@ -142,7 +163,7 @@ class ClockActivity : AppCompatActivity() {
             timeHandler.removeCallbacks(runnable!!)
         }
 //        stopService(Intent(this, MeService::class.java))
-        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+//        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
         super.onDestroy()
     }
 

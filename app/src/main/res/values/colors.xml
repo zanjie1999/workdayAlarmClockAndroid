@@ -8,5 +8,5 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="colorPrimary">#429BDF</color>
-    <color name="clockBtnColor">#7C7C7C</color>
+    <color name="clockBtnColor">#808080</color>
 </resources>
