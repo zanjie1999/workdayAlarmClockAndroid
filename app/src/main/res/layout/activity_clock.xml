@@ -53,7 +53,7 @@
             android:layout_height="0dp"
             android:layout_weight="4"
             android:gravity="center"
-            android:text="咩咩咩"
+            android:text="12:13:14"
             android:textSize="70sp"
             android:autoSizeTextType="uniform"
             android:autoSizeMaxTextSize="150sp"

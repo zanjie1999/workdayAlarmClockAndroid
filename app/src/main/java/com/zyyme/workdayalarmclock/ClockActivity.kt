@@ -122,13 +122,17 @@ class ClockActivity : AppCompatActivity() {
             val width = displayMetrics.widthPixels / resources.displayMetrics.density
             Log.d("ClockActivity", "height: $height width: $width density: ${resources.displayMetrics.density}")
             if (height > width) {
-                if (resources.displayMetrics.density < 161) {
+                if (resources.displayMetrics.density < 1) {
                     findViewById<TextView>(R.id.tv_time).textSize = width * 0.2f
                 } else {
                     findViewById<TextView>(R.id.tv_time).textSize = width * 0.25f
                 }
             } else {
-                findViewById<TextView>(R.id.tv_time).textSize = height * 0.3f
+                if (resources.displayMetrics.density < 1) {
+                    findViewById<TextView>(R.id.tv_time).textSize = height * 0.25f
+                } else {
+                    findViewById<TextView>(R.id.tv_time).textSize = height * 0.3f
+                }
             }
         }
 
@@ -143,7 +147,7 @@ class ClockActivity : AppCompatActivity() {
                 } else {
                     val millis = MeService.me?.player?.currentPosition;
                     if (millis != null) {
-                        findViewById<TextView>(R.id.tv_date).text = hmsmde[1] + " >" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
+                        findViewById<TextView>(R.id.tv_date).text = hmsmde[1] + " ▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
                     } else {
                         findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
                     }
