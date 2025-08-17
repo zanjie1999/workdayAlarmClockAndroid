@@ -156,7 +156,7 @@ class ClockActivity : AppCompatActivity() {
                 timeHandler.postDelayed(this, 1000)
             }
         }
-        timeHandler.postDelayed(runnable as Runnable, 1000)
+        timeHandler.postDelayed(runnable as Runnable, System.currentTimeMillis() % 1000)
 
     }
 
