@@ -152,11 +152,14 @@ class ClockActivity : AppCompatActivity() {
                         findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
                     }
                 }
-
-                timeHandler.postDelayed(this, 1000)
+                if ((System.currentTimeMillis() / 1000) % 10 == 0L) {
+                    timeHandler.postDelayed(this, 1000 - System.currentTimeMillis() % 1000)
+                } else {
+                    timeHandler.postDelayed(this, 1000)
+                }
             }
         }
-        timeHandler.postDelayed(runnable as Runnable, System.currentTimeMillis() % 1000)
+        timeHandler.postDelayed(runnable as Runnable, 1000 - System.currentTimeMillis() % 1000)
 
     }
 
