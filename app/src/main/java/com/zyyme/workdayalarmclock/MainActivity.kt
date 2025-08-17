@@ -15,6 +15,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import kotlin.system.exitProcess
 
 
 class MainActivity : AppCompatActivity() {
@@ -135,6 +136,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
             onDestroy()
             MeService.me?.stopSelf()
+            exitProcess(0)
         }
         findViewById<Toolbar>(R.id.toolbar).setOnClickListener {
             val intent: Intent = Intent(this, ClockActivity::class.java)
@@ -185,8 +187,8 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
                     onDestroy()
                     MeService.Companion.me?.stopSelf()
-                    return true
-                }else if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
+                    exitProcess(0)
+                } else if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
                     return true
                 }
             }

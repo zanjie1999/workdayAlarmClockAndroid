@@ -380,7 +380,7 @@ class MeService : Service() {
             try {
                 // 输入start可以启动 exit可以退出
                 val command = "alias exit='echo EXIT'\n" +
-                        "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a;" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
+                        "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
                         "start"
                 shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)
@@ -547,7 +547,7 @@ class MeService : Service() {
                         } else if (holdTime > 500) {
                             player?.stop()
                             toGo("stop")
-                        } else if (player!!.isPlaying == true) {
+                        } else if (player!!.isPlaying) {
                             player!!.pause()
                         } else {
                             player!!.start()
