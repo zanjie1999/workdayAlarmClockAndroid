@@ -318,6 +318,7 @@ class MeService : Service() {
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
             ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
             print2LogView("播放 " + url)
+            loadProgress = -1
             val isPlayLastUrl = lastUrl == url
             lastUrl = url
             if (player == null) {
@@ -349,7 +350,7 @@ class MeService : Service() {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
                 }
-                if (loadProgress >= 10 && !mediaPlayer.isPlaying) {
+                if ((loadProgress == -1 || loadProgress >= 10) && !mediaPlayer.isPlaying) {
                     mediaPlayer.start()
                     ysSetLedsValue(MeYsLed.EMPTY)
                 }
@@ -357,7 +358,7 @@ class MeService : Service() {
             player!!.setOnBufferingUpdateListener(MediaPlayer.OnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
                 if (i != 100) {
-                    if (i != loadProgress) {
+                    if (i > loadProgress) {
                         loadProgress = i
                         print2LogView("加载音频 $i%")
                     }
