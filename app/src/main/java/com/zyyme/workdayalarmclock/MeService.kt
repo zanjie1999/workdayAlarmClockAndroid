@@ -33,6 +33,7 @@ class MeService : Service() {
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
     var shellProcess: Process? = null
+    var loadProgress: Int = 0
 
     override fun onBind(intent: Intent): IBinder {
         me = this
@@ -348,17 +349,19 @@ class MeService : Service() {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
                 }
-                mediaPlayer.start()
-                ysSetLedsValue(MeYsLed.EMPTY)
+                if (loadProgress >= 10 && !mediaPlayer.isPlaying) {
+                    mediaPlayer.start()
+                    ysSetLedsValue(MeYsLed.EMPTY)
+                }
             })
             player!!.setOnBufferingUpdateListener(MediaPlayer.OnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
                 if (i != 100) {
-                    if (i != 99) {
-                        // 规避Android停止又播放同一首会一直加载99%的bug
+                    if (i != loadProgress) {
+                        loadProgress = i
                         print2LogView("加载音频 $i%")
                     }
-                    if (i > 10 && !mediaPlayer.isPlaying) {
+                    if (i >= 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
                         mediaPlayer.start()
                         ysSetLedsValue(MeYsLed.EMPTY)
