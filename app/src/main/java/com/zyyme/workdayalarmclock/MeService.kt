@@ -350,7 +350,11 @@ class MeService : Service() {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
                 }
-                if ((loadProgress == -1 || loadProgress >= 10) && !mediaPlayer.isPlaying) {
+                if (!mediaPlayer.isPlaying) {
+                    if (loadProgress < 10) {
+                        // 直接等2秒吧，Android经常乱上报加载进度
+                        Thread.sleep(2000)
+                    }
                     mediaPlayer.start()
                     ysSetLedsValue(MeYsLed.EMPTY)
                 }
