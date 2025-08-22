@@ -2,6 +2,7 @@ package com.zyyme.workdayalarmclock
 
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioManager
@@ -16,6 +17,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -111,6 +113,33 @@ class ClockActivity : AppCompatActivity() {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             } else {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            }
+        }
+        findViewById<Button>(R.id.btn_minsize).setOnClickListener {
+            findViewById<LinearLayout>(R.id.btm_layout1).visibility = View.GONE
+            findViewById<LinearLayout>(R.id.btm_layout2).visibility = View.GONE
+            findViewById<LinearLayout>(R.id.btm_layout3).visibility = View.GONE
+            findViewById<LinearLayout>(R.id.btm_layout4).visibility = View.GONE
+
+            val displayMetrics = DisplayMetrics()
+            windowManager.defaultDisplay.getMetrics(displayMetrics)
+            findViewById<TextView>(R.id.tv_time).layoutParams.height = (displayMetrics.heightPixels * 0.8).toInt()
+            findViewById<TextView>(R.id.tv_date).layoutParams.height = (displayMetrics.heightPixels * 0.2).toInt()
+        }
+        var screenReverseFlag = false
+        findViewById<Button>(R.id.btn_rotation).setOnClickListener {
+            requestedOrientation = if (resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT && !screenReverseFlag) {
+                screenReverseFlag = true
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+            } else if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && !screenReverseFlag) {
+                screenReverseFlag = true
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+            } else if (resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT && screenReverseFlag) {
+                // 重载会自动 screenReverseFlag = false
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                // 重载会自动 screenReverseFlag = false
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
 
