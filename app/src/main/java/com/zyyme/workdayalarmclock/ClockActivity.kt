@@ -125,6 +125,11 @@ class ClockActivity : AppCompatActivity() {
             windowManager.defaultDisplay.getMetrics(displayMetrics)
             findViewById<TextView>(R.id.tv_time).layoutParams.height = (displayMetrics.heightPixels * 0.8).toInt()
             findViewById<TextView>(R.id.tv_date).layoutParams.height = (displayMetrics.heightPixels * 0.2).toInt()
+
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                findViewById<TextView>(R.id.tv_time).textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.25f
+            }
+            sdfHmsmde = SimpleDateFormat("h:mm ss.M月d日 E")
         }
         var screenReverseFlag = false
         findViewById<Button>(R.id.btn_rotation).setOnClickListener {
