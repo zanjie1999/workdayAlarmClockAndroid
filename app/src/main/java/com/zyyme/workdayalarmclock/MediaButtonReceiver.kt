@@ -26,10 +26,29 @@ class MediaButtonReceiver : BroadcastReceiver() {
                     }
                     KeyEvent.ACTION_UP -> {
                         MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - MainActivity.keyDownTime)
-                        Log.d("MediaButtonReceiver", "mbrHandler: $MainActivity.mbrHandler code: $keyEvent.keyCode")
+                        Log.d("logView MediaButton", "mbrHandler: $MainActivity.mbrHandler code: $keyEvent.keyCode")
                     }
                 }
 
+            }
+            MeService.ACTION_PLAY -> {
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
+                Log.d("logView MediaButton", "ACTION_PLAY")
+            }
+            MeService.ACTION_NEXT -> {
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
+                Log.d("logView MediaButton", "ACTION_NEXT")
+            }
+            MeService.ACTION_PREVIOUS -> {
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
+                Log.d("logView MediaButton", "ACTION_PREVIOUS")
+            }
+            MeService.ACTION_STOP -> {
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
+                Log.d("logView MediaButton", "ACTION_STOP")
+            }
+            else -> {
+                Log.d("logView MediaButton", "未知action $action")
             }
         }
 

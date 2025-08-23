@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        mediaButtonReceiverInit()
+//        mediaButtonReceiverInit()
 
         // toolbar的控制按钮
         findViewById<ImageView>(R.id.iconPrev).setOnClickListener {
@@ -149,7 +149,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         print2LogView("即将退出...")
-        mediaButtonReceiverDestroy()
+//        mediaButtonReceiverDestroy()
 //        stopService(Intent(this, MeService::class.java))
         Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
         super.onDestroy()
@@ -158,6 +158,7 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
         when (keyEvent?.action) {
             KeyEvent.ACTION_DOWN -> {
+                keyDownTime = System.currentTimeMillis()
                 // 每增加一个按键 就要维护一次这个
                 if (keyEvent.keyCode in setOf(
                         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
@@ -177,7 +178,6 @@ class MainActivity : AppCompatActivity() {
                         2147483647,
                         2147483646,
                     )) {
-                    keyDownTime = System.currentTimeMillis()
                     return true
                 }
             }

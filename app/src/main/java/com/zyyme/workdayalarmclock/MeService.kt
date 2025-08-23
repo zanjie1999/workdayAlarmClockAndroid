@@ -10,9 +10,9 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.view.KeyEvent
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -23,8 +23,14 @@ class MeService : Service() {
     companion object {
 //        var mediaButtonReceiverHandler: Handler? = null
         var me: MeService? = null
+
+        const val ACTION_PLAY = "com.zyyme.workdayalarmclock.ACTION_PLAY"
+        const val ACTION_NEXT = "com.zyyme.workdayalarmclock.ACTION_NEXT"
+        const val ACTION_PREVIOUS = "com.zyyme.workdayalarmclock.ACTION_PREVIOUS"
+        const val ACTION_STOP = "com.zyyme.workdayalarmclock.ACTION_STOP"
     }
 
+    var mediaPlaybackManager: MediaPlaybackManager? = null
     var player : MediaPlayer? = null
     var writer : PrintWriter? = null
     var lastUrl : String? = null
@@ -43,6 +49,9 @@ class MeService : Service() {
     @SuppressLint("WrongConstant")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         me = this
+
+        // 初始化音频服务
+        mediaPlaybackManager = MediaPlaybackManager(this)
 
         // 保活通知 8.0开始channel不是个字符串 不会保持唤醒
         val channelId = "me_bg"
@@ -64,17 +73,57 @@ class MeService : Service() {
             mainIntent,
             PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = NotificationCompat.Builder(this, channelId)
+
+        val notificationBuilder = NotificationCompat.Builder(this, channelId)
             // 他一定要设置一个图标
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setSubText("正在运行")
-            .setContentTitle("诶嘿")
-            .setContentText(this.getString(R.string.app_name))
+            .setContentTitle(this.getString(R.string.app_name))
+            .setContentText("咩咩")
             .setUsesChronometer(true)
             .setContentIntent(pendingIntent)
-            .build()
+
+        if (Build.VERSION.SDK_INT >= 21) {
+            // 媒体控制按钮
+            val sessionToken = mediaPlaybackManager?.getSessionToken()
+            val mediaStyle = androidx.media.app.NotificationCompat.MediaStyle()
+                .setMediaSession(sessionToken)
+
+            notificationBuilder.addAction(
+                NotificationCompat.Action(
+                    R.drawable.icon_stop,
+                    "停止",
+                    createPendingIntentForAction(ACTION_STOP)
+                )
+            )
+            notificationBuilder.addAction(
+                NotificationCompat.Action(
+                    android.R.drawable.ic_media_previous,
+                    "上一首",
+                    createPendingIntentForAction(ACTION_PREVIOUS)
+                )
+            )
+            notificationBuilder.addAction(
+                NotificationCompat.Action(
+                    android.R.drawable.ic_media_play,
+                    "播放",
+                    createPendingIntentForAction(ACTION_PLAY)
+                )
+            )
+            notificationBuilder.addAction(
+                NotificationCompat.Action(
+                    android.R.drawable.ic_media_next,
+                    "下一首",
+                    createPendingIntentForAction(ACTION_NEXT)
+                )
+            )
+            // 设置显示的按钮 缩小的时候
+            mediaStyle.setShowActionsInCompactView(0, 1, 2, 3)
+            notificationBuilder.setStyle(mediaStyle)
+        }
+
         try {
-            startForeground(1, notification)
+            startForeground(1, notificationBuilder.build())
         } catch (e: Exception) {
             print2LogView("切换前台服务失败 $e")
             e.printStackTrace()
@@ -85,13 +134,52 @@ class MeService : Service() {
             return super.onStartCommand(intent, flags, startId)
         }
 
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        // 创建 OnAudioFocusChangeListener
+        val afChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+            when (focusChange) {
+                AudioManager.AUDIOFOCUS_LOSS -> {
+                    // 永久失去焦点，停止播放
+                    print2LogView("AUDIOFOCUS_LOSS, stopping playback.")
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    // 短暂失去焦点，暂停播放
+                    print2LogView("AUDIOFOCUS_LOSS_TRANSIENT, pausing playback.")
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    // 短暂失去焦点，可以降低音量 (如果你的播放器支持)
+                    print2LogView("AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, ducking volume.")
+                    // player?.setVolume(0.3f, 0.3f)
+                }
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    // 重新获得焦点，恢复播放 (如果之前暂停了或降低了音量)
+                    print2LogView("AUDIOFOCUS_GAIN, resuming playback or restoring volume.")
+                    // player?.setVolume(1.0f, 1.0f) // 恢复音量
+                    // 如果之前是因为短暂丢失焦点而暂停，可以考虑恢复播放
+                    // 但要注意不要与用户的明确暂停冲突
+                    // if (wasPausedDueToTransientLoss) {
+                    //    onPlayRequest()
+                    // }
+                }
+            }
+        }
+
+        // 请求音频焦点
+        val result = audioManager.requestAudioFocus(
+            afChangeListener,
+            AudioManager.STREAM_MUSIC, // 要播放的音频流类型
+            AudioManager.AUDIOFOCUS_GAIN // 请求永久焦点 (或 AUDIOFOCUS_GAIN_TRANSIENT 等)
+        )
+//        print2LogView("获取音频焦点 " + (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED))
+
         // 抢夺音频焦点
-        player = MediaPlayer()
-        player!!.setDataSource("http://127.0.0.1:1")
-        player!!.start()
-        player!!.stop()
-        player!!.release()
-        player = null
+//        player = MediaPlayer()
+//        player!!.setDataSource("http://127.0.0.1:1")
+//        player!!.start()
+//        player!!.stop()
+//        player!!.release()
+//        player = null
 
         // 开一个新线程跑shell
         runShell()
@@ -118,6 +206,18 @@ class MeService : Service() {
 //        alarmManager!!.setRepeating(AlarmManager.RTC_WAKEUP, 60000 - System.currentTimeMillis()%60000, 60000, null)
 
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    // 用于为通知操作创建 PendingIntent
+    private fun createPendingIntentForAction(action: String): PendingIntent {
+        val intent = Intent(this, MediaButtonReceiver::class.java).setAction(action)
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        // 发送一个广播，让MediaButtonReceiver接收
+        return PendingIntent.getBroadcast(this, action.hashCode(), intent, flags)
     }
 
     override fun onDestroy() {
@@ -235,7 +335,11 @@ class MeService : Service() {
 
 
     fun print2LogView(s:String) {
-        MainActivity.me?.print2LogView(s)
+        if (MainActivity.me != null) {
+            MainActivity.me?.print2LogView(s)
+        } else {
+            Log.d("logView MeService", s)
+        }
     }
 
     /**
@@ -332,6 +436,8 @@ class MeService : Service() {
                 player!!.reset()
             }
             isStop = false
+            // 给音频服务反馈 正在加载
+            mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 0)
             // 在播放时保持唤醒，暂停和停止时自动销毁
             player!!.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
             player!!.setDataSource(url)
@@ -339,6 +445,7 @@ class MeService : Service() {
                 //播放完成监听
                 isStop = true
                 print2LogView("播放完成")
+                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_STOPPED, 0)
                 if (!MainActivity.startService) {
                     // 无需启服务 放完就退出
                     MainActivity.me?.finish()
@@ -349,6 +456,8 @@ class MeService : Service() {
             player!!.setOnPreparedListener(MediaPlayer.OnPreparedListener { mediaPlayer ->
                 //异步准备监听
                 print2LogView("加载完成 时长" + (mediaPlayer.duration / 1000).toString())
+                // 给音频服务上报总时长
+                mediaPlaybackManager?.updateMediaMetadata(mediaPlayer.duration.toLong(), null,null,null)
                 if (isPlayLastUrl && !mediaPlayer.isPlaying) {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
@@ -359,6 +468,7 @@ class MeService : Service() {
                         Thread.sleep(2000)
                     }
                     mediaPlayer.start()
+                    mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 0)
                     ysSetLedsValue(MeYsLed.EMPTY)
                 }
             })
@@ -372,6 +482,7 @@ class MeService : Service() {
                     if (i >= 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
                         mediaPlayer.start()
+                        mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 0)
                         ysSetLedsValue(MeYsLed.EMPTY)
                     }
                 }

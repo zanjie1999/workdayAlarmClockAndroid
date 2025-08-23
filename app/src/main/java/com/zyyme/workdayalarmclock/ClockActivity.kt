@@ -57,7 +57,7 @@ class ClockActivity : AppCompatActivity() {
         )
 
         setContentView(R.layout.activity_clock)
-        mediaButtonReceiverInit()
+//        mediaButtonReceiverInit()
 
         // 按钮控制
 //        findViewById<Button>(R.id.btn_back).setOnClickListener {
@@ -209,7 +209,7 @@ class ClockActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        mediaButtonReceiverDestroy()
+//        mediaButtonReceiverDestroy()
         // 时间计时器回收
         if (runnable != null) {
             timeHandler.removeCallbacks(runnable!!)
