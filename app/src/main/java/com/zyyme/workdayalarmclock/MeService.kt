@@ -56,7 +56,7 @@ class MeService : Service() {
         // 保活通知 8.0开始channel不是个字符串 不会保持唤醒
         val channelId = "me_bg"
         if (Build.VERSION.SDK_INT >= 26) {
-            val importance = NotificationManager.IMPORTANCE_LOW
+            val importance = NotificationManager.IMPORTANCE_DEFAULT
             val notificationChannel = NotificationChannel(channelId, "保活通知", importance).apply {
                 description = "保活通知"
             }
@@ -91,13 +91,6 @@ class MeService : Service() {
 
             notificationBuilder.addAction(
                 NotificationCompat.Action(
-                    R.drawable.icon_stop,
-                    "停止",
-                    createPendingIntentForAction(ACTION_STOP)
-                )
-            )
-            notificationBuilder.addAction(
-                NotificationCompat.Action(
                     android.R.drawable.ic_media_previous,
                     "上一首",
                     createPendingIntentForAction(ACTION_PREVIOUS)
@@ -115,6 +108,13 @@ class MeService : Service() {
                     android.R.drawable.ic_media_next,
                     "下一首",
                     createPendingIntentForAction(ACTION_NEXT)
+                )
+            )
+            notificationBuilder.addAction(
+                NotificationCompat.Action(
+                    R.drawable.icon_stop,
+                    "停止",
+                    createPendingIntentForAction(ACTION_STOP)
                 )
             )
             // 设置显示的按钮 缩小的时候
