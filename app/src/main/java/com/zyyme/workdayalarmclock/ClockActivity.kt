@@ -123,13 +123,24 @@ class ClockActivity : AppCompatActivity() {
 
             val displayMetrics = DisplayMetrics()
             windowManager.defaultDisplay.getMetrics(displayMetrics)
-            findViewById<TextView>(R.id.tv_time).layoutParams.height = (displayMetrics.heightPixels * 0.8).toInt()
-            findViewById<TextView>(R.id.tv_date).layoutParams.height = (displayMetrics.heightPixels * 0.2).toInt()
+            val tvTime = findViewById<TextView>(R.id.tv_time)
+            val tvDate = findViewById<TextView>(R.id.tv_date)
+            tvTime.layoutParams.height = (displayMetrics.heightPixels * 0.8).toInt()
+            tvDate.layoutParams.height = (displayMetrics.heightPixels * 0.2).toInt()
 
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                findViewById<TextView>(R.id.tv_time).textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.25f
+            Log.d("btn_minsize", "height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
+            if (displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15) {
+                // 竖屏秒换行
+                sdfHmsmde = SimpleDateFormat("h:mm\nss.M月d日 E")
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                    tvTime.textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.25f
+                }
+            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.25f
+                if (tvDate.textSize < displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f) {
+                    tvDate.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f
+                }
             }
-            sdfHmsmde = SimpleDateFormat("h:mm ss.M月d日 E")
         }
         var screenReverseFlag = false
         findViewById<Button>(R.id.btn_rotation).setOnClickListener {
