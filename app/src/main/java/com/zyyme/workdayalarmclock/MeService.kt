@@ -182,7 +182,10 @@ class MeService : Service() {
      * 使用灯板展示状态
      */
     fun ysLedStatus(): Boolean {
-        if (mBreathLedsManager != null && ysLedThread == null && Build.VERSION.SDK_INT >= 21) {
+        if (ysLedThread != null) {
+            return true
+        }
+        if (mBreathLedsManager != null && Build.VERSION.SDK_INT >= 21) {
              ysLedThread = Thread(Runnable {
                 try {
                     val c = Class.forName("android.app.BreathLedsManager")
