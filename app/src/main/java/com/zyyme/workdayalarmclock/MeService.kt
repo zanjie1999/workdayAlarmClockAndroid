@@ -449,9 +449,12 @@ class MeService : Service() {
             if (wakeLock == null && wakeLockPlay == null) {
                 wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
                     newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeServicePlay").apply {
-                        acquire()
+                        acquire(10*60*1000L /*10 minutes*/)
                     }
                 }
+            } else if (wakeLockPlay != null) {
+                // 放新的时候重置一下10分钟 这样暂停了10分钟后就会待机
+                wakeLockPlay!!.acquire(10*60*1000L /*10 minutes*/)
             }
 
             ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
