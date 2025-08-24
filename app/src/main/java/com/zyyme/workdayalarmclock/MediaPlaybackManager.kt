@@ -21,9 +21,11 @@ import android.view.KeyEvent
 class MediaPlaybackManager(
     private val context: Context
 ) {
+
     private var mediaSession: MediaSessionCompat? = null
     private lateinit var playbackStateBuilder: PlaybackStateCompat.Builder
     private var currentMediaSessionActiveState: Boolean = false
+    var lastTitle = ""
 
     companion object {
         const val MEDIA_SESSION_TAG = "WorkdayAlarmClockMediaSession"
@@ -190,6 +192,7 @@ class MediaPlaybackManager(
         }
 
         mediaSession?.setMetadata(metadataBuilder.build())
+        lastTitle = title ?: "工作咩闹钟"
         print2LogView("MediaMetadata updated. Title: $title, Artist: $artist, Duration: $duration")
     }
 

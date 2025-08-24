@@ -28,6 +28,7 @@ class MeService : Service() {
         const val ACTION_NEXT = "com.zyyme.workdayalarmclock.ACTION_NEXT"
         const val ACTION_PREVIOUS = "com.zyyme.workdayalarmclock.ACTION_PREVIOUS"
         const val ACTION_STOP = "com.zyyme.workdayalarmclock.ACTION_STOP"
+        const val NOTIFICATION_ID = 1
     }
 
     var mediaPlaybackManager: MediaPlaybackManager? = null
@@ -38,8 +39,12 @@ class MeService : Service() {
     var isStop = true
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
+    var wakeLockPlay: PowerManager.WakeLock? = null
     var shellProcess: Process? = null
     var loadProgress: Int = 0
+
+    private var notificationBuilder: NotificationCompat.Builder? = null
+    private var notificationManager: NotificationManager? = null
 
     override fun onBind(intent: Intent): IBinder {
         me = this
@@ -55,13 +60,13 @@ class MeService : Service() {
 
         // 保活通知 8.0开始channel不是个字符串 不会保持唤醒
         val channelId = "me_bg"
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             val importance = NotificationManager.IMPORTANCE_DEFAULT
             val notificationChannel = NotificationChannel(channelId, "保活通知", importance).apply {
                 description = "保活通知"
             }
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(notificationChannel)
+            notificationManager?.createNotificationChannel(notificationChannel)
         }
 
         val mainIntent: Intent = Intent(applicationContext, ClockActivity::class.java)
@@ -74,7 +79,7 @@ class MeService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
+        notificationBuilder = NotificationCompat.Builder(this, channelId)
             // 他一定要设置一个图标
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setSubText("正在运行")
@@ -89,28 +94,28 @@ class MeService : Service() {
             val mediaStyle = androidx.media.app.NotificationCompat.MediaStyle()
                 .setMediaSession(sessionToken)
 
-            notificationBuilder.addAction(
+            notificationBuilder?.addAction(
                 NotificationCompat.Action(
                     android.R.drawable.ic_media_previous,
                     "上一首",
                     createPendingIntentForAction(ACTION_PREVIOUS)
                 )
             )
-            notificationBuilder.addAction(
+            notificationBuilder?.addAction(
                 NotificationCompat.Action(
                     android.R.drawable.ic_media_play,
                     "播放",
                     createPendingIntentForAction(ACTION_PLAY)
                 )
             )
-            notificationBuilder.addAction(
+            notificationBuilder?.addAction(
                 NotificationCompat.Action(
                     android.R.drawable.ic_media_next,
                     "下一首",
                     createPendingIntentForAction(ACTION_NEXT)
                 )
             )
-            notificationBuilder.addAction(
+            notificationBuilder?.addAction(
                 NotificationCompat.Action(
                     R.drawable.icon_stop,
                     "停止",
@@ -119,11 +124,11 @@ class MeService : Service() {
             )
             // 设置显示的按钮 缩小的时候
             mediaStyle.setShowActionsInCompactView(0, 1, 2, 3)
-            notificationBuilder.setStyle(mediaStyle)
+            notificationBuilder?.setStyle(mediaStyle)
         }
 
         try {
-            startForeground(1, notificationBuilder.build())
+            startForeground(NOTIFICATION_ID, notificationBuilder?.build())
         } catch (e: Exception) {
             print2LogView("切换前台服务失败 $e")
             e.printStackTrace()
@@ -220,11 +225,19 @@ class MeService : Service() {
         return PendingIntent.getBroadcast(this, action.hashCode(), intent, flags)
     }
 
+    fun updateNotificationTitle(newTitle: String) {
+        if (notificationBuilder != null && notificationManager != null) {
+            notificationBuilder?.setContentTitle(newTitle)
+            notificationManager?.notify(NOTIFICATION_ID, notificationBuilder?.build())
+        }
+    }
+
     override fun onDestroy() {
         shellProcess?.destroy()
         shellThread?.interrupt()
         MainActivity.me?.finish()
         wakeLock?.release()
+        wakeLockPlay?.release()
         stopForeground(true)
         super.onDestroy()
         // 不知道为什么服务进程不退出 给他退出强制回收掉
@@ -356,11 +369,19 @@ class MeService : Service() {
                 val set = (max * per / 100)
                 print2LogView("音量最高" + max + "对应" + per + "%设置为" + set)
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
+            } else if (s.startsWith("ECHO ")) {
+                val msg = s.substring(5)
+                updateNotificationTitle(msg)
+                mediaPlaybackManager?.updateMediaMetadata(65535, msg, null, null)
             } else if (s == "STOP") {
                 print2LogView("停止播放")
                 isStop = true
                 player?.release()
+                wakeLockPlay?.release()
+                wakeLockPlay = null
                 player = null
+                mediaPlaybackManager?.updateMediaMetadata(0, null,null,null)
+                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_STOPPED, 0)
                 ysSetLedsValue(MeYsLed.EMPTY)
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
@@ -423,6 +444,16 @@ class MeService : Service() {
 
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_6)
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
+
+            // 如果没有唤醒锁，在开播时增加唤醒锁
+            if (wakeLock == null && wakeLockPlay == null) {
+                wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
+                    newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeServicePlay").apply {
+                        acquire()
+                    }
+                }
+            }
+
             ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
             print2LogView("播放 " + url)
             loadProgress = -1
@@ -445,7 +476,8 @@ class MeService : Service() {
                 //播放完成监听
                 isStop = true
                 print2LogView("播放完成")
-                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_STOPPED, 0)
+                mediaPlaybackManager?.updateMediaMetadata(1, null,null,null)
+                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 1)
                 if (!MainActivity.startService) {
                     // 无需启服务 放完就退出
                     MainActivity.me?.finish()
@@ -457,7 +489,7 @@ class MeService : Service() {
                 //异步准备监听
                 print2LogView("加载完成 时长" + (mediaPlayer.duration / 1000).toString())
                 // 给音频服务上报总时长
-                mediaPlaybackManager?.updateMediaMetadata(mediaPlayer.duration.toLong(), null,null,null)
+                mediaPlaybackManager?.updateMediaMetadata(mediaPlayer.duration.toLong(), mediaPlaybackManager!!.lastTitle,null,null)
                 if (isPlayLastUrl && !mediaPlayer.isPlaying) {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
@@ -468,7 +500,7 @@ class MeService : Service() {
                         Thread.sleep(2000)
                     }
                     mediaPlayer.start()
-                    mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 0)
+                    mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 1)
                     ysSetLedsValue(MeYsLed.EMPTY)
                 }
             })
@@ -482,7 +514,7 @@ class MeService : Service() {
                     if (i >= 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
                         mediaPlayer.start()
-                        mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 0)
+                        mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 1)
                         ysSetLedsValue(MeYsLed.EMPTY)
                     }
                 }
