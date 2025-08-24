@@ -381,7 +381,7 @@ class MeService : Service() {
                 wakeLockPlay = null
                 player = null
                 mediaPlaybackManager?.updateMediaMetadata(0, null,null,null)
-                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_STOPPED, 0)
+                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 0)
                 ysSetLedsValue(MeYsLed.EMPTY)
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
@@ -480,7 +480,7 @@ class MeService : Service() {
                 isStop = true
                 print2LogView("播放完成")
                 mediaPlaybackManager?.updateMediaMetadata(1, null,null,null)
-                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 1)
+                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 1)
                 if (!MainActivity.startService) {
                     // 无需启服务 放完就退出
                     MainActivity.me?.finish()
