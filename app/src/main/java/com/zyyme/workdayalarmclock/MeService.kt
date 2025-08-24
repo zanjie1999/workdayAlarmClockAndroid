@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
@@ -40,6 +41,7 @@ class MeService : Service() {
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
     var wakeLockPlay: PowerManager.WakeLock? = null
+    var wifiLock: WifiManager.WifiLock? = null
     var shellProcess: Process? = null
     var loadProgress: Int = 0
 
@@ -238,6 +240,7 @@ class MeService : Service() {
         MainActivity.me?.finish()
         wakeLock?.release()
         wakeLockPlay?.release()
+        wifiLock?.release()
         stopForeground(true)
         super.onDestroy()
         // 不知道为什么服务进程不退出 给他退出强制回收掉
@@ -377,8 +380,7 @@ class MeService : Service() {
                 print2LogView("停止播放")
                 isStop = true
                 player?.release()
-                wakeLockPlay?.release()
-                wakeLockPlay = null
+                onPause()
                 player = null
                 mediaPlaybackManager?.updateMediaMetadata(0, null,null,null)
                 mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 0)
@@ -386,10 +388,12 @@ class MeService : Service() {
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
                 player?.pause()
+                onPause()
             } else if (s == "RESUME") {
                 print2LogView("恢复播放")
                 if (!isStop) {
                     player?.start()
+                    onPlay()
                 } else if (lastUrl != null) {
                     playUrl(lastUrl!!)
                 }
@@ -421,6 +425,8 @@ class MeService : Service() {
                         print2LogView("已启用CPU唤醒锁")
                     }
                 }
+                wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "workDayAlarmClock:WifiLock")
+                wifiLock?.acquire()
             } else if (s == "EXIT") {
                 stopSelf()
 //                System.exit(0)
@@ -428,6 +434,41 @@ class MeService : Service() {
                 restartApp()
             } else {
                 print2LogView(s)
+            }
+        }
+    }
+
+    /**
+     * 暂停时调用 锁处理
+     */
+    fun onPause() {
+        Log.d("logView MeService", "onPause")
+        mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PAUSED, 0)
+        if (wakeLockPlay != null) {
+            wakeLockPlay!!.release()
+            wakeLockPlay = null
+            wifiLock?.release()
+            wifiLock = null
+        }
+
+    }
+
+    /**
+     * 播放或恢复播时调用 锁处理
+     */
+    fun onPlay() {
+        Log.d("logView MeService", "onPlay")
+        mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 0)
+        // 如果没有唤醒锁，在开播时增加唤醒锁
+        if (wakeLock == null && wakeLockPlay == null) {
+            wakeLockPlay = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
+                newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeServicePlay").apply {
+                    acquire()
+                }
+            }
+            if (wifiLock == null) {
+                wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "workDayAlarmClock:WifiLock")
+                wifiLock?.acquire()
             }
         }
     }
@@ -445,18 +486,6 @@ class MeService : Service() {
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_6)
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
 
-            // 如果没有唤醒锁，在开播时增加唤醒锁
-            if (wakeLock == null && wakeLockPlay == null) {
-                wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
-                    newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeServicePlay").apply {
-                        acquire(10*60*1000L /*10 minutes*/)
-                    }
-                }
-            } else if (wakeLockPlay != null) {
-                // 放新的时候重置一下10分钟 这样暂停了10分钟后就会待机
-                wakeLockPlay!!.acquire(10*60*1000L /*10 minutes*/)
-            }
-
             ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
             print2LogView("播放 " + url)
             loadProgress = -1
@@ -472,7 +501,7 @@ class MeService : Service() {
             isStop = false
             // 给音频服务反馈 正在加载
             mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 0)
-            // 在播放时保持唤醒，暂停和停止时自动销毁
+            // 在播放时保持唤醒，暂停和停止时自动销毁   但在跳下一首的时候锁不住，所以其实没啥用
             player!!.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
             player!!.setDataSource(url)
             player!!.setOnCompletionListener({mediaPlayer ->
@@ -503,7 +532,7 @@ class MeService : Service() {
                         Thread.sleep(2000)
                     }
                     mediaPlayer.start()
-                    mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 1)
+                    onPlay()
                     ysSetLedsValue(MeYsLed.EMPTY)
                 }
             })
@@ -517,7 +546,7 @@ class MeService : Service() {
                     if (i >= 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
                         mediaPlayer.start()
-                        mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 1)
+                        onPlay()
                         ysSetLedsValue(MeYsLed.EMPTY)
                     }
                 }
@@ -606,8 +635,10 @@ class MeService : Service() {
                     } else if (!isStop) {
                         if (player!!.isPlaying == true) {
                             player!!.pause()
+                            onPause()
                         } else {
                             player!!.start()
+                            onPlay()
                         }
                     } else if (lastUrl != null) {
                         playUrl(lastUrl!!)
@@ -622,7 +653,10 @@ class MeService : Service() {
                         print2LogView("触发上一首")
                         toGo("prev")
                     } else if (!isStop) {
-                        if (player?.isPlaying == false) player!!.start()
+                        if (player?.isPlaying == false) {
+                            player!!.start()
+                            onPlay()
+                        }
                     } else if (lastUrl != null) {
                         playUrl(lastUrl!!)
                     }
@@ -634,7 +668,10 @@ class MeService : Service() {
             }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 print2LogView("媒体按键 暂停")
-                if (!isStop && player?.isPlaying == true) player!!.pause()
+                if (!isStop && player?.isPlaying == true) {
+                    player!!.pause()
+                    onPause()
+                }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -706,8 +743,10 @@ class MeService : Service() {
                             toGo("stop")
                         } else if (player!!.isPlaying) {
                             player!!.pause()
+                            onPause()
                         } else {
                             player!!.start()
+                            onPlay()
                         }
                     }
                 } else {
