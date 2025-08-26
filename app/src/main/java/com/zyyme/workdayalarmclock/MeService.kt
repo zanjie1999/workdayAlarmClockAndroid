@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.wifi.WifiManager
@@ -84,6 +85,7 @@ class MeService : Service() {
         notificationBuilder = NotificationCompat.Builder(this, channelId)
             // 他一定要设置一个图标
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
             .setSubText("正在运行")
             .setContentTitle(this.getString(R.string.app_name))
             .setContentText("咩咩")
