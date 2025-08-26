@@ -487,7 +487,7 @@ class MeService : Service() {
 //            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
 
             ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
-            print2LogView("播放 " + url)
+            print2LogView("play播放 " + url)
             loadProgress = -1
             val isPlayLastUrl = lastUrl == url
             lastUrl = url
@@ -504,11 +504,11 @@ class MeService : Service() {
             // 在播放时保持唤醒，暂停和停止时自动销毁   但在跳下一首的时候锁不住，所以其实没啥用
             player!!.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
             player!!.setDataSource(url)
-            player!!.setOnCompletionListener({mediaPlayer ->
+            player!!.setOnCompletionListener { mediaPlayer ->
                 //播放完成监听
                 isStop = true
-                print2LogView("播放完成")
-                mediaPlaybackManager?.updateMediaMetadata(1, null,null,null)
+                print2LogView("play播放完成")
+                mediaPlaybackManager?.updateMediaMetadata(1, null, null, null)
                 mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 1)
                 if (!MainActivity.startService) {
                     // 无需启服务 放完就退出
@@ -516,10 +516,10 @@ class MeService : Service() {
                 }
                 toGo("next")
                 // 此处等待返回决定是回收还是reset
-            })
-            player!!.setOnPreparedListener(MediaPlayer.OnPreparedListener { mediaPlayer ->
+            }
+            player!!.setOnPreparedListener { mediaPlayer ->
                 //异步准备监听
-                print2LogView("加载完成 时长" + (mediaPlayer.duration / 1000).toString())
+                print2LogView("play音频时长 " + (mediaPlayer.duration / 1000).toString())
                 // 给音频服务上报总时长
                 mediaPlaybackManager?.updateMediaMetadata(mediaPlayer.duration.toLong(), mediaPlaybackManager!!.lastTitle,null,null)
                 if (isPlayLastUrl && !mediaPlayer.isPlaying) {
@@ -535,13 +535,13 @@ class MeService : Service() {
                     onPlay()
                     ysSetLedsValue(MeYsLed.EMPTY)
                 }
-            })
-            player!!.setOnBufferingUpdateListener(MediaPlayer.OnBufferingUpdateListener { mediaPlayer, i ->
+            }
+            player!!.setOnBufferingUpdateListener { mediaPlayer, i ->
                 //文件缓冲监听
                 if (i != 100) {
                     if (i > loadProgress) {
                         loadProgress = i
-                        print2LogView("加载音频 $i%")
+                        print2LogView("play加载音频 $i%")
                     }
                     if (i >= 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
@@ -550,7 +550,34 @@ class MeService : Service() {
                         ysSetLedsValue(MeYsLed.EMPTY)
                     }
                 }
-            })
+            }
+            player!!.setOnInfoListener { mp, what, extra ->
+                print2LogView("play信息: what=$what, extra=$extra")
+                when (what) {
+                    MediaPlayer.MEDIA_INFO_BUFFERING_START -> {
+                        Log.d("play", "play正在缓冲")
+                        true
+                    }
+
+                    MediaPlayer.MEDIA_INFO_BUFFERING_END -> {
+                        Log.d("play", "play缓冲结束")
+                        true
+                    }
+                    else -> false
+                }
+            }
+            player!!.setOnErrorListener { mp, what, extra ->
+                print2LogView("play播放错误: what=$what, extra=$extra")
+                // 解释错误代码
+                when (what) {
+                    MediaPlayer.MEDIA_ERROR_SERVER_DIED -> print2LogView("play错误: 服务器连接断开")
+                    MediaPlayer.MEDIA_ERROR_UNSUPPORTED -> print2LogView("play错误: 不支持的格式")
+                    MediaPlayer.MEDIA_ERROR_TIMED_OUT -> print2LogView("play错误: 操作超时")
+                    else -> print2LogView("play错误: 未知错误 ($what, $extra)")
+                }
+                // false会自动OnCompletionListener
+                false
+            }
             player!!.prepareAsync()
         } catch (e: Exception) {
             e.printStackTrace()

@@ -28,6 +28,18 @@ class MainActivity : AppCompatActivity() {
 
     var mediaSessionCompat: MediaSessionCompat? = null
     var mediaComponentName: ComponentName? = null
+    var isActivityVisible = false
+
+    var logBuilder = StringBuilder()
+
+    override fun onResume() {
+        super.onResume()
+        isActivityVisible = true
+    }
+    override fun onPause() {
+        super.onPause()
+        isActivityVisible = false
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         me = this
@@ -201,11 +213,26 @@ class MainActivity : AppCompatActivity() {
      */
     fun print2LogView(s:String) {
         Log.d("logView", s)
-        runOnUiThread(Runnable {
-            findViewById<TextView>(R.id.logView).append(s + "\n")
-            val scrollView = findViewById<ScrollView>(R.id.scrollView)
-            scrollView.post(Runnable { scrollView.fullScroll(ScrollView.FOCUS_DOWN) })
-        })
+        logBuilder.append(s + "\n")
+        // 检查长度并截断
+        val maxLogLength = 2000
+        if (logBuilder.length > maxLogLength) {
+            // 找到第一个换行符的位置，从那里开始截断
+            val firstNewLine = logBuilder.indexOf("\n", logBuilder.length - maxLogLength)
+            if (firstNewLine != -1) {
+                logBuilder.delete(0, firstNewLine + 1) // +1 是\n
+            } else {
+                // 如果没有找到换行符，直接截断到最大长度
+                logBuilder.delete(0, logBuilder.length - maxLogLength)
+            }
+        }
+        if (isActivityVisible) {
+            runOnUiThread {
+                findViewById<TextView>(R.id.logView).text = logBuilder.toString()
+                val scrollView = findViewById<ScrollView>(R.id.scrollView)
+                scrollView.post(Runnable { scrollView.fullScroll(ScrollView.FOCUS_DOWN) })
+            }
+        }
     }
 
     /**
