@@ -30,6 +30,7 @@ class MeService : Service() {
         const val ACTION_NEXT = "com.zyyme.workdayalarmclock.ACTION_NEXT"
         const val ACTION_PREVIOUS = "com.zyyme.workdayalarmclock.ACTION_PREVIOUS"
         const val ACTION_STOP = "com.zyyme.workdayalarmclock.ACTION_STOP"
+        const val ACTION_WAKE = "com.zyyme.workdayalarmclock.ACTION_WAKE"
         const val NOTIFICATION_ID = 1
     }
 
@@ -48,6 +49,7 @@ class MeService : Service() {
 
     private var notificationBuilder: NotificationCompat.Builder? = null
     private var notificationManager: NotificationManager? = null
+    private var wakePendingIntent: PendingIntent? = null
 
     override fun onBind(intent: Intent): IBinder {
         me = this
@@ -210,11 +212,6 @@ class MeService : Service() {
             e.printStackTrace()
         }
 
-        // 每分钟唤醒一下
-//        alarmManager = applicationContext.getSystemService(ALARM_SERVICE) as AlarmManager
-////        val pendingIntent = PendingIntent.getService(this, 0, intent!!, PendingIntent.FLAG_IMMUTABLE);
-//        alarmManager!!.setRepeating(AlarmManager.RTC_WAKEUP, 60000 - System.currentTimeMillis()%60000, 60000, null)
-
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -245,6 +242,10 @@ class MeService : Service() {
         wakeLockPlay?.release()
         wifiLock?.release()
         stopForeground(true)
+        if (wakePendingIntent != null) {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.cancel(wakePendingIntent)
+        }
         super.onDestroy()
         // 不知道为什么服务进程不退出 给他退出强制回收掉
         System.exit(0)
@@ -428,8 +429,27 @@ class MeService : Service() {
                         print2LogView("已启用CPU唤醒锁")
                     }
                 }
-                wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "workDayAlarmClock:WifiLock")
+                wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL, "workDayAlarmClock:WifiLock")
                 wifiLock?.acquire()
+            } else if (s == "ALARMON") {
+                if (wakePendingIntent == null) {
+                    // 每分钟唤醒一下的闹钟
+                    val alarmManager = applicationContext.getSystemService(ALARM_SERVICE) as AlarmManager
+                    wakePendingIntent = createPendingIntentForAction(ACTION_WAKE)
+                    // 秒对齐 实测对的不是很齐
+                    alarmManager.setRepeating(
+                        AlarmManager.RTC_WAKEUP,
+                        60000 - System.currentTimeMillis() % 60000, 60000,
+                        wakePendingIntent
+                    )
+                    print2LogView("已启用每分钟唤醒")
+                }
+            } else if (s == "ALARMOFF") {
+                if (wakePendingIntent != null) {
+                    val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+                    alarmManager.cancel(wakePendingIntent)
+                    print2LogView("已关闭每分钟唤醒")
+                }
             } else if (s == "EXIT") {
                 stopSelf()
 //                System.exit(0)
@@ -837,8 +857,9 @@ class MeService : Service() {
             pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_ONE_SHOT);
         }
         val manager = getSystemService(ALARM_SERVICE) as AlarmManager
-        manager[AlarmManager.RTC, System.currentTimeMillis() + 1000] = pendingIntent
+        manager[AlarmManager.RTC, System.currentTimeMillis() + 2000] = pendingIntent
 //        System.exit(0)
+        Thread.sleep(1000)
         stopSelf()
     }
 }

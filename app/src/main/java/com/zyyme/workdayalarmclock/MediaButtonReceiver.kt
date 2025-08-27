@@ -47,6 +47,10 @@ class MediaButtonReceiver : BroadcastReceiver() {
                 MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
                 Log.d("logView MediaButton", "ACTION_STOP")
             }
+            MeService.ACTION_WAKE -> {
+                MeService.me?.toGo("wake")
+                Log.d("logView MediaButton", "ACTION_WAKE")
+            }
             else -> {
                 Log.d("logView MediaButton", "未知action $action")
             }

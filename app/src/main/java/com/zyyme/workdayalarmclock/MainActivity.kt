@@ -215,7 +215,7 @@ class MainActivity : AppCompatActivity() {
         Log.d("logView", s)
         logBuilder.append(s + "\n")
         // 检查长度并截断
-        val maxLogLength = 2000
+        val maxLogLength = 10000
         if (logBuilder.length > maxLogLength) {
             // 找到第一个换行符的位置，从那里开始截断
             val firstNewLine = logBuilder.indexOf("\n", logBuilder.length - maxLogLength)
