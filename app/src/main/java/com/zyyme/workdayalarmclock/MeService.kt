@@ -448,6 +448,7 @@ class MeService : Service() {
                 if (wakePendingIntent != null) {
                     val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
                     alarmManager.cancel(wakePendingIntent)
+                    wakePendingIntent = null
                     print2LogView("已关闭每分钟唤醒")
                 }
             } else if (s == "EXIT") {
