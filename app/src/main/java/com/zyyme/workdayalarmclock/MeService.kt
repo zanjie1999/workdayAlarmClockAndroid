@@ -91,6 +91,7 @@ class MeService : Service() {
             .setContentText("咩咩")
             .setUsesChronometer(true)
             .setContentIntent(pendingIntent)
+            .setOnlyAlertOnce(true)
 
         if (Build.VERSION.SDK_INT >= 21) {
             // 媒体控制按钮

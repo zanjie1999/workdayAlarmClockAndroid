@@ -21,6 +21,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -45,16 +48,7 @@ class ClockActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 去除状态栏
-        val decorView = getWindow().getDecorView()
-        decorView.setSystemUiVisibility(
-            (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION // 隐藏导航栏的关键标志
-                    or View.SYSTEM_UI_FLAG_FULLSCREEN)
-        )
+        setFullscreen()
 
         setContentView(R.layout.activity_clock)
 //        mediaButtonReceiverInit()
@@ -206,6 +200,22 @@ class ClockActivity : AppCompatActivity() {
         }
         timeHandler.postDelayed(runnable as Runnable, 1000 - System.currentTimeMillis() % 1000)
 
+    }
+
+    override fun onResume() {
+        super.onResume()
+        setFullscreen()
+    }
+
+    private fun setFullscreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).let { controller ->
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
     }
 
     override fun onDestroy() {
