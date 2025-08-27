@@ -558,12 +558,12 @@ class MeService : Service() {
                 print2LogView("play信息: what=$what, extra=$extra")
                 when (what) {
                     MediaPlayer.MEDIA_INFO_BUFFERING_START -> {
-                        Log.d("play", "play正在缓冲")
+                        print2LogView("play正在缓冲")
                         true
                     }
 
                     MediaPlayer.MEDIA_INFO_BUFFERING_END -> {
-                        Log.d("play", "play缓冲结束")
+                        print2LogView("play缓冲结束")
                         true
                     }
                     else -> false
