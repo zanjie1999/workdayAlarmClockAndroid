@@ -35,6 +35,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         isActivityVisible = true
+        runOnUiThread {
+            findViewById<TextView>(R.id.logView).text = logBuilder.toString()
+            val scrollView = findViewById<ScrollView>(R.id.scrollView)
+            scrollView.post(Runnable { scrollView.fullScroll(ScrollView.FOCUS_DOWN) })
+        }
     }
     override fun onPause() {
         super.onPause()
