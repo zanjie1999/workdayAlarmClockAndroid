@@ -25,6 +25,8 @@ adb install -r .\app\release\app-release.apk ; adb shell am start -n com.zyyme.w
 支持媒体按键，上一首的按钮在不播放时按一下可以播放默认的歌单，再按一下可以切换成随机播放，在播放时可以回到上一首（只有一首的记录）
 在暂停的时候按下一首可以停止（让没有停止按钮的设备可以停止）
 
+更多说明请看 [workdayAlarmClockGo 如何使用](https://github.com/zanjie1999/workdayAlarmClockGo#%E5%A6%82%E4%BD%95%[E4](https://github.com/zanjie1999/workdayAlarmClockGo#%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8)%BD%BF%E7%94%A8)
+
 ## 指令
 ```shell
 # 退出
