@@ -24,7 +24,10 @@ adb install -r .\app\release\app-release.apk ; adb shell am start -n com.zyyme.w
 如果使用别的设备打开，需要将127.0.0.1换成设备的ip地址(可以在刚启动的日志看到或者安卓的wifi设置中看到)  
 另外也可以作为一个终端使用，输入exit可以退出    
 支持媒体按键，上一首的按钮在不播放时按一下可以播放默认的歌单，再按一下可以切换成随机播放，在播放时可以回到上一首（只有一首的记录）  
-在暂停的时候按下一首可以停止（让没有停止按钮的设备可以停止）  
+在暂停的时候按下一首可以停止（让没有停止按钮的设备可以停止）
+
+点击顶栏空白的地方可以进入 [时钟模式](#时钟模式)，  
+点击时间可以切换保持亮屏，点击日期可以切换浅色和深色主题
 
 更多说明请看 [workdayAlarmClockGo 如何使用](https://github.com/zanjie1999/workdayAlarmClockGo#%E5%A6%82%E4%BD%95%[E4](https://github.com/zanjie1999/workdayAlarmClockGo#%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8)%BD%BF%E7%94%A8)
 
@@ -35,7 +38,7 @@ exit
 # 启动
 start
 ```
-更多指令可以看[workdayAlarmClockGo](https://github.com/zanjie1999/workdayAlarmClockGo)
+更多指令可以看[workdayAlarmClockGo 指令]([https://github.com/zanjie1999/workdayAlarmClockGo](https://github.com/zanjie1999/workdayAlarmClockGo#%E6%8C%87%E4%BB%A4))
 
 ## 特殊设备适配
 ### 时钟模式 （智能手表）  
