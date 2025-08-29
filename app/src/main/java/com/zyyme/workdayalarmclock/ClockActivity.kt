@@ -29,6 +29,9 @@ import java.util.Date
 
 
 class ClockActivity : AppCompatActivity() {
+    companion object {
+        var me: ClockActivity? = null
+    }
 
     var mediaSessionCompat: MediaSessionCompat? = null
     var mediaComponentName: ComponentName? = null
@@ -40,12 +43,15 @@ class ClockActivity : AppCompatActivity() {
     var isKeepScreenOn = false
     
     var showMsgFlag = false
+
+    var clockMode = false
     fun showMsg(msg: String) {
         showMsgFlag = true
         findViewById<TextView>(R.id.tv_date).text = msg
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        me = this
         super.onCreate(savedInstanceState)
 
         setFullscreen()
@@ -67,27 +73,21 @@ class ClockActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btn_prev).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
-            showMsg("上一首")
         }
         findViewById<Button>(R.id.btn_play).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
-            showMsg("播放暂停")
         }
         findViewById<Button>(R.id.btn_next).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
-            showMsg("下一首")
         }
         findViewById<Button>(R.id.btn_stop).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
-            showMsg("停止")
         }
         findViewById<Button>(R.id.btn_volm).setOnClickListener {
             MeService.me?.keyHandle(2147483646, 0)
-            showMsg("音量减")
         }
         findViewById<Button>(R.id.btn_volp).setOnClickListener {
             MeService.me?.keyHandle(2147483647, 0)
-            showMsg("音量加")
         }
         findViewById<TextView>(R.id.tv_time).setOnClickListener {
             isKeepScreenOn = !isKeepScreenOn
@@ -110,31 +110,7 @@ class ClockActivity : AppCompatActivity() {
             }
         }
         findViewById<Button>(R.id.btn_minsize).setOnClickListener {
-            findViewById<LinearLayout>(R.id.btm_layout1).visibility = View.GONE
-            findViewById<LinearLayout>(R.id.btm_layout2).visibility = View.GONE
-            findViewById<LinearLayout>(R.id.btm_layout3).visibility = View.GONE
-            findViewById<LinearLayout>(R.id.btm_layout4).visibility = View.GONE
-
-            val displayMetrics = DisplayMetrics()
-            windowManager.defaultDisplay.getMetrics(displayMetrics)
-            val tvTime = findViewById<TextView>(R.id.tv_time)
-            val tvDate = findViewById<TextView>(R.id.tv_date)
-            tvTime.layoutParams.height = (displayMetrics.heightPixels * 0.8).toInt()
-            tvDate.layoutParams.height = (displayMetrics.heightPixels * 0.2).toInt()
-
-            Log.d("btn_minsize", "height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
-            if (displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15) {
-                // 竖屏秒换行
-                sdfHmsmde = SimpleDateFormat("h:mm\nss.M月d日 E")
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                    tvTime.textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.25f
-                }
-            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.25f
-                if (tvDate.textSize < displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f) {
-                    tvDate.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f
-                }
-            }
+            setFullScreenClock()
         }
         var screenReverseFlag = false
         findViewById<Button>(R.id.btn_rotation).setOnClickListener {
@@ -152,28 +128,36 @@ class ClockActivity : AppCompatActivity() {
                 ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
-
-        // 给Android8以下设备设置字体大小（无法自动缩放）
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            val displayMetrics = DisplayMetrics()
-            windowManager.defaultDisplay.getMetrics(displayMetrics)
-            val height =  displayMetrics.heightPixels / resources.displayMetrics.density
-            val width = displayMetrics.widthPixels / resources.displayMetrics.density
-            Log.d("ClockActivity", "height: $height width: $width density: ${resources.displayMetrics.density}")
-            if (height > width) {
-                if (resources.displayMetrics.density < 1) {
-                    findViewById<TextView>(R.id.tv_time).textSize = width * 0.2f
-                } else {
-                    findViewById<TextView>(R.id.tv_time).textSize = width * 0.25f
-                }
+        val rootLaout = findViewById<LinearLayout>(R.id.root_layout)
+        rootLaout.post {
+            // 延迟进行字体大小调整  初始化完后延时执行
+            if (intent.getBooleanExtra("clockMode", false)) {
+                // 直接进入全屏时钟模式
+                setFullScreenClock()
             } else {
-                if (resources.displayMetrics.density < 1) {
-                    findViewById<TextView>(R.id.tv_time).textSize = height * 0.25f
-                } else {
-                    findViewById<TextView>(R.id.tv_time).textSize = height * 0.3f
+                // 给Android8以下设备设置字体大小（无法自动缩放）
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                    val height =  rootLaout.height / resources.displayMetrics.density
+                    val width = rootLaout.width / resources.displayMetrics.density
+                    Log.d("ClockActivity", "height: $height width: $width density: ${resources.displayMetrics.density}")
+                    if (height > width) {
+                        // 竖屏
+                        if (resources.displayMetrics.density < 1) {
+                            findViewById<TextView>(R.id.tv_time).textSize = width * 0.2f
+                        } else {
+                            findViewById<TextView>(R.id.tv_time).textSize = width * 0.25f
+                        }
+                    } else {
+                        if (resources.displayMetrics.density < 1) {
+                            findViewById<TextView>(R.id.tv_time).textSize = height * 0.25f
+                        } else {
+                            findViewById<TextView>(R.id.tv_time).textSize = height * 0.3f
+                        }
+                    }
                 }
             }
         }
+
 
 
         // 时间显示线程 1秒一次
@@ -207,11 +191,43 @@ class ClockActivity : AppCompatActivity() {
         setFullscreen()
     }
 
+    private fun setFullScreenClock() {
+        clockMode = true
+        findViewById<LinearLayout>(R.id.btm_layout1).visibility = View.GONE
+        findViewById<LinearLayout>(R.id.btm_layout2).visibility = View.GONE
+        findViewById<LinearLayout>(R.id.btm_layout3).visibility = View.GONE
+        findViewById<LinearLayout>(R.id.btm_layout4).visibility = View.GONE
+
+        val displayMetrics = DisplayMetrics()
+        windowManager.defaultDisplay.getMetrics(displayMetrics)
+        val tvTime = findViewById<TextView>(R.id.tv_time)
+        val tvDate = findViewById<TextView>(R.id.tv_date)
+        val realHeightPixels = findViewById<LinearLayout>(R.id.root_layout).height
+        Log.d("ClockActivity", "realHeightPixels: $realHeightPixels")
+        tvTime.layoutParams.height = (realHeightPixels * 0.8).toInt()
+        tvDate.layoutParams.height = (realHeightPixels * 0.2).toInt()
+
+        Log.d("btn_minsize", "height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
+        if (displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15) {
+            // 竖屏秒换行
+            sdfHmsmde = SimpleDateFormat("h:mm\nss.M月d日 E")
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                tvTime.textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.25f
+            }
+            tvTime.maxLines = 2
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.25f
+            if (tvDate.textSize < displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f) {
+                tvDate.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f
+            }
+        }
+    }
+
     private fun setFullscreen() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.setDecorFitsSystemWindows(window, true)
         WindowInsetsControllerCompat(window, window.decorView).let { controller ->
             controller.hide(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -230,16 +246,17 @@ class ClockActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
-//        when (keyEvent?.action) {
-//            KeyEvent.ACTION_DOWN -> {
-//                keyDownTime = System.currentTimeMillis()
-//            }
-//            KeyEvent.ACTION_UP -> {
-//                if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
-//                    return true
-//                }
-//            }
-//        }
+        if (clockMode) {
+            when (keyEvent?.action) {
+                KeyEvent.ACTION_DOWN -> {
+                }
+                KeyEvent.ACTION_UP -> {
+                    if (MeService.me?.keyHandle(keyEvent.keyCode, 0) == true) {
+                        return true
+                    }
+                }
+            }
+        }
         return super.dispatchKeyEvent(keyEvent)
     }
 

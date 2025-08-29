@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.time.Clock
 
 
 class MeService : Service() {
@@ -32,6 +33,11 @@ class MeService : Service() {
         const val ACTION_STOP = "com.zyyme.workdayalarmclock.ACTION_STOP"
         const val ACTION_WAKE = "com.zyyme.workdayalarmclock.ACTION_WAKE"
         const val NOTIFICATION_ID = 1
+
+        // 这些设备将默认启用时钟模式
+        // getprop ro.product.model
+        //                                 绿色陪伴音箱，叮咚play
+        val clockModeModel = listOf<String>("HPN_XH", "cht_mrd")
     }
 
     var mediaPlaybackManager: MediaPlaybackManager? = null
@@ -678,6 +684,7 @@ class MeService : Service() {
         print2LogView("holdTime $holdTime")
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
+                ClockActivity.me?.showMsg("播放暂停")
                 print2LogView("媒体按键 播放暂停")
                 if (player != null) {
                     if (!player!!.isPlaying && lastUrl == null && isStop) {
@@ -728,10 +735,12 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 // 如果没有在播放，触发停止
                 if (player?.isPlaying == true) {
+                    ClockActivity.me?.showMsg("下一首")
                     print2LogView("媒体按键 下一首")
                     player?.pause()
                     toGo("next")
                 } else {
+                    ClockActivity.me?.showMsg("触发停止")
                     print2LogView("媒体按键 下一首 触发停止")
                     player?.pause()
                     toGo("stop")
@@ -739,6 +748,7 @@ class MeService : Service() {
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_DPAD_LEFT -> {
+                ClockActivity.me?.showMsg("上一首")
                 print2LogView("媒体按键 上一首")
                 if (!isStop &&player?.isPlaying == true) player!!.pause()
                 toGo("prev")
@@ -746,18 +756,21 @@ class MeService : Service() {
             }
             // 好像系统都会强制响应音量键 那这就用int最大值来代替这个位置
             2147483647, KeyEvent.KEYCODE_DPAD_UP -> {
+                ClockActivity.me?.showMsg("音量加")
                 print2LogView("媒体按键 音量加")
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
                 return true
             }
             2147483646, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                ClockActivity.me?.showMsg("音量减")
                 print2LogView("媒体按键 音量减")
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_STOP -> {
+                ClockActivity.me?.showMsg("停止")
                 print2LogView("媒体按键 停止")
                 player?.stop()
                 toGo("stop")

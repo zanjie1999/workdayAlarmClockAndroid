@@ -14,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
 import kotlin.system.exitProcess
 
@@ -75,7 +76,16 @@ class MainActivity : AppCompatActivity() {
 
         // 启动服务 如果Activity不是重载的话
         if (MeService.me == null) {
+            print2LogView("机型代号：" + Build.MODEL)
             startService(Intent(this, MeService::class.java))
+            if (MeService.clockModeModel.contains(Build.MODEL)) {
+                // 初次启动，切换到时钟模式
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                val intent: Intent = Intent(this, ClockActivity::class.java)
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                intent.putExtra("clockMode", true)
+                startActivity(intent)
+            }
         }
 
         // 存储空间权限 Android11
