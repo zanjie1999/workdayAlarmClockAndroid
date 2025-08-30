@@ -385,6 +385,7 @@ class MeService : Service() {
             } else if (s.startsWith("ECHO ")) {
                 val msg = s.substring(5)
                 updateNotificationTitle(msg)
+                ClockActivity.me?.showMsg(msg)
                 mediaPlaybackManager?.updateMediaMetadata(65535, msg, null, null)
             } else if (s == "STOP") {
                 print2LogView("停止播放")

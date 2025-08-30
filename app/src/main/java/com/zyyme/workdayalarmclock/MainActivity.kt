@@ -178,7 +178,16 @@ class MainActivity : AppCompatActivity() {
         print2LogView("即将退出...")
 //        mediaButtonReceiverDestroy()
 //        stopService(Intent(this, MeService::class.java))
-        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+        // 默认时钟模式的设备 返回退到全屏时钟
+        if (MeService.clockModeModel.contains(Build.MODEL)) {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            val intent: Intent = Intent(this, ClockActivity::class.java)
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            intent.putExtra("clockMode", true)
+            startActivity(intent)
+        } else {
+            Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+        }
         super.onDestroy()
     }
 
