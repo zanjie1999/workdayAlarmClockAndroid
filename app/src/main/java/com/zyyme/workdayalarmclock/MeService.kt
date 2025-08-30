@@ -533,8 +533,12 @@ class MeService : Service() {
             // 给音频服务反馈 正在加载
             mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 0)
             // 在播放时保持唤醒，暂停和停止时自动销毁   但在跳下一首的时候锁不住，所以其实没啥用
-            player!!.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-            player!!.setDataSource(url)
+            player!!.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK);
+            if (url.startsWith("./")) {
+                player!!.setDataSource(filesDir.absolutePath + "/" + url)
+            } else {
+                player!!.setDataSource(url)
+            }
             player!!.setOnCompletionListener { mediaPlayer ->
                 //播放完成监听
                 isStop = true
@@ -624,7 +628,7 @@ class MeService : Service() {
             try {
                 // 输入start可以启动 exit可以退出
                 val command = "alias exit='echo EXIT'\n" +
-                        "alias start='cd " + getFilesDir().getAbsolutePath() + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
+                        "alias start='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
                         "start"
                 shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)

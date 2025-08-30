@@ -1,10 +1,13 @@
 package com.zyyme.workdayalarmclock
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.net.Uri
 import android.os.*
+import android.provider.Settings
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import android.view.KeyEvent
@@ -16,7 +19,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
+import androidx.core.app.ActivityCompat
 import kotlin.system.exitProcess
+import androidx.core.net.toUri
 
 
 class MainActivity : AppCompatActivity() {
@@ -89,13 +94,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 存储空间权限 Android11
-//        if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
-//            Toast.makeText(this,"请允许权限\n用于保存文件", Toast.LENGTH_LONG).show()
-//            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${BuildConfig.APPLICATION_ID}")))
-//        } else if (Build.VERSION.SDK_INT < 30 && ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
-//            Toast.makeText(this,"请允许权限\n用于保存文件", Toast.LENGTH_LONG).show()
-//            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
-//        }
+        if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
+            Toast.makeText(this,"请允许权限\n用于本地音乐播放", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:${BuildConfig.APPLICATION_ID}".toUri()))
+        } else if (Build.VERSION.SDK_INT < 30 && ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this,"请允许权限\n用于本地音乐播放", Toast.LENGTH_LONG).show()
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
+        }
 
         // 检查二进制文件更新  lib不可写入 写入了重启也会恢复 于是没有热更新了
 //        try {
