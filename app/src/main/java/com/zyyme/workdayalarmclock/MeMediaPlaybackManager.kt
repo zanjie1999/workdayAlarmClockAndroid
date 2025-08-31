@@ -17,7 +17,7 @@ import android.view.KeyEvent
  * 响应系统的音乐播放控件
  * 系统会显示在锁屏上
  */
-class MediaPlaybackManager(
+class MeMediaPlaybackManager(
     private val context: Context
 ) {
 
@@ -42,12 +42,12 @@ class MediaPlaybackManager(
     private fun initializeMediaSession() {
         val applicationContext = context.applicationContext
         // 这用的是我自己的MediaButtonReceiver不是Android自带的，响应Android4的锁屏按钮
-        val mediaButtonReceiver = ComponentName(applicationContext, MediaButtonReceiver::class.java)
+        val meMediaButtonReceiver = ComponentName(applicationContext, MeMediaButtonReceiver::class.java)
 
         mediaSession = MediaSessionCompat(
             applicationContext,
             MEDIA_SESSION_TAG,
-            mediaButtonReceiver,
+            meMediaButtonReceiver,
             null
         )
 

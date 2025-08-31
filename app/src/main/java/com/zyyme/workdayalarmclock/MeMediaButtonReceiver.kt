@@ -10,7 +10,7 @@ import android.view.KeyEvent
  * 媒体按键监听器
  * 这传入参数是什么逆天写法
  */
-class MediaButtonReceiver : BroadcastReceiver() {
+class MeMediaButtonReceiver : BroadcastReceiver() {
     companion object {
         var keyDownTime = 0L
     }

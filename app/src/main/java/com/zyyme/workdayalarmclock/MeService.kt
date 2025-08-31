@@ -2,6 +2,8 @@ package com.zyyme.workdayalarmclock
 
 import android.annotation.SuppressLint
 import android.app.*
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -15,11 +17,11 @@ import android.os.PowerManager
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.view.KeyEvent
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
-import java.time.Clock
 
 
 class MeService : Service() {
@@ -40,7 +42,7 @@ class MeService : Service() {
         val clockModeModel = listOf<String>("HPN_XH", "cht_mrd")
     }
 
-    var mediaPlaybackManager: MediaPlaybackManager? = null
+    var meMediaPlaybackManager: MeMediaPlaybackManager? = null
     var player : MediaPlayer? = null
     var writer : PrintWriter? = null
     var lastUrl : String? = null
@@ -67,7 +69,7 @@ class MeService : Service() {
         me = this
 
         // 初始化音频服务
-        mediaPlaybackManager = MediaPlaybackManager(this)
+        meMediaPlaybackManager = MeMediaPlaybackManager(this)
 
         // 保活通知 8.0开始channel不是个字符串 不会保持唤醒
         val channelId = "me_bg"
@@ -82,7 +84,7 @@ class MeService : Service() {
 
         val mainIntent: Intent = Intent(applicationContext, ClockActivity::class.java)
         // 清除任务栈并创建新任务
-        mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        mainIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
             0,
@@ -103,7 +105,7 @@ class MeService : Service() {
 
         if (Build.VERSION.SDK_INT >= 21) {
             // 媒体控制按钮
-            val sessionToken = mediaPlaybackManager?.getSessionToken()
+            val sessionToken = meMediaPlaybackManager?.getSessionToken()
             val mediaStyle = androidx.media.app.NotificationCompat.MediaStyle()
                 .setMediaSession(sessionToken)
 
@@ -223,7 +225,7 @@ class MeService : Service() {
 
     // 用于为通知操作创建 PendingIntent
     private fun createPendingIntentForAction(action: String): PendingIntent {
-        val intent = Intent(this, MediaButtonReceiver::class.java).setAction(action)
+        val intent = Intent(this, MeMediaButtonReceiver::class.java).setAction(action)
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         } else {
@@ -386,15 +388,15 @@ class MeService : Service() {
                 val msg = s.substring(5)
                 updateNotificationTitle(msg)
                 ClockActivity.me?.showMsg(msg)
-                mediaPlaybackManager?.updateMediaMetadata(65535, msg, null, null)
+                meMediaPlaybackManager?.updateMediaMetadata(65535, msg, null, null)
             } else if (s == "STOP") {
                 print2LogView("停止播放")
                 isStop = true
                 player?.release()
                 onPause()
                 player = null
-                mediaPlaybackManager?.updateMediaMetadata(0, null,null,null)
-                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 0)
+                meMediaPlaybackManager?.updateMediaMetadata(0, null,null,null)
+                meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 0)
                 ysSetLedsValue(MeYsLed.EMPTY)
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
@@ -458,6 +460,31 @@ class MeService : Service() {
                     wakePendingIntent = null
                     print2LogView("已关闭每分钟唤醒")
                 }
+            } else if (s == "SCREENON") {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                val intent = Intent(this, ClockActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                intent.putExtra("clockMode", true)
+                startActivity(intent)
+                print2LogView("已亮屏")
+            } else if (s == "SCREENOFF") {
+                val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
+                if (devicePolicyManager.isAdminActive(adminComponentName)) {
+                    try {
+                        devicePolicyManager.lockNow()
+                        print2LogView("已锁屏")
+                    } catch (e: Exception) {
+                        print2LogView("锁屏失败: ${e.message}")
+                    }
+                } else {
+                    print2LogView("设备管理员未激活，无法锁屏")
+                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
+                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "远程锁屏需要这个权限")
+                    }
+                    startActivity(intent)
+                }
             } else if (s == "EXIT") {
                 stopSelf()
 //                System.exit(0)
@@ -474,7 +501,7 @@ class MeService : Service() {
      */
     fun onPause() {
         Log.d("logView MeService", "onPause")
-        mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PAUSED, 0)
+        meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PAUSED, 0)
         if (wakeLockPlay != null) {
             wakeLockPlay!!.release()
             wakeLockPlay = null
@@ -489,7 +516,7 @@ class MeService : Service() {
      */
     fun onPlay() {
         Log.d("logView MeService", "onPlay")
-        mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 0)
+        meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 0)
         // 如果没有唤醒锁，在开播时增加唤醒锁
         if (wakeLock == null && wakeLockPlay == null) {
             wakeLockPlay = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
@@ -531,7 +558,7 @@ class MeService : Service() {
             }
             isStop = false
             // 给音频服务反馈 正在加载
-            mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 0)
+            meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 0)
             // 在播放时保持唤醒，暂停和停止时自动销毁   但在跳下一首的时候锁不住，所以其实没啥用
             player!!.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK);
             if (url.startsWith("./")) {
@@ -543,8 +570,8 @@ class MeService : Service() {
                 //播放完成监听
                 isStop = true
                 print2LogView("play播放完成")
-                mediaPlaybackManager?.updateMediaMetadata(1, null, null, null)
-                mediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 1)
+                meMediaPlaybackManager?.updateMediaMetadata(1, null, null, null)
+                meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 1)
                 if (!MainActivity.startService) {
                     // 无需启服务 放完就退出
                     MainActivity.me?.finish()
@@ -556,7 +583,7 @@ class MeService : Service() {
                 //异步准备监听
                 print2LogView("play音频时长 " + (mediaPlayer.duration / 1000).toString())
                 // 给音频服务上报总时长
-                mediaPlaybackManager?.updateMediaMetadata(mediaPlayer.duration.toLong(), mediaPlaybackManager!!.lastTitle,null,null)
+                meMediaPlaybackManager?.updateMediaMetadata(mediaPlayer.duration.toLong(), meMediaPlaybackManager!!.lastTitle,null,null)
                 if (isPlayLastUrl && !mediaPlayer.isPlaying) {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)

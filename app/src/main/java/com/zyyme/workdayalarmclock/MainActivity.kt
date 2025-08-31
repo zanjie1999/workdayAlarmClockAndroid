@@ -5,7 +5,6 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
-import android.net.Uri
 import android.os.*
 import android.provider.Settings
 import android.support.v4.media.session.MediaSessionCompat
@@ -86,8 +85,8 @@ class MainActivity : AppCompatActivity() {
             if (MeService.clockModeModel.contains(Build.MODEL)) {
                 // 初次启动，切换到时钟模式
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-                val intent: Intent = Intent(this, ClockActivity::class.java)
-                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                val intent = Intent(this, ClockActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 intent.putExtra("clockMode", true)
                 startActivity(intent)
             }
@@ -173,7 +172,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Toolbar>(R.id.toolbar).setOnClickListener {
             val intent: Intent = Intent(this, ClockActivity::class.java)
             // 清除任务栈并创建新任务
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             startActivity(intent)
         }
 
@@ -187,7 +186,7 @@ class MainActivity : AppCompatActivity() {
         if (MeService.clockModeModel.contains(Build.MODEL)) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             val intent: Intent = Intent(this, ClockActivity::class.java)
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             intent.putExtra("clockMode", true)
             startActivity(intent)
         } else {
@@ -270,7 +269,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun mediaButtonReceiverInit() {
         val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
-        mediaComponentName = ComponentName(packageName, MediaButtonReceiver::class.java.name).apply {
+        mediaComponentName = ComponentName(packageName, MeMediaButtonReceiver::class.java.name).apply {
             packageManager.setComponentEnabledSetting(
                 this,
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP
@@ -287,7 +286,7 @@ class MainActivity : AppCompatActivity() {
 
                         setCallback(object : MediaSessionCompat.Callback() {
                             override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
-                                MediaButtonReceiver().onReceive(this@MainActivity, mediaButtonEvent)
+                                MeMediaButtonReceiver().onReceive(this@MainActivity, mediaButtonEvent)
                                 return true
                             }
                         }, Handler(Looper.getMainLooper()))

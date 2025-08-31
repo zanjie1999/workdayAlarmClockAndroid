@@ -54,6 +54,18 @@ class ClockActivity : AppCompatActivity() {
         me = this
         super.onCreate(savedInstanceState)
 
+        // 可以显示在锁屏上
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+
+
         setFullscreen()
 
         setContentView(R.layout.activity_clock)
@@ -68,7 +80,7 @@ class ClockActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_back).setOnClickListener {
             val intent: Intent = Intent(this, MainActivity::class.java)
             // 清除任务栈并创建新任务
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             startActivity(intent)
         }
         findViewById<Button>(R.id.btn_prev).setOnClickListener {
@@ -155,6 +167,10 @@ class ClockActivity : AppCompatActivity() {
                         }
                     }
                 }
+            }
+            // 保持亮屏flag
+            if (intent.getBooleanExtra("keepOn", false)) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
 
@@ -266,7 +282,7 @@ class ClockActivity : AppCompatActivity() {
      */
     private fun mediaButtonReceiverInit() {
         val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
-        mediaComponentName = ComponentName(packageName, MediaButtonReceiver::class.java.name).apply {
+        mediaComponentName = ComponentName(packageName, MeMediaButtonReceiver::class.java.name).apply {
             packageManager.setComponentEnabledSetting(
                 this,
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP
@@ -283,7 +299,7 @@ class ClockActivity : AppCompatActivity() {
 
                         setCallback(object : MediaSessionCompat.Callback() {
                             override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
-                                MediaButtonReceiver().onReceive(this@ClockActivity, mediaButtonEvent)
+                                MeMediaButtonReceiver().onReceive(this@ClockActivity, mediaButtonEvent)
                                 return true
                             }
                         }, Handler(Looper.getMainLooper()))

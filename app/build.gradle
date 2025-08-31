@@ -11,8 +11,8 @@ android {
         applicationId "com.zyyme.workdayalarmclock"
         minSdk 16
         targetSdk 32
-        versionCode 47
-        versionName "17.5"
+        versionCode 48
+        versionName "18.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
