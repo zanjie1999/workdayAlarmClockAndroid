@@ -144,6 +144,7 @@ class ClockActivity : AppCompatActivity() {
         rootLaout.post {
             // 延迟进行字体大小调整  初始化完后延时执行
             if (intent.getBooleanExtra("clockMode", false)) {
+                intent.removeExtra("clockMode")
                 // 直接进入全屏时钟模式
                 setFullScreenClock()
             } else {
@@ -170,6 +171,7 @@ class ClockActivity : AppCompatActivity() {
             }
             // 保持亮屏flag
             if (intent.getBooleanExtra("keepOn", false)) {
+                intent.removeExtra("keepOn")
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
