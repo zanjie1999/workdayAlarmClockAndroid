@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import android.view.KeyEvent
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.ScrollView
@@ -124,15 +125,13 @@ class MainActivity : AppCompatActivity() {
 //        }
 
         // Shell输入框
-        findViewById<EditText>(R.id.shellInput).setOnEditorActionListener { _, actionId, ketEvent ->
-            if (ketEvent != null && (ketEvent.keyCode == KeyEvent.KEYCODE_ENTER || ketEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER)){
-                val shellInput = findViewById<EditText>(R.id.shellInput)
-                val cmd = shellInput.text.toString()
-                shellInput.setText("")
-                print2LogView("> $cmd")
-                MeService.me?.send2Shell(cmd)
-                shellInput.requestFocus()
+        findViewById<EditText>(R.id.shellInput).setOnEditorActionListener { _, actionId, keyEvent ->
+            if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEND || actionId == EditorInfo.IME_NULL ||
+                (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN && (keyEvent.keyCode == KeyEvent.KEYCODE_ENTER || keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER))) {
+                shellOnEnter()
                 true
+            } else {
+                Log.d("shellInputEditText", "actionId: $actionId keyEvent: $keyEvent")
             }
             false
         }
@@ -170,6 +169,15 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
+    }
+
+    fun shellOnEnter() {
+        val shellInput = findViewById<EditText>(R.id.shellInput)
+        val cmd = shellInput.text.toString()
+        shellInput.setText("")
+        print2LogView("> $cmd")
+        MeService.me?.send2Shell(cmd)
+        shellInput.requestFocus()
     }
 
     override fun onDestroy() {
@@ -229,6 +237,9 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+        } else if (keyEvent?.action == KeyEvent.ACTION_UP && keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+            // 多亲这个系统不知道怎么回事不会调用setOnEditorActionListener
+            shellOnEnter()
         }
         return super.dispatchKeyEvent(keyEvent)
     }
