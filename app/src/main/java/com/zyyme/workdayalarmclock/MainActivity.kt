@@ -35,16 +35,10 @@ class MainActivity : AppCompatActivity() {
     var mediaComponentName: ComponentName? = null
     var isActivityVisible = false
 
-    var logBuilder = StringBuilder()
-
     override fun onResume() {
         super.onResume()
         isActivityVisible = true
-        runOnUiThread {
-            findViewById<TextView>(R.id.logView).text = logBuilder.toString()
-            val scrollView = findViewById<ScrollView>(R.id.scrollView)
-            scrollView.post(Runnable { scrollView.fullScroll(ScrollView.FOCUS_DOWN) })
-        }
+        show2LogView()
     }
     override fun onPause() {
         super.onPause()
@@ -131,7 +125,7 @@ class MainActivity : AppCompatActivity() {
 
         // Shell输入框
         findViewById<EditText>(R.id.shellInput).setOnEditorActionListener { _, actionId, ketEvent ->
-            if (ketEvent != null && ketEvent.keyCode == KeyEvent.KEYCODE_ENTER){
+            if (ketEvent != null && (ketEvent.keyCode == KeyEvent.KEYCODE_ENTER || ketEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER)){
                 val shellInput = findViewById<EditText>(R.id.shellInput)
                 val cmd = shellInput.text.toString()
                 shellInput.setText("")
@@ -196,40 +190,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
-        when (keyEvent?.action) {
-            KeyEvent.ACTION_DOWN -> {
-                keyDownTime = System.currentTimeMillis()
-                // 每增加一个按键 就要维护一次这个
-                if (keyEvent.keyCode in setOf(
-                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                        KeyEvent.KEYCODE_MEDIA_PLAY,
-                        KeyEvent.KEYCODE_MEDIA_PAUSE,
-                        KeyEvent.KEYCODE_MEDIA_PREVIOUS,
-                        KeyEvent.KEYCODE_MEDIA_NEXT,
-                        KeyEvent.KEYCODE_DPAD_CENTER,
-                        KeyEvent.KEYCODE_DPAD_RIGHT,
-                        KeyEvent.KEYCODE_DPAD_LEFT,
-                        KeyEvent.KEYCODE_DPAD_UP,
-                        KeyEvent.KEYCODE_DPAD_DOWN,
-                        KeyEvent.KEYCODE_MEDIA_STOP,
-                        KeyEvent.KEYCODE_FOCUS,
-                        KeyEvent.KEYCODE_MENU,
-                        KeyEvent.KEYCODE_SOFT_SLEEP,
-                        2147483647,
-                        2147483646,
-                    )) {
-                    return true
+        // 方便按键机操作
+        if (findViewById<EditText>(R.id.shellInput).text.toString() == "") {
+            when (keyEvent?.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    keyDownTime = System.currentTimeMillis()
+                    // 每增加一个按键 就要维护一次这个
+                    if (keyEvent.keyCode in setOf(
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            KeyEvent.KEYCODE_MEDIA_PLAY,
+                            KeyEvent.KEYCODE_MEDIA_PAUSE,
+                            KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                            KeyEvent.KEYCODE_MEDIA_NEXT,
+                            KeyEvent.KEYCODE_DPAD_CENTER,
+                            KeyEvent.KEYCODE_DPAD_RIGHT,
+                            KeyEvent.KEYCODE_DPAD_LEFT,
+                            KeyEvent.KEYCODE_DPAD_UP,
+                            KeyEvent.KEYCODE_DPAD_DOWN,
+                            KeyEvent.KEYCODE_MEDIA_STOP,
+                            KeyEvent.KEYCODE_FOCUS,
+                            KeyEvent.KEYCODE_MENU,
+                            KeyEvent.KEYCODE_SOFT_SLEEP,
+                            2147483647,
+                            2147483646,
+                        )) {
+                        return true
+                    }
                 }
-            }
-            KeyEvent.ACTION_UP -> {
-                if (keyEvent.keyCode == KeyEvent.KEYCODE_CALL) {
-                    // 拨号键退出
-                    Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
-                    onDestroy()
-                    MeService.Companion.me?.stopSelf()
-                    exitProcess(0)
-                } else if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
-                    return true
+                KeyEvent.ACTION_UP -> {
+                    if (keyEvent.keyCode == KeyEvent.KEYCODE_CALL) {
+                        // 拨号键退出
+                        Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
+                        onDestroy()
+                        MeService.Companion.me?.stopSelf()
+                        exitProcess(0)
+                    } else if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
+                        return true
+                    }
                 }
             }
         }
@@ -240,23 +237,13 @@ class MainActivity : AppCompatActivity() {
      * 将日志打印到logView
      */
     fun print2LogView(s:String) {
-        Log.d("logView", s)
-        logBuilder.append(s + "\n")
-        // 检查长度并截断
-        val maxLogLength = 10000
-        if (logBuilder.length > maxLogLength) {
-            // 找到第一个换行符的位置，从那里开始截断
-            val firstNewLine = logBuilder.indexOf("\n", logBuilder.length - maxLogLength)
-            if (firstNewLine != -1) {
-                logBuilder.delete(0, firstNewLine + 1) // +1 是\n
-            } else {
-                // 如果没有找到换行符，直接截断到最大长度
-                logBuilder.delete(0, logBuilder.length - maxLogLength)
-            }
-        }
+        MeService.me?.print2LogView(s)
+    }
+
+    fun show2LogView() {
         if (isActivityVisible) {
             runOnUiThread {
-                findViewById<TextView>(R.id.logView).text = logBuilder.toString()
+                findViewById<TextView>(R.id.logView).text = MeService.logBuilder.toString()
                 val scrollView = findViewById<ScrollView>(R.id.scrollView)
                 scrollView.post(Runnable { scrollView.fullScroll(ScrollView.FOCUS_DOWN) })
             }

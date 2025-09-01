@@ -29,6 +29,8 @@ class MeService : Service() {
 //        var mediaButtonReceiverHandler: Handler? = null
         var me: MeService? = null
 
+        var logBuilder = StringBuilder()
+
         const val ACTION_PLAY = "com.zyyme.workdayalarmclock.ACTION_PLAY"
         const val ACTION_NEXT = "com.zyyme.workdayalarmclock.ACTION_NEXT"
         const val ACTION_PREVIOUS = "com.zyyme.workdayalarmclock.ACTION_PREVIOUS"
@@ -363,11 +365,21 @@ class MeService : Service() {
 
 
     fun print2LogView(s:String) {
-        if (MainActivity.me != null) {
-            MainActivity.me?.print2LogView(s)
-        } else {
-            Log.d("logView MeService", s)
+        Log.d("logView", s)
+        logBuilder.append(s + "\n")
+        // 检查长度并截断
+        val maxLogLength = 10000
+        if (logBuilder.length > maxLogLength) {
+            // 找到第一个换行符的位置，从那里开始截断
+            val firstNewLine = logBuilder.indexOf("\n", logBuilder.length - maxLogLength)
+            if (firstNewLine != -1) {
+                logBuilder.delete(0, firstNewLine + 1) // +1 是\n
+            } else {
+                // 如果没有找到换行符，直接截断到最大长度
+                logBuilder.delete(0, logBuilder.length - maxLogLength)
+            }
         }
+        MainActivity.me?.show2LogView()
     }
 
     /**
