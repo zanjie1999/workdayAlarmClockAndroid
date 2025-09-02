@@ -622,7 +622,7 @@ class MeService : Service() {
                     mediaPlayer.seekTo(0)
                 }
                 if (!mediaPlayer.isPlaying) {
-                    if (loadProgress < 10) {
+                    if (url.startsWith("http") && loadProgress < 10) {
                         // 直接等2秒吧，Android经常乱上报加载进度
                         Thread.sleep(2000)
                     }
