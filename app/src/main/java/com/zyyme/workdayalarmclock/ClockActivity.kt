@@ -1,6 +1,8 @@
 package com.zyyme.workdayalarmclock
 
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -113,6 +115,10 @@ class ClockActivity : AppCompatActivity() {
                 showMsg("关闭 保持亮屏")
             }
         }
+        findViewById<TextView>(R.id.tv_time).setOnLongClickListener {
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
+            true
+        }
         findViewById<TextView>(R.id.tv_date).setOnClickListener {
             // 切换暗色模式
             if (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) {
@@ -120,6 +126,18 @@ class ClockActivity : AppCompatActivity() {
             } else {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             }
+        }
+        findViewById<TextView>(R.id.tv_date).setOnLongClickListener {
+            val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
+            if (devicePolicyManager.isAdminActive(adminComponentName)) {
+                try {
+                    devicePolicyManager.lockNow()
+                } catch (e: Exception) {
+                    showMsg("锁屏失败: ${e.message}")
+                }
+            }
+            true
         }
         findViewById<Button>(R.id.btn_minsize).setOnClickListener {
             setFullScreenClock()
@@ -245,10 +263,28 @@ class ClockActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-        WindowCompat.setDecorFitsSystemWindows(window, true)
-        WindowInsetsControllerCompat(window, window.decorView).let { controller ->
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // false时按钮会显示到挖孔的区域
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            WindowInsetsControllerCompat(window, window.decorView).let { controller ->
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            // 这个音箱刚需overscan，为了这个特殊处理一下
+            if (Build.MODEL == "HPN_XH") {
+                window.decorView.systemUiVisibility = (
+                        View.SYSTEM_UI_FLAG_FULLSCREEN
+                        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            } else {
+                window.decorView.systemUiVisibility = (
+                        View.SYSTEM_UI_FLAG_FULLSCREEN
+                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION         // 添加此行以隐藏导航栏
+                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            }
         }
     }
 

@@ -212,14 +212,16 @@ class MeService : Service() {
 //        }
 
         // 一说宝宝特有系统服务用于控制led灯板
-        try {
-            mBreathLedsManager = getSystemService("breath_leds")
-            Log.d("mBreathLedsManager", "获取成功 $mBreathLedsManager")
-            // 关灯
-            ysSetLedsValue(MeYsLed.EMPTY)
-        } catch (e: Exception) {
-            Log.d("mBreathLedsManager", "获取失败")
-            e.printStackTrace()
+        if (Build.MODEL == "S14G") {
+            try {
+                mBreathLedsManager = getSystemService("breath_leds")
+                Log.d("mBreathLedsManager", "获取成功 $mBreathLedsManager")
+                // 关灯
+                ysSetLedsValue(MeYsLed.EMPTY)
+            } catch (e: Exception) {
+                Log.d("mBreathLedsManager", "获取失败")
+                e.printStackTrace()
+            }
         }
 
         return super.onStartCommand(intent, flags, startId)
@@ -267,6 +269,9 @@ class MeService : Service() {
      */
     var ysLedThread: Thread? = null
     fun ysSetLedsValue(start: Int, end: Int=start, delay: Long=300, reverse: Boolean=false) {
+        if (Build.MODEL != "S14G") {
+            return
+        }
         if (mBreathLedsManager != null) {
             if (ysLedThread != null) {
                 ysLedThread?.interrupt()
@@ -312,6 +317,9 @@ class MeService : Service() {
      * 使用灯板展示状态
      */
     fun ysLedStatus(): Boolean {
+        if (Build.MODEL != "S14G") {
+            return false
+        }
         if (ysLedThread != null) {
             return true
         }
@@ -472,6 +480,18 @@ class MeService : Service() {
                     wakePendingIntent = null
                     print2LogView("已关闭每分钟唤醒")
                 }
+            } else if (s == "ALARM") {
+                val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
+                if (devicePolicyManager.isAdminActive(adminComponentName)) {
+                    // 闹钟时，有关闭屏幕权限再打开屏幕
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                    val intent = Intent(this, ClockActivity::class.java)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    intent.putExtra("clockMode", true)
+                    startActivity(intent)
+                    print2LogView("已亮屏")
+                }
             } else if (s == "SCREENON") {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
                 val intent = Intent(this, ClockActivity::class.java)
@@ -491,12 +511,12 @@ class MeService : Service() {
                     }
                 } else {
                     print2LogView("设备管理员未激活，无法锁屏")
-                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
-                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "远程锁屏需要这个权限")
-                    }
-                    startActivity(intent)
+//                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+//                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+//                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
+//                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "远程锁屏需要这个权限")
+//                    }
+//                    startActivity(intent)
                 }
             } else if (s == "EXIT") {
                 stopSelf()

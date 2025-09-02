@@ -16,3 +16,4 @@ local.properties
 
 app/libs/armeabi/libWorkdayAlarmClock.so
 app/libs/arm64-v8a/libWorkdayAlarmClock.so
+app/release
