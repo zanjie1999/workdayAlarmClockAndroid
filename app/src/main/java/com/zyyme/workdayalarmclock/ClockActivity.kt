@@ -117,6 +117,7 @@ class ClockActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.tv_time).setOnLongClickListener {
             // 一键 让go决定是要放还是要停
+            showMsg("一键")
             MeService.me?.toGo("1key")
             true
         }
