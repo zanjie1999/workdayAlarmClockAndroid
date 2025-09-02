@@ -116,7 +116,8 @@ class ClockActivity : AppCompatActivity() {
             }
         }
         findViewById<TextView>(R.id.tv_time).setOnLongClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
+            // 一键 让go决定是要放还是要停
+            MeService.me?.toGo("1key")
             true
         }
         findViewById<TextView>(R.id.tv_date).setOnClickListener {
