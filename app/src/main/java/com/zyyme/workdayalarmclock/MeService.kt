@@ -525,10 +525,12 @@ class MeService : Service() {
                 restartApp()
             } else if (s == "Segmentation fault") {
                 print2LogView("出现系统错误，进行重启")
+                Thread {
+                    Thread.sleep(1000)
+                    runShell()
+                }.start()
                 shellProcess?.destroy()
                 shellThread?.interrupt()
-                Thread.sleep(1000)
-                runShell()
             } else {
                 print2LogView(s)
             }
