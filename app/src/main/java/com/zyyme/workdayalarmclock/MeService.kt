@@ -523,6 +523,12 @@ class MeService : Service() {
 //                System.exit(0)
             } else if (s == "RESTART") {
                 restartApp()
+            } else if (s == "Segmentation fault") {
+                print2LogView("出现系统错误，进行重启")
+                shellProcess?.destroy()
+                shellThread?.interrupt()
+                Thread.sleep(1000)
+                runShell()
             } else {
                 print2LogView(s)
             }
@@ -938,6 +944,7 @@ class MeService : Service() {
         val manager = getSystemService(ALARM_SERVICE) as AlarmManager
         manager[AlarmManager.RTC, System.currentTimeMillis() + 2000] = pendingIntent
 //        System.exit(0)
+        onDestroy()
         Thread.sleep(1000)
         stopSelf()
     }
