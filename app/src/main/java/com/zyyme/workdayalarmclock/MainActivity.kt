@@ -48,10 +48,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         me = this
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        setSupportActionBar(findViewById(R.id.toolbar));
-
 
         // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
         val amUrl = getIntent().getDataString();
@@ -86,6 +82,11 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent)
             }
         }
+
+        // 换一下循序，避免时钟模式设备多次渲染
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        setSupportActionBar(findViewById(R.id.toolbar));
 
         // 存储空间权限 Android11
         if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
