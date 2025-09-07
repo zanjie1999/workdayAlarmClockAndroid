@@ -305,11 +305,12 @@ class ClockActivity : AppCompatActivity() {
         if (clockMode) {
             when (keyEvent?.action) {
                 KeyEvent.ACTION_DOWN -> {
-                }
-                KeyEvent.ACTION_UP -> {
                     if (MeService.me?.keyHandle(keyEvent.keyCode, 0) == true) {
                         return true
                     }
+                }
+                KeyEvent.ACTION_UP -> {
+
                 }
             }
         }
