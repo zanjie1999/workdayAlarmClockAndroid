@@ -245,15 +245,17 @@ class ClockActivity : AppCompatActivity() {
         tvTime.layoutParams.height = (realHeightPixels * 0.8).toInt()
         tvDate.layoutParams.height = (realHeightPixels * 0.2).toInt()
 
-        Log.d("btn_minsize", "height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
+        Log.d("btn_minsize", "height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15) {
             // 竖屏秒换行
             sdfHmsmde = SimpleDateFormat("h:mm\nss.M月d日 E")
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                tvTime.textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.25f
+//                tvTime.textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.22f
+                tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.34f
             }
             tvTime.maxLines = 2
         } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            tvTime.textSize = displayMetrics.widthPixels / 7f * resources.displayMetrics.density
             tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.25f
             if (tvDate.textSize < displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f) {
                 tvDate.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f
