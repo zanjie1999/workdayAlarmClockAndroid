@@ -36,7 +36,7 @@ adb install -r .\app\release\app-release.apk ; adb shell am start -n com.zyyme.w
 # 退出
 exit
 # 启动
-start
+run
 ```
 更多指令可以看[workdayAlarmClockGo 指令]([https://github.com/zanjie1999/workdayAlarmClockGo](https://github.com/zanjie1999/workdayAlarmClockGo#%E6%8C%87%E4%BB%A4))
 
