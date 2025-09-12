@@ -40,6 +40,21 @@ start
 ```
 更多指令可以看[workdayAlarmClockGo 指令]([https://github.com/zanjie1999/workdayAlarmClockGo](https://github.com/zanjie1999/workdayAlarmClockGo#%E6%8C%87%E4%BB%A4))
 
+## 文件flag
+使用文件进行来进行一些简单配置  
+- disable开机不启动  
+- clock强制时钟模式 
+下面来举个例子，在控制台模式中进行操作：
+```shell
+# 首先先退出工作咩闹钟程序
+exit
+# 创建flag
+touch disable
+# 删除flag
+rm disable
+```
+
+
 ## 特殊设备适配
 ### 时钟模式 （智能手表）  
 点击顶栏任意非右侧按钮的位置，或者点击常驻的通知，即可开启  

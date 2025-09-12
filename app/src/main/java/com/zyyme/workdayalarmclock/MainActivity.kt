@@ -22,6 +22,7 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import kotlin.system.exitProcess
 import androidx.core.net.toUri
+import java.io.File
 
 
 class MainActivity : AppCompatActivity() {
@@ -73,8 +74,8 @@ class MainActivity : AppCompatActivity() {
         if (MeService.me == null) {
             print2LogView("机型代号：" + Build.MODEL)
             startService(Intent(this, MeService::class.java))
-            if (MeService.clockModeModel.contains(Build.MODEL)) {
-                // 初次启动，切换到时钟模式
+            if (MeService.clockModeModel.contains(Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()) {
+                // 初次启动，切换到时钟模式                            有clock文件的也切换
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
                 val intent = Intent(this, ClockActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
