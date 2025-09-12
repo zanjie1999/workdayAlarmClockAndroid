@@ -192,7 +192,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         // 默认时钟模式的设备 返回退到全屏时钟
-        if (MeService.clockModeModel.contains(Build.MODEL)) {
+        if (MeService.clockModeModel.contains(Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             val intent: Intent = Intent(this, ClockActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
