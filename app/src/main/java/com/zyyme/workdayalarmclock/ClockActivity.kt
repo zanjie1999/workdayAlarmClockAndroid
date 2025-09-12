@@ -48,8 +48,10 @@ class ClockActivity : AppCompatActivity() {
 
     var clockMode = false
     fun showMsg(msg: String) {
-        showMsgFlag = true
-        findViewById<TextView>(R.id.tv_date).text = msg
+        runOnUiThread {
+            showMsgFlag = true
+            findViewById<TextView>(R.id.tv_date).text = msg
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -164,7 +166,6 @@ class ClockActivity : AppCompatActivity() {
         rootLaout.post {
             // 延迟进行字体大小调整  初始化完后延时执行
             if (intent.getBooleanExtra("clockMode", false)) {
-                intent.removeExtra("clockMode")
                 // 直接进入全屏时钟模式
                 setFullScreenClock()
             } else {
@@ -191,9 +192,10 @@ class ClockActivity : AppCompatActivity() {
             }
             // 保持亮屏flag
             if (intent.getBooleanExtra("keepOn", false)) {
-                intent.removeExtra("keepOn")
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
+            // 清空
+            intent.replaceExtras(Intent())
         }
 
 

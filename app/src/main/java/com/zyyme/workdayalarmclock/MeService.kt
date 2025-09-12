@@ -696,8 +696,8 @@ class MeService : Service() {
             try {
                 // 输入start可以启动 exit可以退出
                 val command = "alias exit='echo EXIT'\n" +
-                        "alias start='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
-                        "start"
+                        "alias run='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
+                        "run"
                 shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)
                     .start()
@@ -759,41 +759,31 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
                 ClockActivity.me?.showMsg("播放暂停")
                 print2LogView("媒体按键 播放暂停")
-                if (player != null) {
-                    if (!player!!.isPlaying && lastUrl == null && isStop) {
-                        print2LogView("初次启动 触发上一首")
-                        toGo("prev")
-                    } else if (!isStop) {
-                        if (player!!.isPlaying == true) {
-                            player!!.pause()
-                            onPause()
-                        } else {
-                            player!!.start()
-                            onPlay()
-                        }
-                    } else if (lastUrl != null) {
-                        playUrl(lastUrl!!)
+                if (!isStop) {
+                    if (player!!.isPlaying == true) {
+                        player!!.pause()
+                        onPause()
+                    } else {
+                        player!!.start()
+                        onPlay()
                     }
+                    return true
+                } else {
+                    // 触发一键 即播放默认歌单
+                    toGo("1key")
                 }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PLAY -> {
                 print2LogView("媒体按键 播放")
-                if (player != null) {
-                    if (!player!!.isPlaying && lastUrl == null && isStop) {
-                        print2LogView("触发上一首")
-                        toGo("prev")
-                    } else if (!isStop) {
-                        if (player?.isPlaying == false) {
-                            player!!.start()
-                            onPlay()
-                        }
-                    } else if (lastUrl != null) {
-                        playUrl(lastUrl!!)
+                if (!isStop) {
+                    if (player?.isPlaying == false) {
+                        player!!.start()
+                        onPlay()
                     }
                 } else {
-                    print2LogView("触发上一首")
-                    toGo("prev")
+                    // 触发一键 即播放默认歌单
+                    toGo("1key")
                 }
                 return true
             }
@@ -806,7 +796,7 @@ class MeService : Service() {
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                // 如果没有在播放，触发停止
+                // 如果当前暂停，则触发停止
                 if (player?.isPlaying == true) {
                     ClockActivity.me?.showMsg("下一首")
                     print2LogView("媒体按键 下一首")
@@ -935,7 +925,7 @@ class MeService : Service() {
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK
                     or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+//                    or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
         )
         var pendingIntent: PendingIntent;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

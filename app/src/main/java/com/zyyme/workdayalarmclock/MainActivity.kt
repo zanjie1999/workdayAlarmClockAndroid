@@ -182,9 +182,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        print2LogView("即将退出...")
+        print2LogView("控制台退出...")
 //        mediaButtonReceiverDestroy()
 //        stopService(Intent(this, MeService::class.java))
+//        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+        super.onDestroy()
+    }
+
+    override fun onBackPressed() {
         // 默认时钟模式的设备 返回退到全屏时钟
         if (MeService.clockModeModel.contains(Build.MODEL)) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
@@ -193,9 +198,8 @@ class MainActivity : AppCompatActivity() {
             intent.putExtra("clockMode", true)
             startActivity(intent)
         } else {
-            Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+            super.onBackPressed()
         }
-        super.onDestroy()
     }
 
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
