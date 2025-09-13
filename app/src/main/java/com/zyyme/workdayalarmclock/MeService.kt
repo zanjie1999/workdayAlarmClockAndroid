@@ -573,6 +573,7 @@ class MeService : Service() {
                     val t = System.currentTimeMillis()
                     if (t - lastT < 1000 && msg == lastMsg) {
                         // 去重
+                        packet.length = buffer.size
                         continue
                     }
                     lastT = t
