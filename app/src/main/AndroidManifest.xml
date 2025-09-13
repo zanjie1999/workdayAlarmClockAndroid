@@ -31,7 +31,7 @@
         tools:targetApi="m">
         <activity
             android:name=".ClockActivity"
-            android:exported="false" />
+            android:exported="true" />
 
         <service
             android:name=".MeService"
