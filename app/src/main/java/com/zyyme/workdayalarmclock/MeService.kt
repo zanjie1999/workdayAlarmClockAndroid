@@ -22,6 +22,8 @@ import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 
 
 class MeService : Service() {
@@ -60,6 +62,8 @@ class MeService : Service() {
     private var notificationBuilder: NotificationCompat.Builder? = null
     private var notificationManager: NotificationManager? = null
     private var wakePendingIntent: PendingIntent? = null
+    private var udpServerSocket: DatagramSocket? = null
+
 
     override fun onBind(intent: Intent): IBinder {
         me = this
@@ -203,6 +207,9 @@ class MeService : Service() {
 //        player!!.release()
 //        player = null
 
+        // udp广播监听 群控
+        startUdpServer()
+
         // 开一个新线程跑shell
         runShell()
 
@@ -250,6 +257,8 @@ class MeService : Service() {
         shellProcess?.destroy()
         shellThread?.interrupt()
         MainActivity.me?.finish()
+        ClockActivity.me?.finish()
+        udpServerSocket?.close()
         wakeLock?.release()
         wakeLockPlay?.release()
         wifiLock?.release()
@@ -396,7 +405,9 @@ class MeService : Service() {
     fun checkAction(s: String?) {
         if (s != null) {
             if (s.startsWith("PLAY ")) {
-                playUrl(s.substring(5))
+                playUrl(s.substring(5), true)
+            } else if (s.startsWith("LOAD ")) {
+                playUrl(s.substring(5), false)
             } else if (s.startsWith("VOL ")) {
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
                 val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
@@ -418,6 +429,8 @@ class MeService : Service() {
                 meMediaPlaybackManager?.updateMediaMetadata(0, null,null,null)
                 meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 0)
                 ysSetLedsValue(MeYsLed.EMPTY)
+            } else if (s == "SEEK") {
+                player?.seekTo(0)
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
                 player?.pause()
@@ -427,8 +440,9 @@ class MeService : Service() {
                 if (!isStop) {
                     player?.start()
                     onPlay()
-                } else if (lastUrl != null) {
-                    playUrl(lastUrl!!)
+                } else {
+                    // 触发一键 即播放默认歌单
+                    toGo("1key")
                 }
             } else if (s == "VOLP") {
                 print2LogView("音量加")
@@ -538,6 +552,45 @@ class MeService : Service() {
     }
 
     /**
+     * UDP广播接收器 群控
+     */
+    private fun startUdpServer() {
+        Thread {
+            try {
+                // 广播端口监听
+                udpServerSocket = DatagramSocket(25525).apply {
+                    broadcast = true
+                }
+                val buffer = ByteArray(1024)
+                val packet = DatagramPacket(buffer, buffer.size)
+                var lastT = 0L
+                var lastMsg = "";
+
+                while (udpServerSocket != null && !udpServerSocket!!.isClosed) {
+                    udpServerSocket?.receive(packet)
+                    val msg = String(packet.data, 0, packet.length)
+
+                    val t = System.currentTimeMillis()
+                    if (t - lastT < 1000 && msg == lastMsg) {
+                        // 去重
+                        continue
+                    }
+                    lastT = t
+                    lastMsg = msg
+                    print2LogView("收到UDP广播 ${msg}")
+                    checkAction(msg)
+                    // 重置包
+                    packet.length = buffer.size
+                }
+            } catch (e: Exception) {
+                print2LogView("UDP广播接收器出错 ${e.message}")
+                e.printStackTrace()
+            }
+        }.start()
+        print2LogView("UDP广播接收器启动")
+    }
+
+    /**
      * 暂停时调用 锁处理
      */
     fun onPause() {
@@ -575,7 +628,7 @@ class MeService : Service() {
     /**
      * 播放器播放url
      */
-    fun playUrl(url:String) {
+    fun playUrl(url:String, autoPlay:Boolean) {
         try {
             // 因为待机可能导致音乐无法进行下一首播放（服务运行正常就音乐放不了）需要重新给cpu加唤醒锁
 //            val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -629,7 +682,7 @@ class MeService : Service() {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
                 }
-                if (!mediaPlayer.isPlaying) {
+                if (autoPlay && !mediaPlayer.isPlaying) {
                     if (url.startsWith("http") && loadProgress < 10) {
                         // 直接等2秒吧，Android经常乱上报加载进度
                         Thread.sleep(2000)
@@ -646,7 +699,7 @@ class MeService : Service() {
                         loadProgress = i
                         print2LogView("play加载音频 $i%")
                     }
-                    if (i >= 10 && !mediaPlayer.isPlaying) {
+                    if (autoPlay && i >= 10 && !mediaPlayer.isPlaying) {
                         // 其实是支持边缓冲边放的 得让他先冲一会再调播放
                         mediaPlayer.start()
                         onPlay()

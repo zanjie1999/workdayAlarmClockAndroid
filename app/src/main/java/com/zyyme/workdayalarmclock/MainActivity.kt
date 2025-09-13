@@ -65,7 +65,7 @@ class MainActivity : AppCompatActivity() {
                     print2LogView("等待服务启动...")
                     Thread.sleep(1000)
                 }
-                MeService.me!!.playUrl(amUrl!!)
+                MeService.me!!.playUrl(amUrl!!, true)
             }).start()
             return
         }
