@@ -58,6 +58,7 @@ class MeService : Service() {
     var wifiLock: WifiManager.WifiLock? = null
     var shellProcess: Process? = null
     var loadProgress: Int = 0
+    var defaultSeek: Int = 0
 
     private var notificationBuilder: NotificationCompat.Builder? = null
     private var notificationManager: NotificationManager? = null
@@ -402,8 +403,13 @@ class MeService : Service() {
     /**
      * Go控制台输出调用App
      */
-    fun checkAction(s: String?) {
+    fun checkAction(s: String?, fromPipe: Boolean) {
         if (s != null) {
+            if (fromPipe) {
+                // 在本机发送udp广播时本机也会收到，过滤重复的内容
+                cmdLastT = System.currentTimeMillis()
+                cmdLastMsg = s
+            }
             if (s.startsWith("PLAY ")) {
                 playUrl(s.substring(5), true)
             } else if (s.startsWith("LOAD ")) {
@@ -420,6 +426,14 @@ class MeService : Service() {
                 updateNotificationTitle(msg)
                 ClockActivity.me?.showMsg(msg)
                 meMediaPlaybackManager?.updateMediaMetadata(65535, msg, null, null)
+            } else if (s.startsWith("SEEK ")) {
+                // 移动进度条 单位是ms
+                val seek = s.substring(5)
+                player?.seekTo(seek.toInt())
+            } else if (s.startsWith("DSEEK ")) {
+                // 移动进度条的默认值
+                val seek = s.substring(6)
+                defaultSeek = seek.toInt()
             } else if (s == "STOP") {
                 print2LogView("停止播放")
                 isStop = true
@@ -430,7 +444,13 @@ class MeService : Service() {
                 meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 0)
                 ysSetLedsValue(MeYsLed.EMPTY)
             } else if (s == "SEEK") {
-                player?.seekTo(0)
+                // 全屋同步播放补偿
+                if (defaultSeek < 0) {
+                    Thread.sleep(defaultSeek * -1L)
+                    player?.seekTo(0)
+                } else {
+                    player?.seekTo(defaultSeek)
+                }
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
                 player?.pause()
@@ -554,6 +574,8 @@ class MeService : Service() {
     /**
      * UDP广播接收器 群控
      */
+    var cmdLastT = 0L
+    var cmdLastMsg = "";
     private fun startUdpServer() {
         Thread {
             try {
@@ -563,23 +585,26 @@ class MeService : Service() {
                 }
                 val buffer = ByteArray(1024)
                 val packet = DatagramPacket(buffer, buffer.size)
-                var lastT = 0L
-                var lastMsg = "";
 
                 while (udpServerSocket != null && !udpServerSocket!!.isClosed) {
                     udpServerSocket?.receive(packet)
                     val msg = String(packet.data, 0, packet.length)
 
                     val t = System.currentTimeMillis()
-                    if (t - lastT < 1000 && msg == lastMsg) {
+                    if (t - cmdLastT < 1000 && msg == cmdLastMsg) {
                         // 去重
                         packet.length = buffer.size
                         continue
                     }
-                    lastT = t
-                    lastMsg = msg
-                    print2LogView("收到UDP广播 ${msg}")
-                    checkAction(msg)
+                    cmdLastT = t
+                    cmdLastMsg = msg
+                    print2LogView("从 ${packet.address.hostAddress} 收到广播 ${msg}")
+                    try {
+                        checkAction(msg, false)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        print2LogView("广播解析出错 $e")
+                    }
                     // 重置包
                     packet.length = buffer.size
                 }
@@ -763,7 +788,7 @@ class MeService : Service() {
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
                     try {
-                        checkAction(line)
+                        checkAction(line, true)
                     } catch (e: Exception) {
                         e.printStackTrace()
                         print2LogView("Shell解析出错 $e")
