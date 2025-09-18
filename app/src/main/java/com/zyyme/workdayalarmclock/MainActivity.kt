@@ -48,12 +48,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 规避FLAG_ACTIVITY_CLEAR_TASK不生效的问题
-        if (me != null && me != this) {
-            me!!.finish()
-        } else {
-            me = this
-        }
+        me = this
 
         // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
         val amUrl = getIntent().getDataString();
