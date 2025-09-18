@@ -55,7 +55,11 @@ class ClockActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        me = this
+        if (me != null && me != this) {
+            me?.finish()
+        } else {
+            me = this
+        }
         super.onCreate(savedInstanceState)
 
         // 可以显示在锁屏上

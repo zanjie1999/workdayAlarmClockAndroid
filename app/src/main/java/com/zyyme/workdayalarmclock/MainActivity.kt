@@ -48,7 +48,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        me = this
+        // 规避FLAG_ACTIVITY_CLEAR_TASK不生效的问题
+        if (me != null && me != this) {
+            me!!.finish()
+        } else {
+            me = this
+        }
 
         // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
         val amUrl = getIntent().getDataString();
@@ -73,7 +78,6 @@ class MainActivity : AppCompatActivity() {
         // 启动服务 如果Activity不是重载的话
         if (MeService.me == null) {
             startService(Intent(this, MeService::class.java))
-            print2LogView("机型代号：" + Build.MODEL)
             if (MeService.clockModeModel.contains(Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()) {
                 // 初次启动，切换到时钟模式                            有clock文件的也切换
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)

@@ -208,6 +208,8 @@ class MeService : Service() {
 //        player!!.release()
 //        player = null
 
+        print2LogView("机型代号：" + Build.MODEL)
+
         // udp广播监听 群控
         startUdpServer()
 
