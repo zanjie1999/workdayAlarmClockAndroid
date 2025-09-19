@@ -46,13 +46,12 @@ run
 - clock强制时钟模式  
 下面来举个例子，在控制台模式中进行操作：
 ```shell
-# 首先先退出工作咩闹钟程序
-exit
 # 创建flag
 touch disable
 # 删除flag
 rm disable
 ```
+设置好了将在下次启动生效
 
 
 ## 特殊设备适配
