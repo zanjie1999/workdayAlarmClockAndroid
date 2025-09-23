@@ -113,15 +113,19 @@ class ClockActivity : AppCompatActivity() {
             MeService.me?.keyHandle(2147483647, 0)
         }
         findViewById<TextView>(R.id.tv_time).setOnClickListener {
-            isKeepScreenOn = !isKeepScreenOn
-            if (isKeepScreenOn) {
-                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-//                Toast.makeText(this, "保持亮屏打开", Toast.LENGTH_SHORT).show()
-                showMsg("保持亮屏 打开")
+            if (clockMode) {
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
             } else {
-                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                isKeepScreenOn = !isKeepScreenOn
+                if (isKeepScreenOn) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+//                Toast.makeText(this, "保持亮屏打开", Toast.LENGTH_SHORT).show()
+                    showMsg("保持亮屏 打开")
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 //                Toast.makeText(this, "关闭保持亮屏", Toast.LENGTH_SHORT).show()
-                showMsg("关闭 保持亮屏")
+                    showMsg("关闭 保持亮屏")
+                }
             }
         }
         findViewById<TextView>(R.id.tv_time).setOnLongClickListener {
