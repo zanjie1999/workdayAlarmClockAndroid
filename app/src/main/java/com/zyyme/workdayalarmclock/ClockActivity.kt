@@ -26,6 +26,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -68,6 +69,11 @@ class ClockActivity : AppCompatActivity() {
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
+        }
+
+        // 横屏flag 会根据重力自动选择时钟模式的横屏方向
+        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE && File(filesDir.absolutePath + "/landscape").exists()) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
 
 

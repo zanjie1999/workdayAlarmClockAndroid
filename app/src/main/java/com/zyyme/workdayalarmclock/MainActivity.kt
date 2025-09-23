@@ -37,6 +37,9 @@ class MainActivity : AppCompatActivity() {
     var mediaComponentName: ComponentName? = null
     var isActivityVisible = false
 
+    // 时钟模式
+    var useClockMode = false
+
     override fun onResume() {
         super.onResume()
         isActivityVisible = true
@@ -49,6 +52,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         me = this
+        useClockMode = MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()
 
         // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
         val amUrl = getIntent().getDataString();
@@ -73,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         // 启动服务 如果Activity不是重载的话
         if (MeService.me == null) {
             startService(Intent(this, MeService::class.java))
-            if (MeService.clockModeModel.contains(Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()) {
+            if (useClockMode) {
                 // 初次启动，切换到时钟模式                            有clock文件的也切换
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
                 val intent = Intent(this, ClockActivity::class.java)
@@ -191,7 +195,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         // 默认时钟模式的设备 返回退到全屏时钟
-        if (MeService.clockModeModel.contains(Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()) {
+        if (useClockMode) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             val intent: Intent = Intent(this, ClockActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

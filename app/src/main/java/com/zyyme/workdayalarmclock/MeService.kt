@@ -40,10 +40,11 @@ class MeService : Service() {
         const val ACTION_WAKE = "com.zyyme.workdayalarmclock.ACTION_WAKE"
         const val NOTIFICATION_ID = 1
 
-        // 这些设备将默认启用时钟模式
+        // 这些设备将默认启用时钟模式  两个拼起来
+        // getprop ro.product.manufacturer
         // getprop ro.product.model
         //                                 绿色陪伴音箱，叮咚play
-        val clockModeModel = listOf<String>("HPN_XH", "cht_mrd")
+        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd")
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
@@ -208,7 +209,7 @@ class MeService : Service() {
 //        player!!.release()
 //        player = null
 
-        print2LogView("机型代号：" + Build.MODEL)
+        print2LogView("机型代号：" + Build.MANUFACTURER + Build.MODEL)
 
         // udp广播监听 群控
         startUdpServer()
