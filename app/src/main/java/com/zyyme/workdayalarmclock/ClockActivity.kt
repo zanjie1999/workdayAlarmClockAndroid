@@ -15,7 +15,9 @@ import android.os.Looper
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.GestureDetector
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -29,6 +31,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
+import kotlin.compareTo
+import kotlin.text.compareTo
 
 
 class ClockActivity : AppCompatActivity() {
@@ -112,28 +116,75 @@ class ClockActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_volp).setOnClickListener {
             MeService.me?.keyHandle(2147483647, 0)
         }
-        findViewById<TextView>(R.id.tv_time).setOnClickListener {
-            if (clockMode) {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
-            } else {
-                isKeepScreenOn = !isKeepScreenOn
-                if (isKeepScreenOn) {
-                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-//                Toast.makeText(this, "保持亮屏打开", Toast.LENGTH_SHORT).show()
-                    showMsg("保持亮屏 打开")
+
+        val tvGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                if (clockMode) {
+                    MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
                 } else {
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    isKeepScreenOn = !isKeepScreenOn
+                    if (isKeepScreenOn) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+//                Toast.makeText(this, "保持亮屏打开", Toast.LENGTH_SHORT).show()
+                        showMsg("保持亮屏 打开")
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 //                Toast.makeText(this, "关闭保持亮屏", Toast.LENGTH_SHORT).show()
-                    showMsg("关闭 保持亮屏")
+                        showMsg("关闭 保持亮屏")
+                    }
                 }
+                return true
             }
+
+            override fun onLongPress(e: MotionEvent?) {
+                // 一键 让go决定是要放还是要停
+                showMsg("一键")
+                MeService.me?.toGo("1key")
+                true
+            }
+
+            override fun onFling(
+                e1: MotionEvent,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float
+            ): Boolean {
+                val diffX = e2.x - e1.x
+                val diffY = e2.y - e1.y
+                if (Math.abs(diffX) > Math.abs(diffY)) {
+                    // 水平
+                    if (Math.abs(diffX) > 100 && Math.abs(velocityX) > 100) {
+                        if (diffX > 0) {
+                            // 右
+                            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
+                        } else {
+                            // 左
+                            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
+                        }
+                        return true
+                    }
+                } else {
+                    // 垂直
+                    if (Math.abs(diffY) > 100 && Math.abs(velocityY) > 100) {
+                        if (diffY > 0) {
+                            // 下
+                            MeService.me?.keyHandle(2147483646, 0)
+                        } else {
+                            // 上
+                            MeService.me?.keyHandle(2147483647, 0)
+                        }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
+        findViewById<TextView>(R.id.tv_time).setOnTouchListener { v, event ->
+            tvGestureDetector.onTouchEvent(event)
         }
-        findViewById<TextView>(R.id.tv_time).setOnLongClickListener {
-            // 一键 让go决定是要放还是要停
-            showMsg("一键")
-            MeService.me?.toGo("1key")
-            true
-        }
+
         findViewById<TextView>(R.id.tv_date).setOnClickListener {
             // 切换暗色模式
             if (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) {
