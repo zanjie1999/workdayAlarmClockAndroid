@@ -186,11 +186,15 @@ class ClockActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.tv_date).setOnClickListener {
-            // 切换暗色模式
-            if (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            if (clockMode) {
+                recreate()
             } else {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                // 切换暗色模式
+                if (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) {
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+                } else {
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                }
             }
         }
         findViewById<TextView>(R.id.tv_date).setOnLongClickListener {
