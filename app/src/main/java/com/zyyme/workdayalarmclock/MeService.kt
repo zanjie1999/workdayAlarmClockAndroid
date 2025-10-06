@@ -427,7 +427,13 @@ class MeService : Service() {
             } else if (s.startsWith("ECHO ")) {
                 val msg = s.substring(5)
                 updateNotificationTitle(msg)
-                ClockActivity.me?.showMsg(msg)
+                if (ClockActivity.me != null) {
+                    if ("工作咩闹钟" == msg) {
+                        ClockActivity.me?.showMsg("停止播放")
+                    } else {
+                        ClockActivity.me?.showMsg(msg)
+                    }
+                }
                 meMediaPlaybackManager?.updateMediaMetadata(65535, msg, null, null)
             } else if (s.startsWith("SEEK ")) {
                 // 移动进度条 单位是ms
