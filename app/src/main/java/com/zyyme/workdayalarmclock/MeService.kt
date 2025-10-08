@@ -852,7 +852,11 @@ class MeService : Service() {
      * 重写了监听器里的接口
      */
     fun keyHandle(keyCode: Int, holdTime: Long): Boolean {
-        print2LogView("holdTime $holdTime")
+        // 菜单 返回 退格 音量加 减
+        val knownKey = intArrayOf(0, 82, 4, 67, 24, 25)
+        if (keyCode !in knownKey) {
+            print2LogView("holdTime $holdTime")
+        }
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
                 ClockActivity.me?.showMsg("播放暂停")
@@ -993,8 +997,7 @@ class MeService : Service() {
                 return true
             }
         }
-        // 菜单 返回 退格 音量加 减
-        if (keyCode !in intArrayOf(0, 82, 4, 67, 24, 25)) {
+        if (keyCode !in knownKey) {
             print2LogView("未知按键 $keyCode")
         }
         return false
