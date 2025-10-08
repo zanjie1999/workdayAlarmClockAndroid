@@ -36,7 +36,7 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
                 Log.d("logView MediaButton", "ACTION_PLAY")
             }
             MeService.ACTION_NEXT -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
+                MeService.me?.keyHandle(2147483645, 0)
                 Log.d("logView MediaButton", "ACTION_NEXT")
             }
             MeService.ACTION_PREVIOUS -> {
@@ -46,6 +46,10 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
             MeService.ACTION_STOP -> {
                 MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
                 Log.d("logView MediaButton", "ACTION_STOP")
+            }
+            MeService.ACTION_FORWARD -> {
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 0)
+                Log.d("logView MediaButton", "ACTION_FORWARD")
             }
             MeService.ACTION_WAKE -> {
                 MeService.me?.toGo("wake")

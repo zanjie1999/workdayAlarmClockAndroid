@@ -1,5 +1,6 @@
 package com.zyyme.workdayalarmclock
 
+import android.annotation.SuppressLint
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -105,7 +106,7 @@ class ClockActivity : AppCompatActivity() {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
         }
         findViewById<Button>(R.id.btn_next).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
+            MeService.me?.keyHandle(2147483645, 0)
         }
         findViewById<Button>(R.id.btn_stop).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
@@ -115,6 +116,9 @@ class ClockActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btn_volp).setOnClickListener {
             MeService.me?.keyHandle(2147483647, 0)
+        }
+        findViewById<Button>(R.id.btn_forward).setOnClickListener {
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 0)
         }
 
         val tvGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -158,7 +162,7 @@ class ClockActivity : AppCompatActivity() {
                     if (Math.abs(diffX) > 100 && Math.abs(velocityX) > 100) {
                         if (diffX > 0) {
                             // 右
-                            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
+                            MeService.me?.keyHandle(2147483645, 0)
                         } else {
                             // 左
                             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)

@@ -156,10 +156,13 @@ class MainActivity : AppCompatActivity() {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
         }
         findViewById<ImageView>(R.id.iconNext).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, 0)
+            MeService.me?.keyHandle(2147483645, 0)
         }
         findViewById<ImageView>(R.id.iconStop).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
+        }
+        findViewById<ImageView>(R.id.iconForward).setOnClickListener {
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 0)
         }
         findViewById<ImageView>(R.id.iconExit).setOnClickListener {
             Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
@@ -230,6 +233,7 @@ class MainActivity : AppCompatActivity() {
                             KeyEvent.KEYCODE_SOFT_SLEEP,
                             2147483647,
                             2147483646,
+                            2147483645
                         )) {
                         return true
                     }

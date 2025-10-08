@@ -38,6 +38,9 @@ class MeService : Service() {
         const val ACTION_PREVIOUS = "com.zyyme.workdayalarmclock.ACTION_PREVIOUS"
         const val ACTION_STOP = "com.zyyme.workdayalarmclock.ACTION_STOP"
         const val ACTION_WAKE = "com.zyyme.workdayalarmclock.ACTION_WAKE"
+
+        const val ACTION_FORWARD = "com.zyyme.workdayalarmclock.ACTION_FORWARD"
+
         const val NOTIFICATION_ID = 1
 
         // 这些设备将默认启用时钟模式  两个拼起来
@@ -143,6 +146,13 @@ class MeService : Service() {
                     R.drawable.icon_stop,
                     "停止",
                     createPendingIntentForAction(ACTION_STOP)
+                )
+            )
+            notificationBuilder?.addAction(
+                NotificationCompat.Action(
+                    android.R.drawable.ic_media_ff,
+                    "快进",
+                    createPendingIntentForAction(ACTION_FORWARD)
                 )
             )
             // 设置显示的按钮 缩小的时候
@@ -883,9 +893,10 @@ class MeService : Service() {
                 }
                 return true
             }
-            KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+            // 用这个代替触摸的下一曲按钮，避免被停止
+            2147483645, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 // 如果当前暂停，则触发停止
-                if (player?.isPlaying == true) {
+                if (player?.isPlaying == true || keyCode == 2147483645) {
                     ClockActivity.me?.showMsg("下一首")
                     print2LogView("媒体按键 下一首")
                     player?.pause()
@@ -944,6 +955,17 @@ class MeService : Service() {
                 }
                 return true
             }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                print2LogView("媒体按键 快进")
+                player?.seekTo(player!!.currentPosition + 5000)
+                return true
+            }
+            // 这keycode其实也不知道到底应该用哪个
+//            KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
+//                print2LogView("媒体按键 快退")
+//                player?.seekTo(player!!.currentPosition - 5000)
+//                return true
+//            }
             KeyEvent.KEYCODE_SOFT_SLEEP -> {
                 print2LogView("媒体按键 叮咚Play睡眠")
                 if (player != null) {
@@ -971,10 +993,10 @@ class MeService : Service() {
                 return true
             }
         }
-        // 菜单 返回 退格
-//        if (keyCode !in intArrayOf(0, 82, 4, 67)) {
+        // 菜单 返回 退格 音量加 减
+        if (keyCode !in intArrayOf(0, 82, 4, 67, 24, 25)) {
             print2LogView("未知按键 $keyCode")
-//        }
+        }
         return false
     }
 

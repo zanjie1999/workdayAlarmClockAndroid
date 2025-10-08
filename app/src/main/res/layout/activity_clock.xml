@@ -175,10 +175,22 @@
             app:backgroundTint="@color/clockBtnColor">
 
             <Button
+                android:id="@+id/btn_forward"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="2"
+                android:insetLeft="1dp"
+                android:insetTop="1dp"
+                android:insetBottom="0dp"
+                android:text="快进"
+                android:textSize="15sp"
+                app:backgroundTint="@color/clockBtnColor" />
+
+            <Button
                 android:id="@+id/btn_minsize"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_weight="4"
+                android:layout_weight="2"
                 android:insetLeft="1dp"
                 android:insetTop="1dp"
                 android:insetBottom="0dp"

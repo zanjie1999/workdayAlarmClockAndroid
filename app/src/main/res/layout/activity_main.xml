@@ -61,6 +61,13 @@
             android:src="@android:drawable/ic_menu_close_clear_cancel" />
 
         <ImageView
+            android:id="@+id/iconForward"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:src="@android:drawable/ic_media_ff" />
+
+        <ImageView
             android:id="@+id/iconNext"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"

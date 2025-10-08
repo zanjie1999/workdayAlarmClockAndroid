@@ -104,7 +104,8 @@ class MeMediaPlaybackManager(
                         PlaybackStateCompat.ACTION_PAUSE or
                         PlaybackStateCompat.ACTION_STOP or
                         PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+                        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                        PlaybackStateCompat.ACTION_SEEK_TO
             )
 
         // 默认STATE_CONNECTING让Android4把控件显示出来
@@ -133,8 +134,8 @@ class MeMediaPlaybackManager(
         var availableActions = PlaybackStateCompat.ACTION_PLAY_PAUSE or
                 PlaybackStateCompat.ACTION_STOP or
                 PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-
+                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackStateCompat.ACTION_SEEK_TO
         when (state) {
             PlaybackStateCompat.STATE_PLAYING -> {
                 availableActions = availableActions or PlaybackStateCompat.ACTION_PAUSE
