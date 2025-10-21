@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">工作咩闹钟</string>
+    <string name="uninstall_tip" translatable="false">卸载将丢失所有的设置和缓存，\n请确保您已备份！\n\n遇到问题请到Github中提issues\nhttps://github.com/zanjie1999/workdayAlarmClockAndroid\n\n或者到B站私信郑羊羊\n\n本程序为开源项目，如果你是花钱购买的，或是付费安装的，请申请退款并举报，禁止任何程度的商业用途，使用请遵守 咩License\n\n本条提示利用漏洞安全的实现，\n以提升用户体验</string>
 </resources>

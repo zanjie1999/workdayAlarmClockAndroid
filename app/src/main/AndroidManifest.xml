@@ -29,6 +29,15 @@
         android:theme="@style/Theme.WorkdayAlarmClock"
         android:usesCleartextTraffic="true"
         tools:targetApi="m">
+
+        <meta-data
+            android:name="app_description_title"
+            android:resource="@string/app_name" />
+
+        <meta-data
+            android:name="app_description_content"
+            android:resource="@string/uninstall_tip" />
+
         <activity
             android:name=".ClockActivity"
             android:launchMode="singleTask"
