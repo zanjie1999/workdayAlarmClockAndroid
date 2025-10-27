@@ -1,6 +1,5 @@
 package com.zyyme.workdayalarmclock
 
-import android.annotation.SuppressLint
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -32,8 +31,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
-import kotlin.compareTo
-import kotlin.text.compareTo
 
 
 class ClockActivity : AppCompatActivity() {
@@ -50,12 +47,12 @@ class ClockActivity : AppCompatActivity() {
 
     var isKeepScreenOn = false
     
-    var showMsgFlag = false
+    var showMsgTime = 0
 
     var clockMode = false
     fun showMsg(msg: String) {
         runOnUiThread {
-            showMsgFlag = true
+            showMsgTime = 3
             findViewById<TextView>(R.id.tv_date).text = msg
         }
     }
@@ -236,6 +233,7 @@ class ClockActivity : AppCompatActivity() {
         rootLaout.post {
             // 延迟进行字体大小调整  初始化完后延时执行
             if (intent.getBooleanExtra("clockMode", false)) {
+                Log.d("intent", "收到clockMode")
                 // 直接进入全屏时钟模式
                 setFullScreenClock()
             } else {
@@ -262,6 +260,7 @@ class ClockActivity : AppCompatActivity() {
             }
             // 保持亮屏flag
             if (intent.getBooleanExtra("keepOn", false)) {
+                Log.d("intent", "收到keepOn")
                 isKeepScreenOn = true
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
@@ -276,8 +275,8 @@ class ClockActivity : AppCompatActivity() {
             override fun run() {
                 val hmsmde = sdfHmsmde.format(Date()).split(".")
                 findViewById<TextView>(R.id.tv_time).text = hmsmde[0]
-                if (showMsgFlag) {
-                    showMsgFlag = false
+                if (showMsgTime > 0) {
+                    showMsgTime--
                 } else {
                     val millis = MeService.me?.player?.currentPosition;
                     if (millis != null) {
