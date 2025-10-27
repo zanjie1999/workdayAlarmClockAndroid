@@ -262,6 +262,7 @@ class ClockActivity : AppCompatActivity() {
             }
             // 保持亮屏flag
             if (intent.getBooleanExtra("keepOn", false)) {
+                isKeepScreenOn = true
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
             // 清空

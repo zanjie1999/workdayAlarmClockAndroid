@@ -17,6 +17,7 @@ import android.os.PowerManager
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.view.KeyEvent
+import android.view.WindowManager
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
@@ -542,6 +543,7 @@ class MeService : Service() {
                     val intent = Intent(this, ClockActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     intent.putExtra("clockMode", true)
+                    intent.putExtra("keepOn", true)
                     startActivity(intent)
                     print2LogView("已亮屏")
                 }
@@ -558,6 +560,11 @@ class MeService : Service() {
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
                     try {
                         devicePolicyManager.lockNow()
+                        // 取消ALARM给时钟模式的保持亮屏flag
+                        if (ClockActivity.me?.isKeepScreenOn == true) {
+                            ClockActivity.me?.isKeepScreenOn = false
+                            ClockActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
                         print2LogView("已锁屏")
                     } catch (e: Exception) {
                         print2LogView("锁屏失败: ${e.message}")
