@@ -216,7 +216,7 @@ class MeService : Service() {
             override fun onReceive(context: Context, intent: Intent) {
                 val bat = intent.getIntExtra("level", -1)
                 // 第一次不显示，有变化再显示
-                if (bat != -1 && batLevel != -1) {
+                if (bat != -1 && batLevel != -1 && bat != batLevel) {
                     batInfo = "$bat% "
                 }
                 batLevel = bat
