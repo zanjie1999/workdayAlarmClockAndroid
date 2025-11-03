@@ -3,9 +3,11 @@ package com.zyyme.workdayalarmclock
 import android.annotation.SuppressLint
 import android.app.*
 import android.app.admin.DevicePolicyManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -67,7 +69,9 @@ class MeService : Service() {
 
     // 用于展示的电池信息 有变化才有值，固定电量不显示
     var batInfo = ""
+    var batLevel = -1
 
+    private var batteryReceiver: BroadcastReceiver? = null
     private var notificationBuilder: NotificationCompat.Builder? = null
     private var notificationManager: NotificationManager? = null
     private var wakePendingIntent: PendingIntent? = null
@@ -207,6 +211,20 @@ class MeService : Service() {
             }
         }
 
+        // 注册电量变化监听
+        batteryReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val bat = intent.getIntExtra("level", -1)
+                // 第一次不显示，有变化再显示
+                if (bat != -1 && batLevel != -1) {
+                    batInfo = "$bat% "
+                }
+                batLevel = bat
+            }
+        }
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
+
         // 请求音频焦点
         val result = audioManager.requestAudioFocus(
             afChangeListener,
@@ -280,6 +298,7 @@ class MeService : Service() {
         wakeLock?.release()
         wakeLockPlay?.release()
         wifiLock?.release()
+        unregisterReceiver(batteryReceiver)
         stopForeground(true)
         if (wakePendingIntent != null) {
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager

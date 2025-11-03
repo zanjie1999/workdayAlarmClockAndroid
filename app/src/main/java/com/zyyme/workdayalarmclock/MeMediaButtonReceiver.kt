@@ -56,13 +56,6 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
                 MeService.me?.toGo("wake")
                 Log.d("logView MediaButton", "ACTION_WAKE")
             }
-            Intent.ACTION_BATTERY_CHANGED -> {
-                val bat = intent.getIntExtra("level", -1)
-                if (bat != -1) {
-                    MeService.me?.batInfo = "$bat% "
-                }
-                Log.d("logView MediaButton", "ACTION_BATTERY_CHANGED")
-            }
             else -> {
                 Log.d("logView MediaButton", "未知action $action")
             }
