@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.BatteryManager
 import android.util.Log
 import android.view.KeyEvent
 
@@ -54,6 +55,13 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
             MeService.ACTION_WAKE -> {
                 MeService.me?.toGo("wake")
                 Log.d("logView MediaButton", "ACTION_WAKE")
+            }
+            Intent.ACTION_BATTERY_CHANGED -> {
+                val bat = intent.getIntExtra("level", -1)
+                if (bat != -1) {
+                    MeService.me?.batInfo = "$bat% "
+                }
+                Log.d("logView MediaButton", "ACTION_BATTERY_CHANGED")
             }
             else -> {
                 Log.d("logView MediaButton", "未知action $action")

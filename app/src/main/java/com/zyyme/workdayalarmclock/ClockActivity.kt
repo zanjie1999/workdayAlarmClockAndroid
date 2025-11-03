@@ -280,9 +280,9 @@ class ClockActivity : AppCompatActivity() {
                 } else {
                     val millis = MeService.me?.player?.currentPosition;
                     if (millis != null) {
-                        findViewById<TextView>(R.id.tv_date).text = hmsmde[1] + " ▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
+                        findViewById<TextView>(R.id.tv_date).text = MeService.me!!.batInfo + hmsmde[1] + " ▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
                     } else {
-                        findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
+                        findViewById<TextView>(R.id.tv_date).text = MeService.me!!.batInfo + hmsmde[1]
                     }
                 }
                 if ((System.currentTimeMillis() / 1000) % 10 == 0L) {

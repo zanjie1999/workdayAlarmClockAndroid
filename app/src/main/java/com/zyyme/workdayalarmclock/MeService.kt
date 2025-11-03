@@ -65,6 +65,9 @@ class MeService : Service() {
     var loadProgress: Int = 0
     var defaultSeek: Int = 0
 
+    // 用于展示的电池信息 有变化才有值，固定电量不显示
+    var batInfo = ""
+
     private var notificationBuilder: NotificationCompat.Builder? = null
     private var notificationManager: NotificationManager? = null
     private var wakePendingIntent: PendingIntent? = null
