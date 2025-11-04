@@ -332,7 +332,13 @@ class ClockActivity : AppCompatActivity() {
         Log.d("btn_minsize", "height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15) {
             // 竖屏秒换行
-            sdfHmsmde = SimpleDateFormat("h:mm\nss.M月d日 E")
+            if (!File(filesDir.absolutePath + "/tss").exists()) {
+                if (File(filesDir.absolutePath + "/t24").exists()) {
+                    sdfHmsmde = SimpleDateFormat("H:mm\nss.M月d日 E")
+                } else {
+                    sdfHmsmde = SimpleDateFormat("h:mm\nss.M月d日 E")
+                }
+            }
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
 //                tvTime.textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.22f
                 tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.34f
