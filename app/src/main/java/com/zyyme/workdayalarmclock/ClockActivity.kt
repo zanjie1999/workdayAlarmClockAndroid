@@ -78,6 +78,18 @@ class ClockActivity : AppCompatActivity() {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
 
+        // 不显示秒的flag  24小时制flag
+        val flag24 = File(filesDir.absolutePath + "/t24").exists()
+        if (File(filesDir.absolutePath + "/tss").exists()) {
+            if (flag24) {
+                sdfHmsmde = SimpleDateFormat("H:mm.M月d日 E")
+            } else {
+                sdfHmsmde = SimpleDateFormat("h:mm.M月d日 E")
+            }
+        } else if (flag24) {
+            sdfHmsmde = SimpleDateFormat("H:mm:ss.M月d日 E")
+        }
+
 
         setFullscreen()
 
