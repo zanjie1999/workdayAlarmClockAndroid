@@ -888,18 +888,21 @@ class MeService : Service() {
         }
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
-                ClockActivity.me?.showMsg("播放暂停")
-                print2LogView("媒体按键 播放暂停")
                 if (!isStop) {
+                    print2LogView("媒体按键 播放暂停")
                     if (player!!.isPlaying == true) {
+                        ClockActivity.me?.showMsg("暂停")
                         player!!.pause()
                         onPause()
                     } else {
+                        ClockActivity.me?.showMsg("播放")
                         player!!.start()
                         onPlay()
                     }
                     return true
                 } else {
+                    print2LogView("媒体按键 一键")
+                    ClockActivity.me?.showMsg("一键")
                     // 触发一键 即播放默认歌单
                     toGo("1key")
                 }
@@ -908,11 +911,13 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MEDIA_PLAY -> {
                 print2LogView("媒体按键 播放")
                 if (!isStop) {
+                    ClockActivity.me?.showMsg("播放")
                     if (player?.isPlaying == false) {
                         player!!.start()
                         onPlay()
                     }
                 } else {
+                    ClockActivity.me?.showMsg("一键")
                     // 触发一键 即播放默认歌单
                     toGo("1key")
                 }
@@ -920,6 +925,7 @@ class MeService : Service() {
             }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 print2LogView("媒体按键 暂停")
+                ClockActivity.me?.showMsg("暂停")
                 if (!isStop && player?.isPlaying == true) {
                     player!!.pause()
                     onPause()
