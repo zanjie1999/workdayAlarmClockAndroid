@@ -28,6 +28,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.zyyme.workdayalarmclock.MainActivity.Companion.keyDownTime
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -324,7 +325,14 @@ class ClockActivity : AppCompatActivity() {
         windowManager.defaultDisplay.getMetrics(displayMetrics)
         val tvTime = findViewById<TextView>(R.id.tv_time)
         val tvDate = findViewById<TextView>(R.id.tv_date)
-        val realHeightPixels = findViewById<LinearLayout>(R.id.root_layout).height
+        var realHeightPixels = findViewById<LinearLayout>(R.id.root_layout).height
+        if (displayMetrics.heightPixels == displayMetrics.widthPixels) {
+            // 圆形屏幕 增加上下边距
+            Log.d("ClockActivity", "圆形屏幕")
+            val padding = realHeightPixels / 10
+            findViewById<LinearLayout>(R.id.root_layout).setPadding(padding / 2, padding, padding / 2, padding * 2)
+            realHeightPixels -= padding * 3
+        }
         Log.d("ClockActivity", "realHeightPixels: $realHeightPixels")
         tvTime.layoutParams.height = (realHeightPixels * 0.8).toInt()
         tvDate.layoutParams.height = (realHeightPixels * 0.2).toInt()
@@ -397,12 +405,29 @@ class ClockActivity : AppCompatActivity() {
         if (clockMode) {
             when (keyEvent?.action) {
                 KeyEvent.ACTION_DOWN -> {
-                    if (MeService.me?.keyHandle(keyEvent.keyCode, 0) == true) {
+                    // 每增加一个 单按钮 就要维护一次这个
+                    if (keyEvent.keyCode in setOf(
+                            KeyEvent.KEYCODE_SOFT_SLEEP,
+                            KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
+                        )) {
+                        if (keyDownTime == 0L) {
+                            keyDownTime = System.currentTimeMillis()
+                        }
+                        return true
+                    } else if (MeService.me?.keyHandle(keyEvent.keyCode, 0) == true) {
                         return true
                     }
                 }
                 KeyEvent.ACTION_UP -> {
-
+                    // 每增加一个 单按钮 就要维护一次这个
+                    if (keyEvent.keyCode in setOf(
+                            KeyEvent.KEYCODE_SOFT_SLEEP,
+                            KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
+                        )) {
+                        MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime)
+                        keyDownTime = 0L
+                        return true
+                    }
                 }
             }
         }
