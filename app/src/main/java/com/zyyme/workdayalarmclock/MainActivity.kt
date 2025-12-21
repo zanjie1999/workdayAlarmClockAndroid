@@ -214,7 +214,9 @@ class MainActivity : AppCompatActivity() {
         if (findViewById<EditText>(R.id.shellInput).text.toString() == "") {
             when (keyEvent?.action) {
                 KeyEvent.ACTION_DOWN -> {
-                    keyDownTime = System.currentTimeMillis()
+                    if (keyDownTime == 0L) {
+                        keyDownTime = System.currentTimeMillis()
+                    }
                     // 每增加一个按键 就要维护一次这个
                     if (keyEvent.keyCode in setOf(
                             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
@@ -231,6 +233,7 @@ class MainActivity : AppCompatActivity() {
                             KeyEvent.KEYCODE_FOCUS,
                             KeyEvent.KEYCODE_MENU,
                             KeyEvent.KEYCODE_SOFT_SLEEP,
+                            KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
                             2147483647,
                             2147483646,
                             2147483645
@@ -246,8 +249,10 @@ class MainActivity : AppCompatActivity() {
                         MeService.Companion.me?.stopSelf()
                         exitProcess(0)
                     } else if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
+                        keyDownTime = 0L
                         return true
                     }
+                    keyDownTime = 0L
                 }
             }
         } else if (keyEvent?.action == KeyEvent.ACTION_UP && keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {

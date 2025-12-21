@@ -1005,29 +1005,39 @@ class MeService : Service() {
 //                player?.seekTo(player!!.currentPosition - 5000)
 //                return true
 //            }
-            KeyEvent.KEYCODE_SOFT_SLEEP -> {
-                print2LogView("媒体按键 叮咚Play睡眠")
-                if (player != null) {
-                    if (!player!!.isPlaying && isStop) {
-                        print2LogView("触发上一首")
-                        toGo("prev")
-                    } else if (!isStop) {
-                        if (holdTime > 1200) {
-                            toGo("prev")
-                        } else if (holdTime > 500) {
-                            player?.stop()
-                            toGo("stop")
-                        } else if (player!!.isPlaying) {
-                            player!!.pause()
-                            onPause()
-                        } else {
-                            player!!.start()
-                            onPlay()
-                        }
+            // 叮咚play睡眠按钮            小魔镜按钮
+            KeyEvent.KEYCODE_SOFT_SLEEP, KeyEvent.KEYCODE_ZENKAKU_HANKAKU -> {
+                print2LogView("媒体按键 单按钮")
+                if (holdTime > 9000) {
+                    try {
+                        val intent = Intent()
+                        intent.component = ComponentName("com.example.kenna", "com.example.kenna.activity.SecondActivity")
+                        startActivity(intent)
+                    } catch (e : Exception) {
+                        print2LogView("启动小魔镜应用失败")
+                        e.printStackTrace()
+                    }
+                } else if (holdTime > 2200) {
+                    ClockActivity.me?.showMsg("停止")
+                    toGo("stop")
+                } else if (holdTime > 1200) {
+                    ClockActivity.me?.showMsg("上一首")
+                    toGo("prev")
+                } else if (holdTime > 500) {
+                    ClockActivity.me?.showMsg("下一首")
+                    toGo("next")
+                } else if (!isStop) {
+                    if (player!!.isPlaying == true) {
+                        ClockActivity.me?.showMsg("暂停")
+                        player!!.pause()
+                        onPause()
+                    } else {
+                        ClockActivity.me?.showMsg("播放")
+                        player!!.start()
+                        onPlay()
                     }
                 } else {
-                    print2LogView("触发上一首")
-                    toGo("prev")
+                    toGo("1key")
                 }
                 return true
             }

@@ -23,10 +23,13 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
                 val keyEvent =intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent ?: return
                 when (keyEvent.action) {
                     KeyEvent.ACTION_DOWN -> {
-                        keyDownTime = System.currentTimeMillis()
+                        if (keyDownTime == 0L) {
+                            keyDownTime = System.currentTimeMillis()
+                        }
                     }
                     KeyEvent.ACTION_UP -> {
                         MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - MainActivity.keyDownTime)
+                        keyDownTime = 0L
                         Log.d("logView MediaButton", "mbrHandler: $MainActivity.mbrHandler code: $keyEvent.keyCode")
                     }
                 }
