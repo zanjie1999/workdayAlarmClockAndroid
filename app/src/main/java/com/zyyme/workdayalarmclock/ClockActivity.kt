@@ -432,7 +432,7 @@ class ClockActivity : AppCompatActivity() {
                     if (keyEvent.keyCode in setOf(
                             KeyEvent.KEYCODE_SOFT_SLEEP,
                             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
-                            KeyEvent.KEYCODE_MENU,
+//                            KeyEvent.KEYCODE_MENU,
                             KeyEvent.KEYCODE_VOLUME_MUTE,
                         )) {
                         if (keyDownTime == 0L) {
