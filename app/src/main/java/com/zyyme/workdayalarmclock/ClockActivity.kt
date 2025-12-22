@@ -341,8 +341,8 @@ class ClockActivity : AppCompatActivity() {
         val tvDate = findViewById<TextView>(R.id.tv_date)
         var realHeightPixels = findViewById<LinearLayout>(R.id.root_layout).height
         val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15
-        val isRound = displayMetrics.heightPixels == displayMetrics.widthPixels
-        if (isRound || MeService.me?.isBonjour == true) {
+        val isRound = displayMetrics.heightPixels == displayMetrics.widthPixels || MeService.me?.isBonjour == true
+        if (isRound) {
             // 圆形屏幕 增加上下边距
             Log.d("ClockActivity", "圆形屏幕")
             val padding = realHeightPixels / 10
@@ -433,6 +433,7 @@ class ClockActivity : AppCompatActivity() {
                             KeyEvent.KEYCODE_SOFT_SLEEP,
                             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
                             KeyEvent.KEYCODE_MENU,
+                            KeyEvent.KEYCODE_VOLUME_MUTE,
                         )) {
                         if (keyDownTime == 0L) {
                             keyDownTime = System.currentTimeMillis()
@@ -447,6 +448,8 @@ class ClockActivity : AppCompatActivity() {
                     if (keyEvent.keyCode in setOf(
                             KeyEvent.KEYCODE_SOFT_SLEEP,
                             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
+                            KeyEvent.KEYCODE_MENU,
+                            KeyEvent.KEYCODE_VOLUME_MUTE,
                         )) {
                         MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime)
                         keyDownTime = 0L
