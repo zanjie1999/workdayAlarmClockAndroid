@@ -342,7 +342,7 @@ class ClockActivity : AppCompatActivity() {
         var realHeightPixels = findViewById<LinearLayout>(R.id.root_layout).height
         val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15
         val isRound = displayMetrics.heightPixels == displayMetrics.widthPixels
-        if (isRound) {
+        if (isRound || MeService.me?.isBonjour == true) {
             // 圆形屏幕 增加上下边距
             Log.d("ClockActivity", "圆形屏幕")
             val padding = realHeightPixels / 10
@@ -432,6 +432,7 @@ class ClockActivity : AppCompatActivity() {
                     if (keyEvent.keyCode in setOf(
                             KeyEvent.KEYCODE_SOFT_SLEEP,
                             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
+                            KeyEvent.KEYCODE_MENU,
                         )) {
                         if (keyDownTime == 0L) {
                             keyDownTime = System.currentTimeMillis()

@@ -50,7 +50,7 @@ class MeService : Service() {
         // getprop ro.product.manufacturer
         // getprop ro.product.model
         //                                 绿色陪伴音箱，叮咚play，小魔镜
-        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g")
+        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci")
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
@@ -70,6 +70,8 @@ class MeService : Service() {
     // 用于展示的电池信息 有变化才有值，固定电量不显示
     var batInfo = ""
     var batLevel = -1
+
+    val isBonjour = Build.MANUFACTURER + Build.MODEL == "AllwinnerQUAD-CORE A64 ococci"
 
     private var batteryReceiver: BroadcastReceiver? = null
     private var notificationBuilder: NotificationCompat.Builder? = null
@@ -987,6 +989,10 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MENU -> {
                 if (ysLedStatus()) {
                     print2LogView("菜单 一说宝宝摸头")
+                } else if (isBonjour) {
+                    // 触摸太灵了，不用
+//                    print2LogView("菜单 Bonjour闹钟按钮")
+//                    handleSingleKey(holdTime)
                 } else {
                     print2LogView("菜单 停止")
                     player?.stop()
@@ -1005,10 +1011,14 @@ class MeService : Service() {
 //                player?.seekTo(player!!.currentPosition - 5000)
 //                return true
 //            }
-            // 叮咚play睡眠按钮            小魔镜按钮
-            KeyEvent.KEYCODE_SOFT_SLEEP, KeyEvent.KEYCODE_ZENKAKU_HANKAKU -> {
+            // 叮咚play睡眠按钮            小魔镜按钮                           Bonjour闹钟按钮按下去
+            KeyEvent.KEYCODE_SOFT_SLEEP, KeyEvent.KEYCODE_ZENKAKU_HANKAKU, KeyEvent.KEYCODE_VOLUME_MUTE -> {
+                if (keyCode == KeyEvent.KEYCODE_VOLUME_MUTE && !isBonjour) {
+                    // 不是Bonjour闹钟时恢复本来的静音功能
+                    return false
+                }
                 print2LogView("媒体按键 单按钮")
-                if (holdTime > 9000) {
+                if (holdTime > 9000 && keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
                     try {
                         val intent = Intent()
                         intent.component = ComponentName("com.example.kenna", "com.example.kenna.activity.SecondActivity")
@@ -1017,27 +1027,8 @@ class MeService : Service() {
                         print2LogView("启动小魔镜应用失败")
                         e.printStackTrace()
                     }
-                } else if (holdTime > 2200) {
-                    ClockActivity.me?.showMsg("停止")
-                    toGo("stop")
-                } else if (holdTime > 1200) {
-                    ClockActivity.me?.showMsg("上一首")
-                    toGo("prev")
-                } else if (holdTime > 500) {
-                    ClockActivity.me?.showMsg("下一首")
-                    toGo("next")
-                } else if (!isStop) {
-                    if (player!!.isPlaying == true) {
-                        ClockActivity.me?.showMsg("暂停")
-                        player!!.pause()
-                        onPause()
-                    } else {
-                        ClockActivity.me?.showMsg("播放")
-                        player!!.start()
-                        onPlay()
-                    }
                 } else {
-                    toGo("1key")
+                    handleSingleKey(holdTime)
                 }
                 return true
             }
@@ -1046,6 +1037,34 @@ class MeService : Service() {
             print2LogView("未知按键 $keyCode")
         }
         return false
+    }
+
+    /**
+     * 处理单按钮事件
+     */
+    fun handleSingleKey(holdTime: Long = 0) {
+        if (holdTime > 2200) {
+            ClockActivity.me?.showMsg("停止")
+            toGo("stop")
+        } else if (holdTime > 1200) {
+            ClockActivity.me?.showMsg("上一首")
+            toGo("prev")
+        } else if (holdTime > 500) {
+            ClockActivity.me?.showMsg("下一首")
+            toGo("next")
+        } else if (!isStop) {
+            if (player!!.isPlaying == true) {
+                ClockActivity.me?.showMsg("暂停")
+                player!!.pause()
+                onPause()
+            } else {
+                ClockActivity.me?.showMsg("播放")
+                player!!.start()
+                onPlay()
+            }
+        } else {
+            toGo("1key")
+        }
     }
 
     /**
