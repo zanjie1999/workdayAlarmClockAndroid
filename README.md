@@ -98,6 +98,13 @@ rm disable
 2秒上一首  
 3秒停止  
 
+### Bonjour闹钟
+使用顶部触摸按钮按下去来控制（触摸容易误触，用不了一点）：
+短按播放/暂停
+1秒下一首
+2秒上一首
+3秒停止
+
 ### 协议 咩License
 使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   
 Using this project is deemed to indicate that you have read and agreed to abide by [this LICENSE](https://github.com/zanjie1999/LICENSE)   
