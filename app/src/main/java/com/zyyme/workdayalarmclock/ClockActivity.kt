@@ -51,6 +51,9 @@ class ClockActivity : AppCompatActivity() {
     var showMsgTime = 0
 
     var clockMode = false
+
+    var enableTop = false
+
     fun showMsg(msg: String) {
         runOnUiThread {
             showMsgTime = 3
@@ -292,10 +295,20 @@ class ClockActivity : AppCompatActivity() {
                     showMsgTime--
                 } else {
                     val millis = MeService.me?.player?.currentPosition;
-                    if (millis != null) {
-                        findViewById<TextView>(R.id.tv_date).text = MeService.me!!.batInfo + hmsmde[1] + " ▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
+                    if (enableTop) {
+                        if (millis != null) {
+                            findViewById<TextView>(R.id.tv_top).text = MeService.me!!.batInfo + "▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
+                            findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
+                        } else {
+                            findViewById<TextView>(R.id.tv_top).text = MeService.me!!.batInfo
+                            findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
+                        }
                     } else {
-                        findViewById<TextView>(R.id.tv_date).text = MeService.me!!.batInfo + hmsmde[1]
+                        if (millis != null) {
+                            findViewById<TextView>(R.id.tv_date).text = MeService.me!!.batInfo + hmsmde[1] + " ▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
+                        } else {
+                            findViewById<TextView>(R.id.tv_date).text = MeService.me!!.batInfo + hmsmde[1]
+                        }
                     }
                 }
                 if ((System.currentTimeMillis() / 1000) % 10 == 0L) {
@@ -323,22 +336,32 @@ class ClockActivity : AppCompatActivity() {
 
         val displayMetrics = DisplayMetrics()
         windowManager.defaultDisplay.getMetrics(displayMetrics)
+        val tvTop = findViewById<TextView>(R.id.tv_top)
         val tvTime = findViewById<TextView>(R.id.tv_time)
         val tvDate = findViewById<TextView>(R.id.tv_date)
         var realHeightPixels = findViewById<LinearLayout>(R.id.root_layout).height
-        if (displayMetrics.heightPixels == displayMetrics.widthPixels) {
+        val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15
+        val isRound = displayMetrics.heightPixels == displayMetrics.widthPixels
+        if (isRound) {
             // 圆形屏幕 增加上下边距
             Log.d("ClockActivity", "圆形屏幕")
             val padding = realHeightPixels / 10
-            findViewById<LinearLayout>(R.id.root_layout).setPadding(padding / 2, padding, padding / 2, padding * 2)
-            realHeightPixels -= padding * 3
+            findViewById<LinearLayout>(R.id.root_layout).setPadding(padding / 2, padding *2, padding / 2, padding * 2)
+            realHeightPixels -= padding * 4
         }
         Log.d("ClockActivity", "realHeightPixels: $realHeightPixels")
-        tvTime.layoutParams.height = (realHeightPixels * 0.8).toInt()
+        if (isRound || isVertical) {
+            // 启用顶部框 圆形 竖屏
+            tvTime.layoutParams.height = (realHeightPixels * 0.6).toInt()
+            tvTop.layoutParams.height = (realHeightPixels * 0.2).toInt()
+            enableTop = true
+        } else {
+            tvTime.layoutParams.height = (realHeightPixels * 0.8).toInt()
+        }
         tvDate.layoutParams.height = (realHeightPixels * 0.2).toInt()
 
         Log.d("btn_minsize", "height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
-        if (displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15) {
+        if (isVertical) {
             // 竖屏秒换行
             if (!File(filesDir.absolutePath + "/tss").exists()) {
                 if (File(filesDir.absolutePath + "/t24").exists()) {
