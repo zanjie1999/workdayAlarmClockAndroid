@@ -959,9 +959,10 @@ class MeService : Service() {
             }
             // 好像系统都会强制响应音量键 那这就用int最大值来代替这个位置
             2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP -> {
-                if (keyCode == KeyEvent.KEYCODE_VOLUME_UP && holdTime > 500) {
+                if (keyCode == KeyEvent.KEYCODE_VOLUME_UP && holdTime > 800) {
                     ClockActivity.me?.showMsg("下一首")
                     print2LogView("媒体按键 长按音量加")
+                    player?.pause()
                     toGo("next")
                     return true
                 }
@@ -973,9 +974,10 @@ class MeService : Service() {
                 return true
             }
             2147483646, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN && holdTime > 500) {
+                if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN && holdTime > 800) {
                     ClockActivity.me?.showMsg("上一首")
                     print2LogView("媒体按键 长按音量减")
+                    player?.pause()
                     toGo("prev")
                     return true
                 }
@@ -1057,13 +1059,13 @@ class MeService : Service() {
      * 处理单按钮事件
      */
     fun handleSingleKey(holdTime: Long = 0) {
-        if (holdTime > 2200) {
+        if (holdTime > 2500) {
             ClockActivity.me?.showMsg("停止")
             toGo("stop")
-        } else if (holdTime > 1200) {
+        } else if (holdTime > 1500) {
             ClockActivity.me?.showMsg("上一首")
             toGo("prev")
-        } else if (holdTime > 500) {
+        } else if (holdTime > 800) {
             ClockActivity.me?.showMsg("下一首")
             toGo("next")
         } else if (!isStop) {
