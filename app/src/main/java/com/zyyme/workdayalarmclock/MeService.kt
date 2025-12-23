@@ -958,18 +958,32 @@ class MeService : Service() {
                 return true
             }
             // 好像系统都会强制响应音量键 那这就用int最大值来代替这个位置
-            2147483647, KeyEvent.KEYCODE_DPAD_UP -> {
-                ClockActivity.me?.showMsg("音量加")
-                print2LogView("媒体按键 音量加")
+            2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (keyCode == KeyEvent.KEYCODE_VOLUME_UP && holdTime > 500) {
+                    ClockActivity.me?.showMsg("下一首")
+                    print2LogView("媒体按键 长按音量加")
+                    toGo("next")
+                    return true
+                }
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                val per = (am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
+                ClockActivity.me?.showMsg("音量${per}%")
+                print2LogView("媒体按键 音量加 ${per}%")
                 return true
             }
-            2147483646, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                ClockActivity.me?.showMsg("音量减")
-                print2LogView("媒体按键 音量减")
+            2147483646, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN && holdTime > 500) {
+                    ClockActivity.me?.showMsg("上一首")
+                    print2LogView("媒体按键 长按音量减")
+                    toGo("prev")
+                    return true
+                }
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                val per = (am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
+                ClockActivity.me?.showMsg("音量${per}%")
+                print2LogView("媒体按键 音量减 ${per}%")
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_STOP -> {

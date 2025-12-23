@@ -235,6 +235,8 @@ class MainActivity : AppCompatActivity() {
                             KeyEvent.KEYCODE_SOFT_SLEEP,
                             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
                             KeyEvent.KEYCODE_VOLUME_MUTE,
+                            KeyEvent.KEYCODE_VOLUME_UP,
+                            KeyEvent.KEYCODE_VOLUME_DOWN,
                             2147483647,
                             2147483646,
                             2147483645

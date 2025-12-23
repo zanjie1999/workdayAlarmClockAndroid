@@ -57,7 +57,11 @@ class ClockActivity : AppCompatActivity() {
     fun showMsg(msg: String) {
         runOnUiThread {
             showMsgTime = 3
-            findViewById<TextView>(R.id.tv_date).text = msg
+            if (enableTop) {
+                findViewById<TextView>(R.id.tv_top).text = msg
+            } else {
+                findViewById<TextView>(R.id.tv_date).text = msg
+            }
         }
     }
 
@@ -434,7 +438,10 @@ class ClockActivity : AppCompatActivity() {
                             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
 //                            KeyEvent.KEYCODE_MENU,
                             KeyEvent.KEYCODE_VOLUME_MUTE,
+                            KeyEvent.KEYCODE_VOLUME_UP,
+                            KeyEvent.KEYCODE_VOLUME_DOWN,
                         )) {
+                        Log.d("ClockActivity", "keyDown keyDownTime:${keyDownTime} keyCode:${keyEvent.keyCode}")
                         if (keyDownTime == 0L) {
                             keyDownTime = System.currentTimeMillis()
                         }
@@ -448,12 +455,15 @@ class ClockActivity : AppCompatActivity() {
                     if (keyEvent.keyCode in setOf(
                             KeyEvent.KEYCODE_SOFT_SLEEP,
                             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
-                            KeyEvent.KEYCODE_MENU,
+//                            KeyEvent.KEYCODE_MENU,
                             KeyEvent.KEYCODE_VOLUME_MUTE,
+                            KeyEvent.KEYCODE_VOLUME_UP,
+                            KeyEvent.KEYCODE_VOLUME_DOWN,
                         )) {
-                        MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime)
+                        val holdTime = System.currentTimeMillis() - keyDownTime
+                        Log.d("ClockActivity", "keyUp holdTime:${holdTime} keyCode:${keyEvent.keyCode}")
                         keyDownTime = 0L
-                        return true
+                        return MeService.me?.keyHandle(keyEvent.keyCode, holdTime) == true
                     }
                 }
             }
