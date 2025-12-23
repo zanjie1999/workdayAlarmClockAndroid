@@ -53,6 +53,10 @@
             android:name=".ClockActivity"
             android:launchMode="singleTask"
             android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <activity
