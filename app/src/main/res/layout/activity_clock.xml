@@ -171,7 +171,7 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:insetTop="0dp"
+                android:insetTop="1dp"
                 android:insetRight="1dp"
                 android:insetBottom="0dp"
                 android:text="应用"
