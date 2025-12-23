@@ -868,6 +868,11 @@ class MeService : Service() {
                 print2LogView("设置一说led重复 ${n[0]}到${n.last()} 延迟${n[1]}ms ")
                 ysSetLedsValue(n[0].toInt(), n.last().toInt(), n[1].toLong(), true)
                 return
+            } else if (cmd == "app") {
+                // 打开应用列表
+                val appListIntent = Intent(this, AppListActivity::class.java)
+                startActivity(appListIntent)
+                return
             }
             writer?.println(cmd)
             writer?.flush()

@@ -9,7 +9,8 @@ import androidx.recyclerview.widget.RecyclerView
 
 class AppAdapter(
     private var allApps: List<AppInfo>,
-    private val onItemClick: (AppInfo) -> Unit
+    private val onItemClick: (AppInfo) -> Unit,
+    private val onItemLongClick: (AppInfo) -> Unit
 ) : RecyclerView.Adapter<AppAdapter.ViewHolder>() {
 
     private var filteredApps: List<AppInfo> = allApps
@@ -29,6 +30,10 @@ class AppAdapter(
         holder.tvName.text = app.name
         holder.ivIcon.setImageDrawable(app.icon)
         holder.itemView.setOnClickListener { onItemClick(app) }
+        holder.itemView.setOnLongClickListener {
+            onItemLongClick(app)
+            true
+        }
     }
 
     override fun getItemCount() = filteredApps.size

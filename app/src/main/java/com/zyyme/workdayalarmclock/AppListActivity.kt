@@ -1,13 +1,14 @@
 package com.zyyme.workdayalarmclock
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.widget.EditText
 import android.widget.ImageButton
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
@@ -32,12 +33,17 @@ class AppListActivity : AppCompatActivity() {
         }
 
         val apps = getLaunchableApps()
-        adapter = AppAdapter(apps) { appInfo ->
+        adapter = AppAdapter(apps, { appInfo ->
             val launchIntent = packageManager.getLaunchIntentForPackage(appInfo.packageName)
             if (launchIntent != null) {
                 startActivity(launchIntent)
             }
-        }
+        }, { appInfo ->
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", appInfo.packageName, null)
+            }
+            startActivity(intent)
+        })
         rvApps.adapter = adapter
 
         // 实时搜索功能
