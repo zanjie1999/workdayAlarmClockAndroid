@@ -53,11 +53,6 @@
             android:name=".ClockActivity"
             android:launchMode="singleTask"
             android:exported="true">
-<!--            <intent-filter>-->
-<!--                &lt;!&ndash; 声明为桌面/启动器 &ndash;&gt;-->
-<!--                <category android:name="android.intent.category.HOME" />-->
-<!--                <category android:name="android.intent.category.DEFAULT" />-->
-<!--            </intent-filter>-->
         </activity>
 
         <activity
@@ -120,8 +115,9 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
     </application>
