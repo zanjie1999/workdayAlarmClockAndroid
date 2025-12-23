@@ -52,7 +52,18 @@
         <activity
             android:name=".ClockActivity"
             android:launchMode="singleTask"
-            android:exported="true" />
+            android:exported="true">
+<!--            <intent-filter>-->
+<!--                &lt;!&ndash; 声明为桌面/启动器 &ndash;&gt;-->
+<!--                <category android:name="android.intent.category.HOME" />-->
+<!--                <category android:name="android.intent.category.DEFAULT" />-->
+<!--            </intent-filter>-->
+        </activity>
+
+        <activity
+            android:name=".AppListActivity"
+            android:exported="false"
+            android:label="应用列表" />
 
         <service
             android:name=".MeService"

@@ -70,6 +70,11 @@ class ClockActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
 
+        // 启动Go服务 如果App以特殊方式启动
+        if (MeService.me == null) {
+            startService(Intent(this, MeService::class.java))
+        }
+
         // 可以显示在锁屏上
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -114,6 +119,10 @@ class ClockActivity : AppCompatActivity() {
             val intent: Intent = Intent(this, MainActivity::class.java)
             // 清除任务栈并创建新任务
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+        }
+        findViewById<Button>(R.id.btn_app).setOnClickListener {
+            val intent = Intent(this, AppListActivity::class.java)
             startActivity(intent)
         }
         findViewById<Button>(R.id.btn_prev).setOnClickListener {

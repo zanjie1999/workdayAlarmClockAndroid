@@ -18,15 +18,15 @@
             android:id="@+id/btm_layout1"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="2"
+            android:layout_weight="1"
             android:orientation="horizontal"
-            android:weightSum="2">
+            android:weightSum="6">
 
             <Button
                 android:id="@+id/btn_back"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_weight="1"
+                android:layout_weight="2"
                 android:insetTop="0dp"
                 android:insetRight="1dp"
                 android:insetBottom="0dp"
@@ -35,10 +35,22 @@
                 app:backgroundTint="@color/clockBtnColor" />
 
             <Button
-                android:id="@+id/btn_stop"
+                android:id="@+id/btn_app"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetRight="1dp"
+                android:insetBottom="0dp"
+                android:text="应用"
+                android:textSize="15sp"
+                app:backgroundTint="@color/clockBtnColor" />
+
+            <Button
+                android:id="@+id/btn_stop"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="3"
                 android:insetLeft="1dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
