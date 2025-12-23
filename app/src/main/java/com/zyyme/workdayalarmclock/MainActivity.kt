@@ -50,6 +50,15 @@ class MainActivity : AppCompatActivity() {
         isActivityVisible = false
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        // 当作为桌面并且已启动时，再次按下Home键
+        if (intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
+            val appListIntent = Intent(this, AppListActivity::class.java)
+            startActivity(appListIntent)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         me = this
         useClockMode = MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()
