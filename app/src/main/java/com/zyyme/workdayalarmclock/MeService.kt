@@ -595,12 +595,12 @@ class MeService : Service() {
                     }
                 } else {
                     print2LogView("设备管理员未激活，无法锁屏")
-//                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-//                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-//                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
-//                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "远程锁屏需要这个权限")
-//                    }
-//                    startActivity(intent)
+                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
+                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "远程锁屏需要这个权限")
+                    }
+                    startActivity(intent)
                 }
             } else if (s == "EXIT") {
                 stopSelf()
