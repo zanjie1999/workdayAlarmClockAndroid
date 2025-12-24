@@ -52,7 +52,8 @@
         <activity
             android:name=".ClockActivity"
             android:launchMode="singleTask"
-            android:exported="true">
+            android:exported="true"
+            android:label="工作咩时钟">
             <intent-filter>
                 <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -61,7 +62,7 @@
 
         <activity
             android:name=".AppListActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="应用列表" />
 
         <service
