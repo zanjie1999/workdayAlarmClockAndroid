@@ -355,6 +355,7 @@ class ClockActivity : AppCompatActivity() {
         var realHeightPixels = findViewById<LinearLayout>(R.id.root_layout).height
         val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15
         val isRound = displayMetrics.heightPixels == displayMetrics.widthPixels || MeService.me?.isBonjour == true
+        Log.d("ClockActivity", "realHeightPixels: $realHeightPixels height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (isRound) {
             // 圆形屏幕 增加上下边距
             Log.d("ClockActivity", "圆形屏幕")
@@ -362,7 +363,6 @@ class ClockActivity : AppCompatActivity() {
             findViewById<LinearLayout>(R.id.root_layout).setPadding(0, padding * 2, 3, padding * 2)
             realHeightPixels -= padding * 4
         }
-        Log.d("ClockActivity", "realHeightPixels: $realHeightPixels")
         if (isRound || isVertical) {
             // 启用顶部框 圆形 竖屏
             tvTime.layoutParams.height = (realHeightPixels * 0.6).toInt()
@@ -373,7 +373,6 @@ class ClockActivity : AppCompatActivity() {
         }
         tvDate.layoutParams.height = (realHeightPixels * 0.2).toInt()
 
-        Log.d("btn_minsize", "height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (isVertical) {
             // 竖屏秒换行
             if (!File(filesDir.absolutePath + "/tss").exists()) {

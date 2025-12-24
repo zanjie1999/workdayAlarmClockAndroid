@@ -87,8 +87,12 @@ class MainActivity : AppCompatActivity() {
         if (MeService.me == null) {
             startService(Intent(this, MeService::class.java))
             if (useClockMode) {
-                // 初次启动，切换到时钟模式                            有clock文件的也切换
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                // 初次启动，切换到时钟模式 有clock文件的也切换      亮色主题（闹钟屏幕出线白色没那么明显）
+                if (File(filesDir.absolutePath + "/white").exists()) {
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+                } else {
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                }
                 val intent = Intent(this, ClockActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 intent.putExtra("clockMode", true)
