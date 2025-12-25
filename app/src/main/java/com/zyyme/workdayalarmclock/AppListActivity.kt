@@ -1,5 +1,6 @@
 package com.zyyme.workdayalarmclock
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -15,6 +16,8 @@ import androidx.recyclerview.widget.RecyclerView
 class AppListActivity : AppCompatActivity() {
 
     private lateinit var adapter: AppAdapter
+    private val PREFS_NAME = "app_list"
+    private val KEY_PINNED_APPS = "pinned_apps"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,13 +35,20 @@ class AppListActivity : AppCompatActivity() {
             finish()
         }
 
-        val apps = getLaunchableApps()
+        val apps = getLaunchableApps().toMutableList()
         adapter = AppAdapter(apps, { appInfo ->
+            // 点击 打开应用
             val launchIntent = packageManager.getLaunchIntentForPackage(appInfo.packageName)
             if (launchIntent != null) {
                 startActivity(launchIntent)
             }
         }, { appInfo ->
+            // 图标长按 置顶
+            togglePinApp(appInfo.packageName)
+            refreshAppList()
+//            rvApps.scrollToPosition(0)
+        }, { appInfo ->
+            // 名称长按 打开应用详情
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                 data = Uri.fromParts("package", appInfo.packageName, null)
             }
@@ -46,7 +56,6 @@ class AppListActivity : AppCompatActivity() {
         })
         rvApps.adapter = adapter
 
-        // 实时搜索功能
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -56,19 +65,43 @@ class AppListActivity : AppCompatActivity() {
         })
     }
 
+    private fun getPinnedApps(): Set<String> {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getStringSet(KEY_PINNED_APPS, emptySet()) ?: emptySet()
+    }
+
+    private fun togglePinApp(packageName: String) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val pinnedApps = getPinnedApps().toMutableSet()
+        if (pinnedApps.contains(packageName)) {
+            pinnedApps.remove(packageName)
+        } else {
+            pinnedApps.add(packageName)
+        }
+        prefs.edit().putStringSet(KEY_PINNED_APPS, pinnedApps).apply()
+    }
+
+    private fun refreshAppList() {
+        val apps = getLaunchableApps()
+        adapter.updateData(apps)
+    }
+
     private fun getLaunchableApps(): List<AppInfo> {
         val appList = mutableListOf<AppInfo>()
         val intent = Intent(Intent.ACTION_MAIN, null)
         intent.addCategory(Intent.CATEGORY_LAUNCHER)
         val resolveInfos = packageManager.queryIntentActivities(intent, 0)
+        val pinnedApps = getPinnedApps()
 
         for (resolveInfo in resolveInfos) {
             val name = resolveInfo.loadLabel(packageManager).toString()
             val packageName = resolveInfo.activityInfo.packageName
             val icon = resolveInfo.loadIcon(packageManager)
-            appList.add(AppInfo(name, packageName, icon))
+            val isPinned = pinnedApps.contains(packageName)
+            appList.add(AppInfo(name, packageName, icon, isPinned))
         }
 
-        return appList.sortedBy { it.name }
+        // 置顶应用在前，其余名称排序
+        return appList.sortedWith(compareByDescending<AppInfo> { it.isPinned } .thenBy { it.name })
     }
 }
