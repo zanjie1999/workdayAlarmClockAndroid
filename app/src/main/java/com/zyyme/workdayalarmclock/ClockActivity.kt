@@ -365,7 +365,7 @@ class ClockActivity : AppCompatActivity() {
             // 圆形屏幕 增加上下边距
             Log.d("ClockActivity", "圆形屏幕")
             val padding = realHeightPixels / 5
-            findViewById<LinearLayout>(R.id.root_layout).setPadding(0, padding * 2, 0, padding * 2)
+            findViewById<LinearLayout>(R.id.root_layout).setPadding(0, padding, 0, padding)
             realHeightPixels -= padding * 2
         }
         if (isRound || isVertical) {
