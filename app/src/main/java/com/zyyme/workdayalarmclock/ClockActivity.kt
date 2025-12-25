@@ -356,16 +356,19 @@ class ClockActivity : AppCompatActivity() {
         val tvTop = findViewById<TextView>(R.id.tv_top)
         val tvTime = findViewById<TextView>(R.id.tv_time)
         val tvDate = findViewById<TextView>(R.id.tv_date)
-        var realHeightPixels = findViewById<LinearLayout>(R.id.root_layout).height
+        val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
+        var realHeightPixels = rootLayout.height
         val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15
-        val isRound = displayMetrics.heightPixels == displayMetrics.widthPixels || MeService.me?.isBonjour == true
-        Log.d("ClockActivity", "realHeightPixels: $realHeightPixels height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
+        val isRound = rootLayout.height == rootLayout.width
+        Log.d("ClockActivity", "realHeight: $realHeightPixels realWidth: ${rootLayout.width} height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (isRound) {
             // 圆形屏幕 增加上下边距
             Log.d("ClockActivity", "圆形屏幕")
-            val padding = realHeightPixels / 10
-            findViewById<LinearLayout>(R.id.root_layout).setPadding(0, padding * 2, 3, padding * 2)
-            realHeightPixels -= padding * 4
+            val padding = realHeightPixels / 5
+//            findViewById<LinearLayout>(R.id.root_layout).setPadding(0, padding * 2, 0, padding * 2)
+            tvTop.setPadding(0,padding, 0,0)
+            tvDate.setPadding(0,0, 0,padding)
+            realHeightPixels -= padding * 2
         }
         if (isRound || isVertical) {
             // 启用顶部框 圆形 竖屏
@@ -453,7 +456,8 @@ class ClockActivity : AppCompatActivity() {
                             KeyEvent.KEYCODE_VOLUME_UP,
                             KeyEvent.KEYCODE_VOLUME_DOWN,
                         )) {
-                        Log.d("ClockActivity", "keyDown keyDownTime:${keyDownTime} keyCode:${keyEvent.keyCode}")
+                        // 按住时会不停触发
+//                        Log.d("ClockActivity", "keyDown keyDownTime:${keyDownTime} keyCode:${keyEvent.keyCode}")
                         if (keyDownTime == 0L) {
                             keyDownTime = System.currentTimeMillis()
                         }
