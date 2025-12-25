@@ -612,8 +612,10 @@ class MeService : Service() {
 //                System.exit(0)
             } else if (s == "RESTART") {
                 restartApp()
-            } else if (s == "REBWIFI") {
+            } else if (s == "REWIFI") {
                 Runtime.getRuntime().exec(arrayOf("su", "-c", "svc wifi disable&&svc wifi enable"))
+            } else if (s == "READB") {
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "settings put global adb_enabled 1;stop adbd;start adbd"))
             } else if (s == "REBOOT") {
                 Runtime.getRuntime().exec("reboot")
                 Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))
