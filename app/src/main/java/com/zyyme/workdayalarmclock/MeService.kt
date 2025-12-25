@@ -23,6 +23,7 @@ import android.view.WindowManager
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.DatagramPacket
@@ -563,7 +564,11 @@ class MeService : Service() {
                 val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
                     // 闹钟时，有关闭屏幕权限再打开屏幕
-                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                    if (File(filesDir.absolutePath + "/white").exists()) {
+                        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+                    } else {
+                        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                    }
                     val intent = Intent(this, ClockActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     intent.putExtra("clockMode", true)
@@ -572,7 +577,11 @@ class MeService : Service() {
                     print2LogView("已亮屏")
                 }
             } else if (s == "SCREENON") {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                if (File(filesDir.absolutePath + "/white").exists()) {
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+                } else {
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                }
                 val intent = Intent(this, ClockActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 intent.putExtra("clockMode", true)
@@ -606,6 +615,8 @@ class MeService : Service() {
                 stopSelf()
 //                System.exit(0)
             } else if (s == "RESTART") {
+                restartApp()
+            } else if (s == "REBOOT") {
                 restartApp()
             } else if (s == "Segmentation fault") {
                 print2LogView("出现系统错误，进行重启")
@@ -1069,9 +1080,11 @@ class MeService : Service() {
             toGo("stop")
         } else if (holdTime > 1500) {
             ClockActivity.me?.showMsg("上一首")
+            player?.pause()
             toGo("prev")
         } else if (holdTime > 800) {
             ClockActivity.me?.showMsg("下一首")
+            player?.pause()
             toGo("next")
         } else if (!isStop) {
             if (player!!.isPlaying == true) {

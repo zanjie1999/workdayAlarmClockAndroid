@@ -125,6 +125,10 @@ class ClockActivity : AppCompatActivity() {
             val intent = Intent(this, AppListActivity::class.java)
             startActivity(intent)
         }
+        findViewById<TextView>(R.id.tv_top).setOnClickListener {
+            val intent = Intent(this, AppListActivity::class.java)
+            startActivity(intent)
+        }
         findViewById<Button>(R.id.btn_prev).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
         }
