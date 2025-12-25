@@ -613,7 +613,7 @@ class MeService : Service() {
             } else if (s == "RESTART") {
                 restartApp()
             } else if (s == "REBWIFI") {
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "wifi disable&&svc wifi enable"))
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "svc wifi disable&&svc wifi enable"))
             } else if (s == "REBOOT") {
                 Runtime.getRuntime().exec("reboot")
                 Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))

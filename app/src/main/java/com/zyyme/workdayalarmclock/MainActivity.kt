@@ -189,6 +189,11 @@ class MainActivity : AppCompatActivity() {
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             startActivity(intent)
         }
+        findViewById<Toolbar>(R.id.toolbar).setOnLongClickListener {
+            val intent = Intent(this, AppListActivity::class.java)
+            startActivity(intent)
+            true
+        }
 
     }
 
