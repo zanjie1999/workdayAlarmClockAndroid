@@ -393,7 +393,7 @@ class ClockActivity : AppCompatActivity() {
             }
             tvTime.maxLines = 2
         } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            tvTime.textSize = displayMetrics.widthPixels / 7f * resources.displayMetrics.density
+//            tvTime.textSize = displayMetrics.widthPixels / 7f * resources.displayMetrics.density
             tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.25f
             if (tvDate.textSize < displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f) {
                 tvDate.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f
