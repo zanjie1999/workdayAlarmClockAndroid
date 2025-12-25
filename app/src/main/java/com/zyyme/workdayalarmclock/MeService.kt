@@ -3,11 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.annotation.SuppressLint
 import android.app.*
 import android.app.admin.DevicePolicyManager
-import android.content.BroadcastReceiver
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.*
 import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -616,8 +612,11 @@ class MeService : Service() {
 //                System.exit(0)
             } else if (s == "RESTART") {
                 restartApp()
+            } else if (s == "REBWIFI") {
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "wifi disable&&svc wifi enable"))
             } else if (s == "REBOOT") {
-                restartApp()
+                Runtime.getRuntime().exec("reboot")
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))
             } else if (s == "Segmentation fault") {
                 print2LogView("出现系统错误，进行重启")
                 Thread {
