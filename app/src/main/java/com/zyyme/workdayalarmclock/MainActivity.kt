@@ -94,7 +94,6 @@ class MainActivity : AppCompatActivity() {
                     AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
                 }
                 val intent = Intent(this, ClockActivity::class.java)
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 intent.putExtra("clockMode", true)
                 startActivity(intent)
             }
@@ -185,8 +184,6 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Toolbar>(R.id.toolbar).setOnClickListener {
             val intent: Intent = Intent(this, ClockActivity::class.java)
-            // 清除任务栈并创建新任务
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             startActivity(intent)
         }
         findViewById<Toolbar>(R.id.toolbar).setOnLongClickListener {
@@ -223,7 +220,6 @@ class MainActivity : AppCompatActivity() {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             }
             val intent: Intent = Intent(this, ClockActivity::class.java)
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             intent.putExtra("clockMode", true)
             startActivity(intent)
         } else {
