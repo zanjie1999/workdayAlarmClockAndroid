@@ -47,8 +47,8 @@ class AppAdapter(
             true
         }
         
-        // 名称/整体长按 详情
-        holder.itemView.setOnLongClickListener {
+        // 名称长按 详情
+        holder.tvName.setOnLongClickListener {
             onNameLongClick(app)
             true
         }
