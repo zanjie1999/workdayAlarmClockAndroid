@@ -984,8 +984,8 @@ class MeService : Service() {
                     return true
                 }
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
-                val per = (am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
+                val per = (am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
                 ClockActivity.me?.showMsg("音量${per}%")
                 print2LogView("媒体按键 音量加 ${per}%")
                 return true
@@ -999,8 +999,8 @@ class MeService : Service() {
                     return true
                 }
                 val am = getSystemService(AUDIO_SERVICE) as AudioManager
-                val per = (am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
                 am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
+                val per = (am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
                 ClockActivity.me?.showMsg("音量${per}%")
                 print2LogView("媒体按键 音量减 ${per}%")
                 return true
