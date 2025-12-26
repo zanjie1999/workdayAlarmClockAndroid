@@ -38,7 +38,7 @@ class AppAdapter(
         } else {
             holder.tvName.setTypeface(null, Typeface.NORMAL)
         }
-        
+
         holder.itemView.setOnClickListener { onItemClick(app) }
         
         // 图标长按 置顶
@@ -47,10 +47,19 @@ class AppAdapter(
             true
         }
         
-        // 名称长按 详情
-        holder.tvName.setOnLongClickListener {
-            onNameLongClick(app)
-            true
+        // Android6修复了事件分发机制
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            // 使用整体长按
+            holder.itemView.setOnLongClickListener {
+                onNameLongClick(app)
+                true
+            }
+        } else {
+            // 使用应用名称长按
+            holder.tvName.setOnLongClickListener {
+                onNameLongClick(app)
+                true
+            }
         }
     }
 
