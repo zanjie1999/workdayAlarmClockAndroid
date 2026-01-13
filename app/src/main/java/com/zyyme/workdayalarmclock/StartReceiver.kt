@@ -23,6 +23,7 @@ class StartReceiver : BroadcastReceiver() {
         Toast.makeText(context, "开机启动咯~", Toast.LENGTH_LONG).show()
         val intent = Intent(context, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         context.startActivity(intent)
     }
 }
