@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageButton
 import androidx.appcompat.app.AppCompatActivity
@@ -63,6 +64,12 @@ class AppListActivity : AppCompatActivity() {
             }
             override fun afterTextChanged(s: Editable?) {}
         })
+
+        // 关掉自动打开的键盘
+        etSearch.postDelayed({
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(etSearch.windowToken, 0)
+        }, 100)
     }
 
     private fun getPinnedApps(): Set<String> {

@@ -1,6 +1,7 @@
 package com.zyyme.workdayalarmclock
 
 import android.graphics.Typeface
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -60,6 +61,23 @@ class AppAdapter(
                 onNameLongClick(app)
                 true
             }
+        }
+
+        // 向左置顶，向右打开应用详情
+        holder.itemView.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        onIconLongClick(app)
+                        return@setOnKeyListener true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        onNameLongClick(app)
+                        return@setOnKeyListener true
+                    }
+                }
+            }
+            false
         }
     }
 

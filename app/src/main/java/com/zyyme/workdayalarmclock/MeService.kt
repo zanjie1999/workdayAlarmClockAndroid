@@ -7,6 +7,7 @@ import android.content.*
 import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
@@ -22,8 +23,10 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.lang.reflect.Method
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import kotlin.jvm.java
 
 
 class MeService : Service() {
@@ -1051,14 +1054,46 @@ class MeService : Service() {
                     return false
                 }
                 print2LogView("媒体按键 单按钮")
-                if (holdTime > 9000 && keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
-                    try {
-                        val intent = Intent()
-                        intent.component = ComponentName("com.example.kenna", "com.example.kenna.activity.SecondActivity")
-                        startActivity(intent)
-                    } catch (e : Exception) {
-                        print2LogView("启动小魔镜应用失败")
-                        e.printStackTrace()
+                if (holdTime > 7000 && keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
+                    if (holdTime > 11000) {
+                        try {
+                            val intent = Intent()
+                            intent.component = ComponentName("com.zyyme.moonlight.unofficial", "com.limelight.PcView")
+                            startActivity(intent)
+                        } catch (e : Exception) {
+                            print2LogView("启动咩Moonlight失败")
+                            e.printStackTrace()
+                        }
+                    }else if (holdTime > 9000) {
+                        try {
+                            val intent = Intent()
+                            intent.component = ComponentName("com.example.kenna", "com.example.kenna.activity.SecondActivity")
+                            startActivity(intent)
+                        } catch (e : Exception) {
+                            print2LogView("启动小魔镜应用失败")
+                            e.printStackTrace()
+                        }
+                    } else {
+                        try {
+                            // 用反射开热点
+                            val wifiManager: WifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                            val method: Method = wifiManager.javaClass.getMethod(
+                                "setWifiApEnabled",
+                                WifiConfiguration::class.java,
+                                Boolean::class.javaPrimitiveType
+                            )
+                            if (method.invoke(wifiManager, null, true) as Boolean) {
+                                print2LogView("热点已开启")
+                                ClockActivity.me?.showMsg("热点已开启")
+                            } else {
+                                print2LogView("热点开启失败")
+                                ClockActivity.me?.showMsg("热点已开启失败")
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            print2LogView("热点开启出错：${e.message}")
+                            ClockActivity.me?.showMsg("热点开启出错")
+                        }
                     }
                 } else {
                     handleSingleKey(holdTime)
@@ -1071,6 +1106,8 @@ class MeService : Service() {
         }
         return false
     }
+
+
 
     /**
      * 处理单按钮事件
