@@ -1086,13 +1086,25 @@ class MeService : Service() {
                                 print2LogView("热点已开启")
                                 ClockActivity.me?.showMsg("热点已开启")
                             } else {
-                                print2LogView("热点开启失败")
-                                ClockActivity.me?.showMsg("热点已开启失败")
+//                                print2LogView("热点开启失败")
+//                                ClockActivity.me?.showMsg("热点已开启失败")
+                                // 打开热点设置
+                                val intent = Intent()
+                                val cn = ComponentName("com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity")
+                                intent.component = cn
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(intent)
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
                             print2LogView("热点开启出错：${e.message}")
-                            ClockActivity.me?.showMsg("热点开启出错")
+//                            ClockActivity.me?.showMsg("热点开启出错")
+                            // 打开热点设置
+                            val intent = Intent()
+                            val cn = ComponentName("com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity")
+                            intent.component = cn
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
                         }
                     }
                 } else {
