@@ -1127,19 +1127,29 @@ class MeService : Service() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            print2LogView("热点开启出错：${e.stackTrace}\n")
+            print2LogView("热点开启出错：${e.message}")
         }
         try {
             // 打开热点设置
+            print2LogView("如果没有自动点击，请确保无障碍服务已开启")
             startActivity(Intent().apply {
                 component = ComponentName("com.android.settings", "com.android.settings.SubSettings")
                 putExtra(":android:show_fragment", "com.android.settings.TetherSettings")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
-            print2LogView("如果没有自动点击，请确保无障碍服务已开启")
         } catch (e: Exception) {
             e.printStackTrace()
             print2LogView("打开热点设置出错：${e.message}")
+            try {
+                val intent = Intent()
+                val cn = ComponentName("com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity")
+                intent.component = cn
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                print2LogView("打开网络设置出错：${e.message}")
+            }
         }
     }
 

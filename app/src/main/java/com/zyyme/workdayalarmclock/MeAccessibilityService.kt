@@ -28,12 +28,12 @@ class MeAccessibilityService : AccessibilityService() {
                 }
                 var nodes = rootNode.findAccessibilityNodeInfosByText("热点")
                 if (nodes.isNotEmpty()) {
-//                    if (nodes.size == 1 && nodes[0].text == "热点和网络共享") {
-//                        nodes[0].parent.parent.parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-//                        Thread.sleep(1000)
-//                        performGlobalAction(GLOBAL_ACTION_BACK)
-//                        return
-//                    }
+                    if (nodes.size == 1 && nodes[0].text == "热点和网络共享") {
+                        nodes[0].parent.parent.parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        Thread.sleep(1000)
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        return
+                    }
                     Log.d("MeAccessibilityService", "获取到子节点：${nodes.size}")
                     for (node1 in nodes) {
                         val box = node1.parent.parent
