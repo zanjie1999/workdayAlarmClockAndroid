@@ -17,6 +17,7 @@ import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
@@ -622,6 +623,8 @@ class MeService : Service() {
             } else if (s == "REBOOT") {
                 Runtime.getRuntime().exec("reboot")
                 Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))
+            } else if (s == "STARTAP") {
+                startAp()
             } else if (s == "Segmentation fault") {
                 print2LogView("出现系统错误，进行重启")
                 Thread {
@@ -1074,38 +1077,8 @@ class MeService : Service() {
                             e.printStackTrace()
                         }
                     } else {
-                        try {
-                            // 用反射开热点
-                            val wifiManager: WifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                            val method: Method = wifiManager.javaClass.getMethod(
-                                "setWifiApEnabled",
-                                WifiConfiguration::class.java,
-                                Boolean::class.javaPrimitiveType
-                            )
-                            if (method.invoke(wifiManager, null, true) as Boolean) {
-                                print2LogView("热点已开启")
-                                ClockActivity.me?.showMsg("热点已开启")
-                            } else {
-//                                print2LogView("热点开启失败")
-//                                ClockActivity.me?.showMsg("热点已开启失败")
-                                // 打开热点设置
-                                val intent = Intent()
-                                val cn = ComponentName("com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity")
-                                intent.component = cn
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                startActivity(intent)
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            print2LogView("热点开启出错：${e.message}")
-//                            ClockActivity.me?.showMsg("热点开启出错")
-                            // 打开热点设置
-                            val intent = Intent()
-                            val cn = ComponentName("com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity")
-                            intent.component = cn
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(intent)
-                        }
+                        // 开热点
+                        startAp()
                     }
                 } else {
                     handleSingleKey(holdTime)
@@ -1117,6 +1090,57 @@ class MeService : Service() {
             print2LogView("未知按键 $keyCode")
         }
         return false
+    }
+
+    /**
+     * 开热点
+     */
+    fun startAp() {
+        try {
+            // 用反射开热点
+            val wifiManager: WifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            var wifiCfg: WifiConfiguration? = null
+            try {
+                // 获取系统热点设置  新系统大概率是不行的
+                val method: Method = WifiManager::class.java.getMethod("getWifiApConfiguration")
+                wifiCfg = method.invoke(wifiManager) as? WifiConfiguration
+            } catch (e: Exception) {
+                print2LogView("获取系统设置出错，使用Sparkle密码password")
+                wifiCfg = WifiConfiguration().apply {
+                    SSID = "Sparkle"
+                    preSharedKey = "password"
+                    hiddenSSID = false
+                }
+                e.printStackTrace()
+            }
+            val method: Method = wifiManager.javaClass.getMethod(
+                "setWifiApEnabled",
+                WifiConfiguration::class.java,
+                Boolean::class.javaPrimitiveType
+            )
+            if (method.invoke(wifiManager, wifiCfg, true) as Boolean) {
+                print2LogView("热点已开启")
+                ClockActivity.me?.showMsg("热点已开启")
+                return
+            } else {
+                print2LogView("热点开启失败")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            print2LogView("热点开启出错：${e.stackTrace}\n")
+        }
+        try {
+            // 打开热点设置
+            startActivity(Intent().apply {
+                component = ComponentName("com.android.settings", "com.android.settings.SubSettings")
+                putExtra(":android:show_fragment", "com.android.settings.TetherSettings")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            print2LogView("如果没有自动点击，请确保无障碍服务已开启")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            print2LogView("打开热点设置出错：${e.message}")
+        }
     }
 
 

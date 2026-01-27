@@ -24,24 +24,26 @@ class MeAccessibilityService : AccessibilityService() {
 //                }
                 if (rootNode == null) return
                 else {
-//                    Log.d("MeAccessibilityService", "获取到根节点")
+                    Log.d("MeAccessibilityService", "获取到根节点")
                 }
                 var nodes = rootNode.findAccessibilityNodeInfosByText("热点")
                 if (nodes.isNotEmpty()) {
-                    if (nodes.size == 1 && nodes[0].text == "热点和网络共享") {
-                        nodes[0].parent.parent.parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        Thread.sleep(1000)
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        return
-                    }
-//                    Log.d("MeAccessibilityService", "获取到子节点")
+//                    if (nodes.size == 1 && nodes[0].text == "热点和网络共享") {
+//                        nodes[0].parent.parent.parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+//                        Thread.sleep(1000)
+//                        performGlobalAction(GLOBAL_ACTION_BACK)
+//                        return
+//                    }
+                    Log.d("MeAccessibilityService", "获取到子节点：${nodes.size}")
                     for (node1 in nodes) {
                         val box = node1.parent.parent
+                        Log.d("MeAccessibilityService", "box：${box.childCount}")
                         if (box.childCount > 1) {
-                            val node2 = node1.parent.parent.getChild(1)
+                            val node2 = node1.parent.parent.getChild(box.childCount-1)
+                            Log.d("MeAccessibilityService", "node2：${node2.childCount}")
                             if (node2.childCount > 0) {
                                 val node = node2.getChild(0)
-                                if (node.className == "android.widget.Switch") {
+                                if (node.className == "android.widget.Switch" || node.className == "android.widget.CheckBox") {
                                     Log.d("MeAccessibilityService", "找到开关")
                                     if (!node.isChecked) {
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
@@ -52,6 +54,8 @@ class MeAccessibilityService : AccessibilityService() {
                                             return
                                         }
                                     }
+                                } else {
+                                    Log.d("MeAccessibilityService", "开关的位置是" + node.className)
                                 }
                             }
                         }

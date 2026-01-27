@@ -97,6 +97,10 @@ class MainActivity : AppCompatActivity() {
                 intent.putExtra("clockMode", true)
                 startActivity(intent)
             }
+            // 自动开热点
+            if (File(filesDir.absolutePath + "/ap").exists()) {
+                MeService.me?.startAp()
+            }
         }
 
         // 换一下循序，避免时钟模式设备多次渲染
