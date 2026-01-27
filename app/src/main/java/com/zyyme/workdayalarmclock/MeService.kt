@@ -270,6 +270,11 @@ class MeService : Service() {
             }
         }
 
+        // 自动开热点
+        if (File(filesDir.absolutePath + "/ap").exists()) {
+            startAp()
+        }
+
         return super.onStartCommand(intent, flags, startId)
     }
 
