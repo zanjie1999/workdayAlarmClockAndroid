@@ -11,7 +11,9 @@ import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
@@ -568,7 +570,24 @@ class MeService : Service() {
                 val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
-                    // 闹钟时，有关闭屏幕权限再打开屏幕
+                    Handler(Looper.getMainLooper()).post {
+                        // 闹钟时，有关闭屏幕权限再打开屏幕
+                        if (File(filesDir.absolutePath + "/white").exists()) {
+                            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+                        } else {
+                            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                        }
+                        val intent = Intent(this, ClockActivity::class.java)
+                        intent.flags =
+                            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        intent.putExtra("clockMode", true)
+                        intent.putExtra("keepOn", true)
+                        startActivity(intent)
+                        print2LogView("已亮屏")
+                    }
+                }
+            } else if (s == "SCREENON") {
+                Handler(Looper.getMainLooper()).post {
                     if (File(filesDir.absolutePath + "/white").exists()) {
                         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
                     } else {
@@ -577,44 +596,40 @@ class MeService : Service() {
                     val intent = Intent(this, ClockActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     intent.putExtra("clockMode", true)
-                    intent.putExtra("keepOn", true)
                     startActivity(intent)
-                    print2LogView("已亮屏")
                 }
-            } else if (s == "SCREENON") {
-                if (File(filesDir.absolutePath + "/white").exists()) {
-                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-                } else {
-                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-                }
-                val intent = Intent(this, ClockActivity::class.java)
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                intent.putExtra("clockMode", true)
-                startActivity(intent)
                 print2LogView("已亮屏")
             } else if (s == "SCREENOFF") {
                 val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
                     try {
-                        devicePolicyManager.lockNow()
-                        // 取消ALARM给时钟模式的保持亮屏flag
-                        if (ClockActivity.me?.isKeepScreenOn == true) {
-                            ClockActivity.me?.isKeepScreenOn = false
-                            ClockActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        Handler(Looper.getMainLooper()).post {
+                            // 取消ALARM给时钟模式的保持亮屏flag
+                            if (ClockActivity.me?.isKeepScreenOn == true) {
+                                ClockActivity.me?.isKeepScreenOn = false
+                                ClockActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            }
+                            devicePolicyManager.lockNow()
+                            print2LogView("已锁屏")
                         }
-                        print2LogView("已锁屏")
                     } catch (e: Exception) {
                         print2LogView("锁屏失败: ${e.message}")
                     }
                 } else {
                     print2LogView("设备管理员未激活，无法锁屏")
-                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
-                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "远程锁屏需要这个权限")
+                    Handler(Looper.getMainLooper()).post {
+                        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
+                            putExtra(
+                                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                                "远程锁屏需要这个权限"
+                            )
+                        }
+                        startActivity(intent)
+                        Toast.makeText(this,"请激活设备管理员权限\n远程锁屏需要这个权限\n卸载app需要在这里卸载", Toast.LENGTH_LONG).show()
                     }
-                    startActivity(intent)
                 }
             } else if (s == "EXIT") {
                 stopSelf()
@@ -1132,25 +1147,26 @@ class MeService : Service() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            print2LogView("热点开启出错：${e.message}")
+            print2LogView("热点开启出错，没有修改系统设置的权限")
         }
         try {
             // 打开热点设置
-            print2LogView("如果没有自动点击，请确保无障碍服务已开启")
-            startActivity(Intent().apply {
-                component = ComponentName("com.android.settings", "com.android.settings.SubSettings")
-                putExtra(":android:show_fragment", "com.android.settings.TetherSettings")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
+            Handler(Looper.getMainLooper()).post {
+                print2LogView("如果没有自动点击，请确保无障碍服务已开启")
+                Toast.makeText(this,"如果没有自动点击，请确保无障碍服务已开启", Toast.LENGTH_LONG).show()
+                startActivity(Intent().apply {
+                    component = ComponentName("com.android.settings", "com.android.settings.Settings\$TetherSettingsActivity")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             print2LogView("打开热点设置出错：${e.message}")
             try {
-                val intent = Intent()
-                val cn = ComponentName("com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity")
-                intent.component = cn
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
+                startActivity(Intent().apply {
+                    component = ComponentName("com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
             } catch (e: Exception) {
                 e.printStackTrace()
                 print2LogView("打开网络设置出错：${e.message}")
