@@ -24,6 +24,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
 import java.io.File
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.lang.reflect.Method
@@ -791,7 +792,12 @@ class MeService : Service() {
                 //异步准备监听
                 print2LogView("play音频时长 " + (mediaPlayer.duration / 1000).toString())
                 // 给音频服务上报总时长
-                meMediaPlaybackManager?.updateMediaMetadata(mediaPlayer.duration.toLong(), meMediaPlaybackManager!!.lastTitle,null,null)
+                meMediaPlaybackManager?.updateMediaMetadata(
+                    mediaPlayer.duration.toLong(),
+                    meMediaPlaybackManager!!.lastTitle,
+                    null,
+                    null
+                )
                 if (isPlayLastUrl && !mediaPlayer.isPlaying) {
                     // 规避Android停止又播放同一首进度不对的bug
                     mediaPlayer.seekTo(0)
@@ -833,6 +839,7 @@ class MeService : Service() {
                         print2LogView("play缓冲结束")
                         true
                     }
+
                     else -> false
                 }
             }
@@ -849,6 +856,11 @@ class MeService : Service() {
                 false
             }
             player!!.prepareAsync()
+        } catch (e: IOException) {
+            e.printStackTrace()
+            print2LogView("播放失败" + e.toString())
+            // 如果路径不可用，需要触发停止，避免播放天气音频失败一直没有停止
+            toGo("stop")
         } catch (e: Exception) {
             e.printStackTrace()
             print2LogView("播放失败" + e.toString())
