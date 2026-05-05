@@ -714,8 +714,11 @@ class MeService : Service() {
         if (wakeLockPlay != null) {
             wakeLockPlay!!.release()
             wakeLockPlay = null
-            wifiLock?.release()
-            wifiLock = null
+            // 如果启动时加了cpu唤醒锁，则保持wifi锁
+            if (wakeLock == null) {
+                wifiLock?.release()
+                wifiLock = null
+            }
         }
 
     }
