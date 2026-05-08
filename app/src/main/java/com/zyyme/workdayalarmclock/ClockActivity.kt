@@ -358,8 +358,8 @@ class ClockActivity : AppCompatActivity() {
         val tvDate = findViewById<TextView>(R.id.tv_date)
         val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
         var realHeightPixels = rootLayout.height
-        val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15
-        val isRound = rootLayout.height == rootLayout.width
+        val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  File(filesDir.absolutePath + "/vertical").exists()
+        val isRound = rootLayout.height == rootLayout.width || File(filesDir.absolutePath + "/round").exists()
         Log.d("ClockActivity", "realHeight: $realHeightPixels realWidth: ${rootLayout.width} height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (isRound) {
             // 圆形屏幕 增加上下边距
