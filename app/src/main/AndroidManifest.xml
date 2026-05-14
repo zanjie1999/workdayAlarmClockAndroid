@@ -78,7 +78,8 @@
         <activity
             android:name=".AppListActivity"
             android:exported="true"
-            android:label="应用列表" />
+            android:label="应用列表"
+            android:windowSoftInputMode="stateAlwaysHidden" />
 
         <service
             android:name=".MeService"

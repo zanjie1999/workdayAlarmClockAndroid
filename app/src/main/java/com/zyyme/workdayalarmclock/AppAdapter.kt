@@ -17,6 +17,7 @@ class AppAdapter(
 ) : RecyclerView.Adapter<AppAdapter.ViewHolder>() {
 
     private var filteredApps: MutableList<AppInfo> = allApps.toMutableList()
+    private var currentQuery: String = ""
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val ivIcon: ImageView = view.findViewById(R.id.iv_app_icon)
@@ -84,17 +85,21 @@ class AppAdapter(
     override fun getItemCount() = filteredApps.size
 
     fun filter(query: String) {
-        filteredApps = if (query.isEmpty()) {
-            allApps.toMutableList()
-        } else {
-            allApps.filter { it.name.contains(query, ignoreCase = true) }.toMutableList()
-        }
-        notifyDataSetChanged()
+        currentQuery = query
+        applyFilter()
     }
 
     fun updateData(newApps: List<AppInfo>) {
         allApps = newApps.toMutableList()
-        filteredApps = newApps.toMutableList()
+        applyFilter()
+    }
+
+    private fun applyFilter() {
+        filteredApps = if (currentQuery.isEmpty()) {
+            allApps.toMutableList()
+        } else {
+            allApps.filter { it.name.contains(currentQuery, ignoreCase = true) }.toMutableList()
+        }
         notifyDataSetChanged()
     }
 }
