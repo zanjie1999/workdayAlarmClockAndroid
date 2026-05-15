@@ -198,21 +198,18 @@ class MeService : Service() {
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                     // 短暂失去焦点，暂停播放
                     print2LogView("AUDIOFOCUS_LOSS_TRANSIENT, pausing playback.")
+                    player?.pause()
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                     // 短暂失去焦点，可以降低音量 (如果你的播放器支持)
                     print2LogView("AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, ducking volume.")
-                    // player?.setVolume(0.3f, 0.3f)
+                    player?.setVolume(0.3f, 0.3f)
                 }
                 AudioManager.AUDIOFOCUS_GAIN -> {
                     // 重新获得焦点，恢复播放 (如果之前暂停了或降低了音量)
                     print2LogView("AUDIOFOCUS_GAIN, resuming playback or restoring volume.")
-                    // player?.setVolume(1.0f, 1.0f) // 恢复音量
-                    // 如果之前是因为短暂丢失焦点而暂停，可以考虑恢复播放
-                    // 但要注意不要与用户的明确暂停冲突
-                    // if (wasPausedDueToTransientLoss) {
-                    //    onPlayRequest()
-                    // }
+                    player?.setVolume(1.0f, 1.0f) // 恢复音量
+                    player?.start()
                 }
             }
         }
