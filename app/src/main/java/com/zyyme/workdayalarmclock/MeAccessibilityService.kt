@@ -1,13 +1,10 @@
 package com.zyyme.workdayalarmclock
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.Toast
-import androidx.annotation.RequiresApi
 
 class MeAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -71,15 +68,7 @@ class MeAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        if (MeService.me != null) {
-            // 已手动启动
-            return
-        }
         // 辅助功能服务 开机启动
-        Log.d("workdayAlarmClock", "MyAccessibilityService onServiceConnected startAtBooted")
-        Toast.makeText(this, "使用无障碍服务开机启动咯~", Toast.LENGTH_LONG).show()
-        val intent = Intent(this, MainActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
+        StartupAppHelper.startAtBooted(this, accessibility = true)
     }
 }

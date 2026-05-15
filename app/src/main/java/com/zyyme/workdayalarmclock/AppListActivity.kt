@@ -1,5 +1,7 @@
 package com.zyyme.workdayalarmclock
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -10,6 +12,8 @@ import android.text.TextWatcher
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -17,8 +21,6 @@ import androidx.recyclerview.widget.RecyclerView
 class AppListActivity : AppCompatActivity() {
 
     private lateinit var adapter: AppAdapter
-    private val PREFS_NAME = "app_list"
-    private val KEY_PINNED_APPS = "pinned_apps"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,21 +41,18 @@ class AppListActivity : AppCompatActivity() {
         val apps = getLaunchableApps().toMutableList()
         adapter = AppAdapter(apps, { appInfo ->
             // 点击 打开应用
-            val launchIntent = packageManager.getLaunchIntentForPackage(appInfo.packageName)
-            if (launchIntent != null) {
-                startActivity(launchIntent)
-            }
+            openApp(appInfo)
         }, { appInfo ->
-            // 图标长按 置顶
+            // 置顶应用
             togglePinApp(appInfo.packageName)
             refreshAppList()
 //            rvApps.scrollToPosition(0)
         }, { appInfo ->
-            // 名称长按 打开应用详情
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", appInfo.packageName, null)
-            }
-            startActivity(intent)
+            // 打开应用详情
+            openAppInfo(appInfo.packageName)
+        }, { appInfo ->
+            // 整体长按显示菜单
+            showAppMenu(appInfo)
         })
         rvApps.adapter = adapter
 
@@ -72,20 +71,82 @@ class AppListActivity : AppCompatActivity() {
         }, 100)
     }
 
+    private fun showAppMenu(appInfo: AppInfo) {
+        val isStartupApp = getStartupAppPackageName() == appInfo.packageName
+        val items = arrayOf(
+            if (appInfo.isPinned) "取消置顶" else "置顶",
+            if (isStartupApp) "取消开机启动" else "设为开机启动",
+            "应用信息",
+            "复制包名",
+            "关闭"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle(appInfo.name)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> {
+                        togglePinApp(appInfo.packageName)
+                        refreshAppList()
+                    }
+                    1 -> {
+                        if (isStartupApp) {
+                            setStartupAppPackageName(null)
+                            Toast.makeText(this, "已取消开机启动", Toast.LENGTH_SHORT).show()
+                        } else {
+                            setStartupAppPackageName(appInfo.packageName)
+                            Toast.makeText(this, "已设为开机启动", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    2 -> openAppInfo(appInfo.packageName)
+                    3 -> copyPackageName(appInfo.packageName)
+                }
+            }
+            .show()
+    }
+
+    private fun openApp(appInfo: AppInfo) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(appInfo.packageName)
+        if (launchIntent != null) {
+            startActivity(launchIntent)
+        }
+    }
+
+    private fun openAppInfo(packageName: String) {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        }
+        startActivity(intent)
+    }
+
+    private fun copyPackageName(packageName: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText("packageName", packageName))
+        Toast.makeText(this, "已复制包名", Toast.LENGTH_SHORT).show()
+    }
+
     private fun getPinnedApps(): Set<String> {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getStringSet(KEY_PINNED_APPS, emptySet()) ?: emptySet()
+        val prefs = getSharedPreferences(StartupAppHelper.PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getStringSet(StartupAppHelper.KEY_PINNED_APPS, emptySet()) ?: emptySet()
     }
 
     private fun togglePinApp(packageName: String) {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences(StartupAppHelper.PREFS_NAME, Context.MODE_PRIVATE)
         val pinnedApps = getPinnedApps().toMutableSet()
         if (pinnedApps.contains(packageName)) {
             pinnedApps.remove(packageName)
         } else {
             pinnedApps.add(packageName)
         }
-        prefs.edit().putStringSet(KEY_PINNED_APPS, pinnedApps).apply()
+        prefs.edit().putStringSet(StartupAppHelper.KEY_PINNED_APPS, pinnedApps).apply()
+    }
+
+    private fun getStartupAppPackageName(): String? {
+        return StartupAppHelper.getStartupAppPackageName(this)
+    }
+
+    private fun setStartupAppPackageName(packageName: String?) {
+        StartupAppHelper.setStartupAppPackageName(this, packageName)
     }
 
     private fun refreshAppList() {
