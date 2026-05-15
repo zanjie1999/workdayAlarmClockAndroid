@@ -60,12 +60,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 作为启动器开机时，先启动设置的应用，稍后再回到自己
-        if (StartupAppHelper.tryHandleLauncherBootActivity(this, getIntent())) {
-            super.onCreate(savedInstanceState)
-            finish()
-            return
-        }
+        // 作为启动器启动，也需要运行开机启动app
+        StartupAppHelper.tryHandleLauncherBootActivity(this, getIntent())
         me = this
         useClockMode = MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()
 

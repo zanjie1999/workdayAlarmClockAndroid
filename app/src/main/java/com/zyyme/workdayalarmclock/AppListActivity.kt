@@ -107,7 +107,7 @@ class AppListActivity : AppCompatActivity() {
             if (isStartupApp) "取消开机启动" else "设为开机启动",
             "应用信息",
             "复制包名",
-            "关闭"
+            "返回"
         )
 
         AlertDialog.Builder(this)
