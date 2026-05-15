@@ -104,15 +104,6 @@ object StartupAppHelper {
             startupAppLaunching = false
             return false
         }
-
-        Handler(Looper.getMainLooper()).postDelayed({
-            startupAppLaunching = false
-            val mainIntent = Intent(appContext, MainActivity::class.java)
-            mainIntent.putExtra(EXTRA_SKIP_STARTUP_APP, true)
-            mainIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            mainIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            appContext.startActivity(mainIntent)
-        }, STARTUP_APP_DELAY_MILLIS)
         return true
     }
 
