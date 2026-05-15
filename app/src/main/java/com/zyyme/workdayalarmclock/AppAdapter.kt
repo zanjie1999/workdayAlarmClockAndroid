@@ -34,7 +34,7 @@ class AppAdapter(
         val app = filteredApps[position]
         holder.tvName.text = app.name
         holder.ivIcon.setImageDrawable(app.icon)
-
+        
         // 置顶应用加粗
         if (app.isPinned) {
             holder.tvName.setTypeface(null, Typeface.BOLD)
@@ -73,16 +73,20 @@ class AppAdapter(
 
     fun filter(query: String) {
         currentQuery = query
-        filteredApps = if (query.isEmpty()) {
-            allApps.toMutableList()
-        } else {
-            allApps.filter { it.name.contains(query, ignoreCase = true) }.toMutableList()
-        }
-        notifyDataSetChanged()
+        applyFilter()
     }
 
     fun updateData(newApps: List<AppInfo>) {
         allApps = newApps.toMutableList()
-        filter(currentQuery)
+        applyFilter()
+    }
+
+    private fun applyFilter() {
+        filteredApps = if (currentQuery.isEmpty()) {
+            allApps.toMutableList()
+        } else {
+            allApps.filter { it.name.contains(currentQuery, ignoreCase = true) }.toMutableList()
+        }
+        notifyDataSetChanged()
     }
 }

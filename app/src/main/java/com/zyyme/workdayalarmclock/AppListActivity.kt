@@ -5,10 +5,16 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
 import android.os.Bundle
+import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageButton
@@ -17,29 +23,38 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.util.concurrent.Executors
 
 class AppListActivity : AppCompatActivity() {
 
     private lateinit var adapter: AppAdapter
+    private lateinit var etSearch: EditText
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val appLoadExecutor = Executors.newSingleThreadExecutor()
+    @Volatile
+    private var isActivityDestroyed = false
+    private val PREFS_NAME = "app_list"
+    private val KEY_PINNED_APPS = "pinned_apps"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_app_list)
 
+        val rootView = findViewById<View>(R.id.root_app_list)
         val btnBack = findViewById<ImageButton>(R.id.btn_back)
-        val etSearch = findViewById<EditText>(R.id.et_search)
+        etSearch = findViewById(R.id.et_search)
         val rvApps = findViewById<RecyclerView>(R.id.rv_apps)
         // 列表
         rvApps.layoutManager = LinearLayoutManager(this)
         // 网格
         // rvApps.layoutManager = GridLayoutManager(this, 4)
+        rootView.requestFocus()
 
         btnBack.setOnClickListener {
             finish()
         }
 
-        val apps = getLaunchableApps().toMutableList()
-        adapter = AppAdapter(apps, { appInfo ->
+        adapter = AppAdapter(mutableListOf(), { appInfo ->
             // 点击 打开应用
             openApp(appInfo)
         }, { appInfo ->
@@ -64,11 +79,25 @@ class AppListActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        // 关掉自动打开的键盘
-        etSearch.postDelayed({
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.hideSoftInputFromWindow(etSearch.windowToken, 0)
-        }, 100)
+        disableSearchKeyboardOnFocus()
+        etSearch.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                showKeyboard()
+            }
+            false
+        }
+
+        etSearch.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_UP &&
+                (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
+            ) {
+                showKeyboard()
+                return@setOnKeyListener true
+            }
+            false
+        }
+
+        loadAppsAsync()
     }
 
     private fun showAppMenu(appInfo: AppInfo) {
@@ -150,8 +179,44 @@ class AppListActivity : AppCompatActivity() {
     }
 
     private fun refreshAppList() {
-        val apps = getLaunchableApps()
-        adapter.updateData(apps)
+        loadAppsAsync()
+    }
+
+    private fun loadAppsAsync() {
+        appLoadExecutor.execute {
+            val apps = getLaunchableApps()
+            mainHandler.post {
+                if (!isActivityDestroyed) {
+                    adapter.updateData(apps)
+                }
+            }
+        }
+    }
+
+    private fun showKeyboard() {
+        enableSearchKeyboardOnFocus()
+        etSearch.requestFocus()
+        etSearch.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.showSoftInput(etSearch, InputMethodManager.SHOW_IMPLICIT)
+            etSearch.postDelayed({
+                if (!isActivityDestroyed) {
+                    disableSearchKeyboardOnFocus()
+                }
+            }, 200)
+        }
+    }
+
+    private fun enableSearchKeyboardOnFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            etSearch.showSoftInputOnFocus = true
+        }
+    }
+
+    private fun disableSearchKeyboardOnFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            etSearch.showSoftInputOnFocus = false
+        }
     }
 
     private fun getLaunchableApps(): List<AppInfo> {
@@ -171,5 +236,11 @@ class AppListActivity : AppCompatActivity() {
 
         // 置顶应用在前，其余名称排序
         return appList.sortedWith(compareByDescending<AppInfo> { it.isPinned } .thenBy { it.name })
+    }
+
+    override fun onDestroy() {
+        isActivityDestroyed = true
+        appLoadExecutor.shutdownNow()
+        super.onDestroy()
     }
 }
