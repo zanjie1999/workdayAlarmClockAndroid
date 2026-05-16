@@ -41,7 +41,9 @@ run
 更多指令可以看[workdayAlarmClockGo 指令]([https://github.com/zanjie1999/workdayAlarmClockGo](https://github.com/zanjie1999/workdayAlarmClockGo#%E6%8C%87%E4%BB%A4))
 
 ## 文件flag
-使用文件进行来进行一些简单配置  
+23.0开始迁移到了app右上角的菜单里
+
+<del>使用文件进行来进行一些简单配置  
 - disable开机不启动  
 - clock强制时钟模式  
 - landscape会根据重力自动选择时钟模式的横屏方向
@@ -56,7 +58,7 @@ touch disable
 # 删除flag
 rm disable
 ```
-设置好了将在下次启动生效
+设置好了将在下次启动生效</del>
 
 ## 时钟模式 （智能手表）
 点击控制台顶栏任意非右侧按钮的位置，或者点击常驻的通知，即可开启，或是作为双击电源键打开的相机来打开  
