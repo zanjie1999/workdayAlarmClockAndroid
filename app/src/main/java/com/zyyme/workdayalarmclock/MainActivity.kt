@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.Log
 import android.view.KeyEvent
+import android.view.Menu
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.ImageView
@@ -18,11 +19,11 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.widget.PopupMenu
 import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import kotlin.system.exitProcess
 import androidx.core.net.toUri
-import java.io.File
 
 
 class MainActivity : AppCompatActivity() {
@@ -31,6 +32,11 @@ class MainActivity : AppCompatActivity() {
         var me: MainActivity? = null
         var startService = true
         var keyDownTime = 0L
+        private const val MENU_EXIT = 1
+        private const val OPEN_WEB = 2
+        private const val OPEN_CLOCK = 3
+        private const val OPEN_APPLIST = 4
+        private const val MENU_SETTING_START = 100
     }
 
     var mediaSessionCompat: MediaSessionCompat? = null
@@ -39,6 +45,20 @@ class MainActivity : AppCompatActivity() {
 
     // 时钟模式
     var useClockMode = false
+
+    private data class SettingMenuItem(val key: String, val label: String)
+
+    private val settingsMenuItems = listOf(
+        SettingMenuItem(MeSettings.KEY_DISABLE, "开机不启动"),
+        SettingMenuItem(MeSettings.KEY_CLOCK, "时钟模式"),
+        SettingMenuItem(MeSettings.KEY_TSS, "时钟不显示秒"),
+        SettingMenuItem(MeSettings.KEY_T24, "时钟24小时制"),
+        SettingMenuItem(MeSettings.KEY_WHITE, "时钟亮色主题"),
+        SettingMenuItem(MeSettings.KEY_LANDSCAPE, "锁定横屏"),
+        SettingMenuItem(MeSettings.KEY_VERTICAL, "强制竖屏布局"),
+        SettingMenuItem(MeSettings.KEY_ROUND, "强制圆屏布局"),
+        SettingMenuItem(MeSettings.KEY_AP, "开机开热点(辅助)")
+    )
 
     override fun onResume() {
         super.onResume()
@@ -65,7 +85,7 @@ class MainActivity : AppCompatActivity() {
             Thread.sleep(10000)
         }
         me = this
-        useClockMode = MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || File(filesDir.absolutePath + "/clock").exists()
+        useClockMode = MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
 
         // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
         val amUrl = getIntent().getDataString();
@@ -92,11 +112,7 @@ class MainActivity : AppCompatActivity() {
             startService(Intent(this, MeService::class.java))
             if (useClockMode) {
                 // 初次启动，切换到时钟模式 有clock文件的也切换      亮色主题（闹钟屏幕出线白色没那么明显）
-                if (File(filesDir.absolutePath + "/white").exists()) {
-                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-                } else {
-                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-                }
+                applyClockTheme()
                 val intent = Intent(this, ClockActivity::class.java)
                 intent.putExtra("clockMode", true)
                 startActivity(intent)
@@ -180,11 +196,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.iconForward).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 0)
         }
-        findViewById<ImageView>(R.id.iconExit).setOnClickListener {
-            Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
-            onDestroy()
-            MeService.me?.stopSelf()
-            exitProcess(0)
+        findViewById<ImageView>(R.id.iconMenu).setOnClickListener {
+            showSettingsMenu(it as ImageView)
         }
         findViewById<Toolbar>(R.id.toolbar).setOnClickListener {
             val intent: Intent = Intent(this, ClockActivity::class.java)
@@ -196,6 +209,63 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
+    }
+
+    private fun showSettingsMenu(anchor: ImageView) {
+        val popupMenu = PopupMenu(this, anchor)
+        popupMenu.menu.add(Menu.NONE, MENU_EXIT, 0, "退出${getString(R.string.app_name)}")
+        popupMenu.menu.add(Menu.NONE, OPEN_WEB, 1, "打开Web控制台")
+        popupMenu.menu.add(Menu.NONE, OPEN_CLOCK, 3, "打开时钟模式")
+        popupMenu.menu.add(Menu.NONE, OPEN_APPLIST, 4, "打开应用列表")
+        settingsMenuItems.forEachIndexed { index, item ->
+            popupMenu.menu.add(Menu.NONE, MENU_SETTING_START + index, index + 4, item.label).apply {
+                isCheckable = true
+                isChecked = MeSettings.isEnabled(this@MainActivity, item.key)
+            }
+        }
+
+        popupMenu.setOnMenuItemClickListener { menuItem ->
+            if (menuItem.itemId == MENU_EXIT) {
+                exitApp()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_WEB) {
+                startActivity(Intent(this, WebActivity::class.java))
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_CLOCK) {
+                startActivity(Intent(this, ClockActivity::class.java))
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_APPLIST) {
+                startActivity(Intent(this, AppListActivity::class.java))
+                return@setOnMenuItemClickListener true
+            }
+
+
+            val settingItem = settingsMenuItems.getOrNull(menuItem.itemId - MENU_SETTING_START)
+            if (settingItem != null) {
+                val enabled = !MeSettings.isEnabled(this, settingItem.key)
+                MeSettings.setEnabled(this, settingItem.key, enabled)
+                menuItem.isChecked = enabled
+                true
+            } else {
+                false
+            }
+        }
+        popupMenu.show()
+    }
+
+    private fun applyClockTheme() {
+        if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+        } else {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+        }
+    }
+
+    private fun exitApp() {
+        Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
+        onDestroy()
+        MeService.me?.stopSelf()
+        exitProcess(0)
     }
 
     fun shellOnEnter() {
@@ -218,11 +288,7 @@ class MainActivity : AppCompatActivity() {
     override fun onBackPressed() {
         // 默认时钟模式的设备 返回退到全屏时钟
         if (useClockMode) {
-            if (File(filesDir.absolutePath + "/white").exists()) {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-            } else {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-            }
+            applyClockTheme()
             val intent: Intent = Intent(this, ClockActivity::class.java)
             intent.putExtra("clockMode", true)
             startActivity(intent)
@@ -269,10 +335,7 @@ class MainActivity : AppCompatActivity() {
                 KeyEvent.ACTION_UP -> {
                     if (keyEvent.keyCode == KeyEvent.KEYCODE_CALL) {
                         // 拨号键退出
-                        Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
-                        onDestroy()
-                        MeService.Companion.me?.stopSelf()
-                        exitProcess(0)
+                        exitApp()
                     } else if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
                         keyDownTime = 0L
                         return true

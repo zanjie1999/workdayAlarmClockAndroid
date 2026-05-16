@@ -23,7 +23,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
-import java.io.File
 import java.io.IOException
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -32,7 +31,10 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import kotlin.jvm.java
 
-
+/**
+ * 后台服务
+ * 维持工作咩闹钟二进制文件运行
+ */
 class MeService : Service() {
     companion object {
 //        var mediaButtonReceiverHandler: Handler? = null
@@ -271,7 +273,7 @@ class MeService : Service() {
         }
 
         // 自动开热点
-        if (File(filesDir.absolutePath + "/ap").exists()) {
+        if (MeSettings.isEnabled(this, MeSettings.KEY_AP)) {
             startAp()
         }
 
@@ -570,7 +572,7 @@ class MeService : Service() {
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
                     Handler(Looper.getMainLooper()).post {
                         // 闹钟时，有关闭屏幕权限再打开屏幕
-                        if (File(filesDir.absolutePath + "/white").exists()) {
+                        if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
                             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
                         } else {
                             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
@@ -586,7 +588,7 @@ class MeService : Service() {
                 }
             } else if (s == "SCREENON") {
                 Handler(Looper.getMainLooper()).post {
-                    if (File(filesDir.absolutePath + "/white").exists()) {
+                    if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
                         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
                     } else {
                         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)

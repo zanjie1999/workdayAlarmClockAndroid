@@ -29,11 +29,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.zyyme.workdayalarmclock.MainActivity.Companion.keyDownTime
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 
-
+/**
+ * 时钟
+ */
 class ClockActivity : AppCompatActivity() {
     companion object {
         var me: ClockActivity? = null
@@ -87,13 +88,13 @@ class ClockActivity : AppCompatActivity() {
         }
 
         // 横屏flag 会根据重力自动选择时钟模式的横屏方向
-        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE && File(filesDir.absolutePath + "/landscape").exists()) {
+        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE && MeSettings.isEnabled(this, MeSettings.KEY_LANDSCAPE)) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
 
         // 不显示秒的flag  24小时制flag
-        val flag24 = File(filesDir.absolutePath + "/t24").exists()
-        if (File(filesDir.absolutePath + "/tss").exists()) {
+        val flag24 = MeSettings.isEnabled(this, MeSettings.KEY_T24)
+        if (MeSettings.isEnabled(this, MeSettings.KEY_TSS)) {
             if (flag24) {
                 sdfHmsmde = SimpleDateFormat("H:mm.M月d日 E")
             } else {
@@ -358,8 +359,8 @@ class ClockActivity : AppCompatActivity() {
         val tvDate = findViewById<TextView>(R.id.tv_date)
         val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
         var realHeightPixels = rootLayout.height
-        val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  File(filesDir.absolutePath + "/vertical").exists()
-        val isRound = rootLayout.height == rootLayout.width || File(filesDir.absolutePath + "/round").exists()
+        val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  MeSettings.isEnabled(this, MeSettings.KEY_VERTICAL)
+        val isRound = rootLayout.height == rootLayout.width || MeSettings.isEnabled(this, MeSettings.KEY_ROUND)
         Log.d("ClockActivity", "realHeight: $realHeightPixels realWidth: ${rootLayout.width} height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (isRound) {
             // 圆形屏幕 增加上下边距
@@ -380,8 +381,8 @@ class ClockActivity : AppCompatActivity() {
 
         if (isVertical) {
             // 竖屏秒换行
-            if (!File(filesDir.absolutePath + "/tss").exists()) {
-                if (File(filesDir.absolutePath + "/t24").exists()) {
+            if (!MeSettings.isEnabled(this, MeSettings.KEY_TSS)) {
+                if (MeSettings.isEnabled(this, MeSettings.KEY_T24)) {
                     sdfHmsmde = SimpleDateFormat("H:mm\nss.M月d日 E")
                 } else {
                     sdfHmsmde = SimpleDateFormat("h:mm\nss.M月d日 E")

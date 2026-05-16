@@ -7,7 +7,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
-import java.io.File
 
 /**
  * 开机启动逻辑
@@ -126,7 +125,7 @@ object StartupAppHelper {
 
     private fun startOriginalBootLogic(context: Context, accessibility: Boolean) {
         Log.v("workdayAlarmClock", "startAtBooted")
-        if (File(context.filesDir.absolutePath + "/disable").exists()) {
+        if (MeSettings.isEnabled(context, MeSettings.KEY_DISABLE)) {
             Log.v("workdayAlarmClock", "disabledisabledisable 开机不启动")
             return
         }

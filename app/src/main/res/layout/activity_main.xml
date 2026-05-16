@@ -54,17 +54,19 @@
         app:title="@string/app_name" >
 
         <ImageView
-            android:id="@+id/iconExit"
+            android:id="@+id/iconMenu"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:layout_gravity="end"
-            android:src="@android:drawable/ic_menu_close_clear_cancel" />
+            android:contentDescription="设置菜单"
+            android:src="@android:drawable/ic_menu_more" />
 
         <ImageView
             android:id="@+id/iconForward"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:layout_gravity="end"
+            android:contentDescription="快进"
             android:src="@android:drawable/ic_media_ff" />
 
         <ImageView
@@ -72,6 +74,7 @@
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:layout_gravity="end"
+            android:contentDescription="下一首"
             android:src="@android:drawable/ic_media_next" />
 
         <ImageView
@@ -79,6 +82,7 @@
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:layout_gravity="end"
+            android:contentDescription="播放暂停"
             android:src="@android:drawable/ic_media_play" />
 
         <ImageView
@@ -86,6 +90,7 @@
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:layout_gravity="end"
+            android:contentDescription="上一首"
             android:src="@android:drawable/ic_media_previous" />
 
         <ImageView
@@ -93,6 +98,7 @@
             android:layout_width="32dp"
             android:layout_height="match_parent"
             android:layout_gravity="end"
+            android:contentDescription="停止"
             android:src="@drawable/icon_stop" />
 
 <!--        <ImageView-->

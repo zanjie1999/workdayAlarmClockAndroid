@@ -81,6 +81,12 @@
             android:label="应用列表"
             android:windowSoftInputMode="stateAlwaysHidden" />
 
+        <activity
+            android:name=".WebActivity"
+            android:exported="false"
+            android:label="Web浏览器"
+            android:windowSoftInputMode="stateAlwaysHidden" />
+
         <service
             android:name=".MeService"
             android:enabled="true"

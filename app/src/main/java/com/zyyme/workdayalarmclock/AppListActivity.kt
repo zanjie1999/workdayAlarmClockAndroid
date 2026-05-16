@@ -25,6 +25,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.util.concurrent.Executors
 
+/**
+ * 应用列表
+ * 实现一个简单的启动器功能，目的是代替启动器实现开机启动
+ */
 class AppListActivity : AppCompatActivity() {
 
     private lateinit var adapter: AppAdapter
