@@ -18,6 +18,7 @@ object MeSettings {
     const val KEY_VERTICAL = "vertical"
     const val KEY_ROUND = "round"
     const val KEY_AP = "ap"
+    const val KEY_AUTO_BACK_CLOCK = "auto_back_clock"
 
     fun isEnabled(context: Context, key: String): Boolean {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

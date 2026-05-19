@@ -84,6 +84,8 @@ class MeService : Service() {
     private var notificationManager: NotificationManager? = null
     private var wakePendingIntent: PendingIntent? = null
     private var udpServerSocket: DatagramSocket? = null
+    private val autoBackClockHandler = Handler(Looper.getMainLooper())
+    private var autoBackClockRunnable: Runnable? = null
 
 
     override fun onBind(intent: Intent): IBinder {
@@ -200,11 +202,13 @@ class MeService : Service() {
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                     // 短暂失去焦点，暂停播放
                     print2LogView("AUDIOFOCUS_LOSS_TRANSIENT, pausing playback.")
+                    cancelAutoBackToClock()
                     player?.pause()
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                     // 短暂失去焦点，可以降低音量 (如果你的播放器支持)
                     print2LogView("AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, ducking volume.")
+                    cancelAutoBackToClock()
                     player?.setVolume(0.3f, 0.3f)
                 }
                 AudioManager.AUDIOFOCUS_GAIN -> {
@@ -212,6 +216,7 @@ class MeService : Service() {
                     print2LogView("AUDIOFOCUS_GAIN, resuming playback or restoring volume.")
                     player?.setVolume(1.0f, 1.0f) // 恢复音量
                     player?.start()
+                    scheduleAutoBackToClock()
                 }
             }
         }
@@ -280,6 +285,30 @@ class MeService : Service() {
         return super.onStartCommand(intent, flags, startId)
     }
 
+    private fun scheduleAutoBackToClock() {
+        cancelAutoBackToClock()
+        if (!MeSettings.isEnabled(this, MeSettings.KEY_AUTO_BACK_CLOCK)) {
+            return
+        }
+        autoBackClockRunnable = Runnable {
+            autoBackClockRunnable = null
+            if (!MeSettings.isEnabled(this, MeSettings.KEY_AUTO_BACK_CLOCK)) {
+                return@Runnable
+            }
+            val intent = Intent(this, ClockActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            intent.putExtra("clockMode", true)
+            startActivity(intent)
+            print2LogView("自动回到时钟")
+        }
+        autoBackClockHandler.postDelayed(autoBackClockRunnable!!, 10000)
+    }
+
+    private fun cancelAutoBackToClock() {
+        autoBackClockRunnable?.let { autoBackClockHandler.removeCallbacks(it) }
+        autoBackClockRunnable = null
+    }
+
     // 用于为通知操作创建 PendingIntent
     private fun createPendingIntentForAction(action: String): PendingIntent {
         val intent = Intent(this, MeMediaButtonReceiver::class.java).setAction(action)
@@ -300,6 +329,7 @@ class MeService : Service() {
     }
 
     override fun onDestroy() {
+        cancelAutoBackToClock()
         shellProcess?.destroy()
         shellThread?.interrupt()
         MainActivity.me?.finish()

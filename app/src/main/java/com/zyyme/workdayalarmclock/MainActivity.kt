@@ -1,6 +1,7 @@
 package com.zyyme.workdayalarmclock
 
 import android.Manifest
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -36,6 +37,8 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_WEB = 2
         private const val OPEN_CLOCK = 3
         private const val OPEN_APPLIST = 4
+        private const val OPEN_DEVICE_ADMIN = 5
+        private const val OPEN_ACCESSIBILITY_SETTINGS = 6
         private const val MENU_SETTING_START = 100
     }
 
@@ -51,13 +54,14 @@ class MainActivity : AppCompatActivity() {
     private val settingsMenuItems = listOf(
         SettingMenuItem(MeSettings.KEY_DISABLE, "开机不启动"),
         SettingMenuItem(MeSettings.KEY_CLOCK, "时钟模式"),
+        SettingMenuItem(MeSettings.KEY_AUTO_BACK_CLOCK, "自动回到时钟"),
         SettingMenuItem(MeSettings.KEY_TSS, "时钟不显示秒"),
         SettingMenuItem(MeSettings.KEY_T24, "时钟24小时制"),
         SettingMenuItem(MeSettings.KEY_WHITE, "时钟亮色主题"),
         SettingMenuItem(MeSettings.KEY_LANDSCAPE, "锁定横屏"),
         SettingMenuItem(MeSettings.KEY_VERTICAL, "强制竖屏布局"),
         SettingMenuItem(MeSettings.KEY_ROUND, "强制圆屏布局"),
-        SettingMenuItem(MeSettings.KEY_AP, "开机开热点(辅助)")
+        SettingMenuItem(MeSettings.KEY_AP, "开机开热点(辅助)"),
     )
 
     override fun onResume() {
@@ -223,6 +227,8 @@ class MainActivity : AppCompatActivity() {
                 isChecked = MeSettings.isEnabled(this@MainActivity, item.key)
             }
         }
+        popupMenu.menu.add(Menu.NONE, OPEN_DEVICE_ADMIN, MENU_SETTING_START + settingsMenuItems.size, "授权熄屏权限")
+        popupMenu.menu.add(Menu.NONE, OPEN_ACCESSIBILITY_SETTINGS, MENU_SETTING_START + settingsMenuItems.size + 1, "辅助功能设置")
 
         popupMenu.setOnMenuItemClickListener { menuItem ->
             if (menuItem.itemId == MENU_EXIT) {
@@ -236,6 +242,12 @@ class MainActivity : AppCompatActivity() {
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_APPLIST) {
                 startActivity(Intent(this, AppListActivity::class.java))
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_DEVICE_ADMIN) {
+                openDeviceAdminSettings()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_ACCESSIBILITY_SETTINGS) {
+                openAccessibilitySettings()
                 return@setOnMenuItemClickListener true
             }
 
@@ -251,6 +263,40 @@ class MainActivity : AppCompatActivity() {
             }
         }
         popupMenu.show()
+    }
+
+    private fun openDeviceAdminSettings() {
+        val devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
+        if (devicePolicyManager.isAdminActive(adminComponentName)) {
+            try {
+                startActivity(Intent("android.settings.DEVICE_ADMIN_SETTINGS"))
+                Toast.makeText(this, "熄屏权限已授权", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                try {
+                    startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                    Toast.makeText(this, "请在安全设置中打开设备管理应用", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "打开设备管理员设置失败", Toast.LENGTH_LONG).show()
+                }
+            }
+            return
+        }
+
+        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
+            putExtra(
+                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "远程锁屏需要这个权限"
+            )
+        }
+        startActivity(intent)
+        Toast.makeText(this,"请激活设备管理员权限\n远程锁屏需要这个权限\n卸载app需要在这里卸载", Toast.LENGTH_LONG).show()
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        Toast.makeText(this, "请开启工作咩闹钟辅助功能", Toast.LENGTH_LONG).show()
     }
 
     private fun applyClockTheme() {
