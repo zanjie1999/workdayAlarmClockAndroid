@@ -86,7 +86,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // 作为启动器启动，也需要运行开机启动app
         if (StartupAppHelper.tryHandleLauncherBootActivity(this, getIntent())) {
-            Thread.sleep(10000)
+            val startupAppCount = StartupAppHelper.getStartupAppPackageNames(this).size
+            Thread.sleep(startupAppCount * StartupAppHelper.STARTUP_APP_DELAY_MILLIS)
         }
         me = this
         useClockMode = MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)

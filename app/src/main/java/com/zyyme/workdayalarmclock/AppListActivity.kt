@@ -105,10 +105,10 @@ class AppListActivity : AppCompatActivity() {
     }
 
     private fun showAppMenu(appInfo: AppInfo) {
-        val isStartupApp = getStartupAppPackageName() == appInfo.packageName
+        val isStartupApp = StartupAppHelper.isStartupApp(this, appInfo.packageName)
         val items = arrayOf(
             if (appInfo.isPinned) "取消置顶" else "置顶",
-            if (isStartupApp) "取消开机启动" else "设为开机启动",
+            if (isStartupApp) "取消开机启动" else "加入开机启动",
             "应用信息",
             "复制包名",
             "返回"
@@ -123,13 +123,12 @@ class AppListActivity : AppCompatActivity() {
                         refreshAppList()
                     }
                     1 -> {
-                        if (isStartupApp) {
-                            setStartupAppPackageName(null)
-                            Toast.makeText(this, "已取消开机启动", Toast.LENGTH_SHORT).show()
-                        } else {
-                            setStartupAppPackageName(appInfo.packageName)
-                            Toast.makeText(this, "已设为开机启动", Toast.LENGTH_SHORT).show()
-                        }
+                        val enabled = StartupAppHelper.toggleStartupApp(this, appInfo.packageName)
+                        Toast.makeText(
+                            this,
+                            if (enabled) "已加入开机序列" else "已从开机序列移除",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                     2 -> openAppInfo(appInfo.packageName)
                     3 -> copyPackageName(appInfo.packageName)
@@ -172,14 +171,6 @@ class AppListActivity : AppCompatActivity() {
             pinnedApps.add(packageName)
         }
         prefs.edit().putStringSet(StartupAppHelper.KEY_PINNED_APPS, pinnedApps).apply()
-    }
-
-    private fun getStartupAppPackageName(): String? {
-        return StartupAppHelper.getStartupAppPackageName(this)
-    }
-
-    private fun setStartupAppPackageName(packageName: String?) {
-        StartupAppHelper.setStartupAppPackageName(this, packageName)
     }
 
     private fun refreshAppList() {

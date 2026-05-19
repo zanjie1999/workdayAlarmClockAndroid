@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
+import org.json.JSONArray
 
 /**
  * 开机启动逻辑
@@ -14,25 +15,60 @@ import android.widget.Toast
 object StartupAppHelper {
     const val PREFS_NAME = "app_list"
     const val KEY_PINNED_APPS = "pinned_apps"
-    private const val KEY_STARTUP_APP = "startup_app"
-    private const val STARTUP_APP_DELAY_MILLIS = 10_000L
+    private const val KEY_STARTUP_APPS = "startup_apps"
+    const val STARTUP_APP_DELAY_MILLIS = 5_000L
     private const val EXTRA_SKIP_STARTUP_APP = "skip_startup_app"
 
     private var startupAppLaunching = false
 
-    fun getStartupAppPackageName(context: Context): String? {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_STARTUP_APP, null)
+    fun getStartupAppPackageNames(context: Context): List<String> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        val storedApps = prefs.getString(KEY_STARTUP_APPS, null).orEmpty().trim()
+        if (storedApps.isNotEmpty()) {
+            parseStartupApps(storedApps).let { parsed ->
+                if (parsed.isNotEmpty()) {
+                    return parsed
+                }
+            }
+        }
+        return emptyList()
     }
 
     fun setStartupAppPackageName(context: Context, packageName: String?) {
+        val currentApps = getStartupAppPackageNames(context).toMutableList()
+        if (packageName.isNullOrBlank()) {
+            currentApps.clear()
+        } else if (!currentApps.contains(packageName)) {
+            currentApps.add(packageName)
+        }
+        setStartupAppPackageNames(context, currentApps)
+    }
+
+    fun setStartupAppPackageNames(context: Context, packageNames: List<String>) {
+        val normalized = packageNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-        if (packageName.isNullOrEmpty()) {
-            editor.remove(KEY_STARTUP_APP)
+        if (normalized.isEmpty()) {
+            editor.remove(KEY_STARTUP_APPS)
         } else {
-            editor.putString(KEY_STARTUP_APP, packageName)
+            editor.putString(KEY_STARTUP_APPS, JSONArray(normalized).toString())
         }
         editor.apply()
+    }
+
+    fun isStartupApp(context: Context, packageName: String): Boolean {
+        return getStartupAppPackageNames(context).contains(packageName)
+    }
+
+    fun toggleStartupApp(context: Context, packageName: String): Boolean {
+        val currentApps = getStartupAppPackageNames(context).toMutableList()
+        if (currentApps.contains(packageName)) {
+            currentApps.remove(packageName)
+        } else {
+            currentApps.add(packageName)
+        }
+        setStartupAppPackageNames(context, currentApps)
+        return currentApps.contains(packageName)
     }
 
     fun startAtBooted(
@@ -55,8 +91,8 @@ object StartupAppHelper {
             }
         }
 
-        val startupPackageName = getStartupAppPackageName(appContext)
-        if (startupPackageName.isNullOrEmpty()) {
+        val startupPackageNames = getStartupAppPackageNames(appContext)
+        if (startupPackageNames.isEmpty()) {
             continueOriginalLogic()
             return
         }
@@ -68,7 +104,7 @@ object StartupAppHelper {
         }
 
         startupAppLaunching = true
-        if (!launchStartupApp(appContext, startupPackageName)) {
+        if (!launchStartupApps(appContext, startupPackageNames)) {
             startupAppLaunching = false
             continueOriginalLogic()
             return
@@ -76,7 +112,7 @@ object StartupAppHelper {
 
         Handler(Looper.getMainLooper()).postDelayed({
             continueOriginalLogic()
-        }, STARTUP_APP_DELAY_MILLIS)
+        }, startupPackageNames.size * STARTUP_APP_DELAY_MILLIS)
     }
 
     fun tryHandleLauncherBootActivity(context: Context, intent: Intent?): Boolean {
@@ -88,8 +124,8 @@ object StartupAppHelper {
         }
 
         val appContext = context.applicationContext
-        val startupPackageName = getStartupAppPackageName(appContext)
-        if (startupPackageName.isNullOrEmpty()) {
+        val startupPackageNames = getStartupAppPackageNames(appContext)
+        if (startupPackageNames.isEmpty()) {
             return false
         }
 
@@ -99,11 +135,24 @@ object StartupAppHelper {
         }
 
         startupAppLaunching = true
-        if (!launchStartupApp(appContext, startupPackageName)) {
+        if (!launchStartupApps(appContext, startupPackageNames)) {
             startupAppLaunching = false
             return false
         }
         return true
+    }
+
+    private fun launchStartupApps(context: Context, packageNames: List<String>): Boolean {
+        var hasAnyLaunched = false
+        packageNames.forEachIndexed { index, packageName ->
+            if (launchStartupApp(context, packageName)) {
+                hasAnyLaunched = true
+            }
+            if (index < packageNames.lastIndex) {
+                Thread.sleep(STARTUP_APP_DELAY_MILLIS)
+            }
+        }
+        return hasAnyLaunched
     }
 
     private fun launchStartupApp(context: Context, packageName: String): Boolean {
@@ -148,5 +197,21 @@ object StartupAppHelper {
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         context.startActivity(intent)
+    }
+
+    private fun parseStartupApps(raw: String): List<String> {
+        return try {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val value = array.optString(i).trim()
+                    if (value.isNotEmpty() && !contains(value)) {
+                        add(value)
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 }
