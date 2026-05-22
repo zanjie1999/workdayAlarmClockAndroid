@@ -64,6 +64,7 @@ class MeService : Service() {
     var writer : PrintWriter? = null
     var lastUrl : String? = null
     var shellThread : Thread? = null
+    @Volatile
     var isStop = true
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
@@ -344,6 +345,7 @@ class MeService : Service() {
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
             alarmManager.cancel(wakePendingIntent)
         }
+        me = null
         super.onDestroy()
         // 不知道为什么服务进程不退出 给他退出强制回收掉
         System.exit(0)
@@ -979,13 +981,13 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
                 if (!isStop) {
                     print2LogView("媒体按键 播放暂停")
-                    if (player!!.isPlaying == true) {
+                    if (player?.isPlaying == true) {
                         ClockActivity.me?.showMsg("暂停")
-                        player!!.pause()
+                        player?.pause()
                         onPause()
                     } else {
                         ClockActivity.me?.showMsg("播放")
-                        player!!.start()
+                        player?.start()
                         onPlay()
                     }
                     return true

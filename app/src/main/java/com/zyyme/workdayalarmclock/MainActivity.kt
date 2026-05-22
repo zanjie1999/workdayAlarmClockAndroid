@@ -329,6 +329,7 @@ class MainActivity : AppCompatActivity() {
 //        mediaButtonReceiverDestroy()
 //        stopService(Intent(this, MeService::class.java))
 //        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+        me = null
         super.onDestroy()
     }
 

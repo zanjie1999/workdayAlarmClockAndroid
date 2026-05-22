@@ -305,27 +305,30 @@ class ClockActivity : AppCompatActivity() {
 
 
         // 时间显示线程 1秒一次
+        val tvTop = findViewById<TextView>(R.id.tv_top)
+        val tvTime = findViewById<TextView>(R.id.tv_time)
+        val tvDate = findViewById<TextView>(R.id.tv_date)
         runnable = object : Runnable {
             override fun run() {
                 val hmsmde = sdfHmsmde.format(Date()).split(".")
-                findViewById<TextView>(R.id.tv_time).text = hmsmde[0]
+                tvTime.text = hmsmde[0]
                 if (showMsgTime > 0) {
                     showMsgTime--
                 } else {
                     val millis = MeService.me?.player?.currentPosition;
                     if (enableTop) {
                         if (millis != null) {
-                            findViewById<TextView>(R.id.tv_top).text = MeService.me!!.batInfo + "▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
-                            findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
+                            tvTop.text = MeService.me!!.batInfo + "▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
+                            tvDate.text = hmsmde[1]
                         } else {
-                            findViewById<TextView>(R.id.tv_top).text = MeService.me!!.batInfo
-                            findViewById<TextView>(R.id.tv_date).text = hmsmde[1]
+                            tvTop.text = MeService.me!!.batInfo
+                            tvDate.text = hmsmde[1]
                         }
                     } else {
                         if (millis != null) {
-                            findViewById<TextView>(R.id.tv_date).text = MeService.me!!.batInfo + hmsmde[1] + " ▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
+                            tvDate.text = MeService.me!!.batInfo + hmsmde[1] + " ▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
                         } else {
-                            findViewById<TextView>(R.id.tv_date).text = MeService.me!!.batInfo + hmsmde[1]
+                            tvDate.text = MeService.me!!.batInfo + hmsmde[1]
                         }
                     }
                 }
@@ -439,6 +442,7 @@ class ClockActivity : AppCompatActivity() {
         }
 //        stopService(Intent(this, MeService::class.java))
 //        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
+        me = null
         super.onDestroy()
     }
 

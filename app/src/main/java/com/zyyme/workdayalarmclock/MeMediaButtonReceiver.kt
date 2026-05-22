@@ -28,9 +28,9 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
                         }
                     }
                     KeyEvent.ACTION_UP -> {
-                        MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - MainActivity.keyDownTime)
+                        MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime)
                         keyDownTime = 0L
-                        Log.d("logView MediaButton", "mbrHandler: $MainActivity.mbrHandler code: $keyEvent.keyCode")
+                        Log.d("logView MediaButton", "code: $keyEvent.keyCode")
                     }
                 }
 
