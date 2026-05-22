@@ -66,6 +66,7 @@ class MeService : Service() {
     var shellThread : Thread? = null
     @Volatile
     var isStop = true
+    lateinit var audioManager: AudioManager
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
     var wakeLockPlay: PowerManager.WakeLock? = null
@@ -191,7 +192,7 @@ class MeService : Service() {
             return super.onStartCommand(intent, flags, startId)
         }
 
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
         // 创建 OnAudioFocusChangeListener
         val afChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -493,12 +494,11 @@ class MeService : Service() {
             } else if (s.startsWith("LOAD ")) {
                 playUrl(s.substring(5), false)
             } else if (s.startsWith("VOL ")) {
-                val am = getSystemService(AUDIO_SERVICE) as AudioManager
-                val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                 val per = s.substring(4).toInt()
                 val set = (max * per / 100)
                 print2LogView("音量最高" + max + "对应" + per + "%设置为" + set)
-                am.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
             } else if (s.startsWith("ECHO ")) {
                 val msg = s.substring(5)
                 updateNotificationTitle(msg)
@@ -550,15 +550,13 @@ class MeService : Service() {
                 }
             } else if (s == "VOLP") {
                 print2LogView("音量加")
-                val am = getSystemService(AUDIO_SERVICE) as AudioManager
-                am.adjustStreamVolume(
+                audioManager.adjustStreamVolume(
                     AudioManager.STREAM_MUSIC,
                     AudioManager.ADJUST_RAISE,
                     AudioManager.FLAG_SHOW_UI);
             } else if (s == "VOLM") {
                 print2LogView("音量减")
-                val am = getSystemService(AUDIO_SERVICE) as AudioManager
-                am.adjustStreamVolume(
+                audioManager.adjustStreamVolume(
                     AudioManager.STREAM_MUSIC,
                     AudioManager.ADJUST_LOWER,
                     AudioManager.FLAG_SHOW_UI);
@@ -1055,9 +1053,8 @@ class MeService : Service() {
                     toGo("next")
                     return true
                 }
-                val am = getSystemService(AUDIO_SERVICE) as AudioManager
-                am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
-                val per = (am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
+                val per = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
                 ClockActivity.me?.showMsg("音量${per}%")
                 print2LogView("媒体按键 音量加 ${per}%")
                 return true
@@ -1070,9 +1067,8 @@ class MeService : Service() {
                     toGo("prev")
                     return true
                 }
-                val am = getSystemService(AUDIO_SERVICE) as AudioManager
-                am.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
-                val per = (am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
+                val per = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
                 ClockActivity.me?.showMsg("音量${per}%")
                 print2LogView("媒体按键 音量减 ${per}%")
                 return true
