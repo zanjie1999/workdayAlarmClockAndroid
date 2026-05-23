@@ -89,6 +89,16 @@ class MeService : Service() {
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
     private var autoBackClockRunnable: Runnable? = null
 
+    // 多击检测状态
+    private val multiClickHandler = Handler(Looper.getMainLooper())
+    private var multiClickState = 0  // 0=IDLE, 1=KEY_DOWN, 2=WAIT_CLICKS, 3=LONG_PRESSED
+    private var multiClickCount = 0
+    private var multiClickKeyCode = 0
+    private var longPressTriggered = false
+    private var longPressDownTime = 0L
+    private var longPressRunnable: Runnable? = null
+    private var clickWindowRunnable: Runnable? = null
+
 
     override fun onBind(intent: Intent): IBinder {
         me = this
@@ -966,15 +976,121 @@ class MeService : Service() {
 
 
     /**
-     * 响应按键
-     * 重写了监听器里的接口
+     * 响应按键 (统一入口)
+     * @param keyCode 按键码
+     * @param isDown true=按下, false=抬起
      */
-    fun keyHandle(keyCode: Int, holdTime: Long): Boolean {
-        // 菜单 返回 退格 音量加 减
-        val knownKey = intArrayOf(0, 82, 4, 67, 24, 25)
-        if (keyCode !in knownKey) {
-            print2LogView("holdTime $holdTime")
+    fun keyHandle(keyCode: Int, isDown: Boolean): Boolean {
+        val isMultiClick = keyCode in setOf(
+            KeyEvent.KEYCODE_SOFT_SLEEP,
+            KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
+            if (isBonjour) KeyEvent.KEYCODE_VOLUME_MUTE else 0
+        )
+        val isVolKey = keyCode in setOf(
+            2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP,
+            2147483646, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN
+        )
+
+        // === 按下 ===
+        if (isDown) {
+            if (isMultiClick || isVolKey) {
+                // 取消已有窗口定时器
+                if (multiClickState == 2) {
+                    clickWindowRunnable?.let { multiClickHandler.removeCallbacks(it) }
+                    clickWindowRunnable = null
+                }
+                multiClickKeyCode = keyCode
+                longPressDownTime = System.currentTimeMillis()
+                longPressTriggered = false
+                multiClickState = 1 // KEY_DOWN
+                // 启动900ms长按定时器
+                longPressRunnable = Runnable {
+                    if (keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
+                        longPressTriggered = true
+                    } else {
+                        print2LogView("按键 长按 停止")
+                        ClockActivity.me?.showMsg("停止")
+                        toGo("stop")
+                        longPressTriggered = true
+                    }
+                    multiClickState = 3 // LONG_PRESSED
+                }
+                multiClickHandler.postDelayed(longPressRunnable!!, 900)
+                return true
+            }
+            // 非多击/音量键: 按下立即响应
+            return keyHandleAction(keyCode)
         }
+
+        // === 抬起 ===
+        if (isMultiClick) {
+            longPressRunnable?.let { multiClickHandler.removeCallbacks(it) }
+            longPressRunnable = null
+            if (longPressTriggered) {
+                if (keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
+                    val holdTime = System.currentTimeMillis() - longPressDownTime
+                    if (holdTime > 11000) {
+                        try {
+                            val intent = Intent()
+                            intent.component = ComponentName("com.zyyme.moonlight.unofficial", "com.limelight.PcView")
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            print2LogView("启动咩Moonlight失败")
+                            e.printStackTrace()
+                        }
+                    } else if (holdTime > 9000) {
+                        try {
+                            val intent = Intent()
+                            intent.component = ComponentName("com.example.kenna", "com.example.kenna.activity.SecondActivity")
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            print2LogView("启动小魔镜应用失败")
+                            e.printStackTrace()
+                        }
+                    } else if (holdTime > 7000) {
+                        startAp()
+                    }
+                }
+                resetMultiClickState()
+                return true
+            }
+            multiClickCount++
+            multiClickState = 2 // WAIT_CLICKS
+            clickWindowRunnable = Runnable {
+                processMultiClick(multiClickKeyCode, multiClickCount)
+            }
+            multiClickHandler.postDelayed(clickWindowRunnable!!, 500)
+            return true
+        }
+
+        if (isVolKey) {
+            longPressRunnable?.let { multiClickHandler.removeCallbacks(it) }
+            longPressRunnable = null
+            if (longPressTriggered) {
+                resetMultiClickState()
+                return true
+            }
+            // 立即调音量
+            if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == 2147483647 || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+            } else {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            }
+            val per = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
+            ClockActivity.me?.showMsg("音量${per}%")
+            print2LogView("按键 音量${if (keyCode in setOf(2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP)) "加" else "减"} ${per}%")
+            resetMultiClickState()
+            return true
+        }
+
+        // 其他键 up不处理
+        return false
+    }
+
+    /**
+     * 非多击/音量键的立即响应逻辑
+     */
+    private fun keyHandleAction(keyCode: Int): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
                 if (!isStop) {
@@ -992,7 +1108,6 @@ class MeService : Service() {
                 } else {
                     print2LogView("媒体按键 一键")
                     ClockActivity.me?.showMsg("一键")
-                    // 触发一键 即播放默认歌单
                     toGo("1key")
                 }
                 return true
@@ -1007,7 +1122,6 @@ class MeService : Service() {
                     }
                 } else {
                     ClockActivity.me?.showMsg("一键")
-                    // 触发一键 即播放默认歌单
                     toGo("1key")
                 }
                 return true
@@ -1021,9 +1135,7 @@ class MeService : Service() {
                 }
                 return true
             }
-            // 用这个代替触摸的下一曲按钮，避免被停止
             2147483645, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                // 如果当前暂停，则触发停止
                 if (player?.isPlaying == true || keyCode == 2147483645) {
                     ClockActivity.me?.showMsg("下一首")
                     print2LogView("媒体按键 下一首")
@@ -1040,37 +1152,8 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_DPAD_LEFT -> {
                 ClockActivity.me?.showMsg("上一首")
                 print2LogView("媒体按键 上一首")
-                if (!isStop &&player?.isPlaying == true) player!!.pause()
+                if (!isStop && player?.isPlaying == true) player!!.pause()
                 toGo("prev")
-                return true
-            }
-            // 好像系统都会强制响应音量键 那这就用int最大值来代替这个位置
-            2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP -> {
-                if (keyCode == KeyEvent.KEYCODE_VOLUME_UP && holdTime > 800) {
-                    ClockActivity.me?.showMsg("下一首")
-                    print2LogView("媒体按键 长按音量加")
-                    player?.pause()
-                    toGo("next")
-                    return true
-                }
-                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);
-                val per = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
-                ClockActivity.me?.showMsg("音量${per}%")
-                print2LogView("媒体按键 音量加 ${per}%")
-                return true
-            }
-            2147483646, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN && holdTime > 800) {
-                    ClockActivity.me?.showMsg("上一首")
-                    print2LogView("媒体按键 长按音量减")
-                    player?.pause()
-                    toGo("prev")
-                    return true
-                }
-                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);
-                val per = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
-                ClockActivity.me?.showMsg("音量${per}%")
-                print2LogView("媒体按键 音量减 ${per}%")
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_STOP -> {
@@ -1081,7 +1164,6 @@ class MeService : Service() {
                 return true
             }
             KeyEvent.KEYCODE_FOCUS -> {
-                // 实际是拍照对焦键
                 print2LogView("媒体按键 鼻子")
                 player?.stop()
                 toGo("stop")
@@ -1092,8 +1174,6 @@ class MeService : Service() {
                     print2LogView("菜单 一说宝宝摸头")
                 } else if (isBonjour) {
                     // 触摸太灵了，不用
-//                    print2LogView("菜单 Bonjour闹钟按钮")
-//                    handleSingleKey(holdTime)
                 } else {
                     print2LogView("菜单 停止")
                     player?.stop()
@@ -1106,52 +1186,57 @@ class MeService : Service() {
                 player?.seekTo(player!!.currentPosition + 5000)
                 return true
             }
-            // 这keycode其实也不知道到底应该用哪个
-//            KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
-//                print2LogView("媒体按键 快退")
-//                player?.seekTo(player!!.currentPosition - 5000)
-//                return true
-//            }
-            // 叮咚play睡眠按钮            小魔镜按钮                           Bonjour闹钟按钮按下去
-            KeyEvent.KEYCODE_SOFT_SLEEP, KeyEvent.KEYCODE_ZENKAKU_HANKAKU, KeyEvent.KEYCODE_VOLUME_MUTE -> {
-                if (keyCode == KeyEvent.KEYCODE_VOLUME_MUTE && !isBonjour) {
-                    // 不是Bonjour闹钟时恢复本来的静音功能
-                    return false
-                }
-                print2LogView("媒体按键 单按钮")
-                if (holdTime > 7000 && keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
-                    if (holdTime > 11000) {
-                        try {
-                            val intent = Intent()
-                            intent.component = ComponentName("com.zyyme.moonlight.unofficial", "com.limelight.PcView")
-                            startActivity(intent)
-                        } catch (e : Exception) {
-                            print2LogView("启动咩Moonlight失败")
-                            e.printStackTrace()
-                        }
-                    }else if (holdTime > 9000) {
-                        try {
-                            val intent = Intent()
-                            intent.component = ComponentName("com.example.kenna", "com.example.kenna.activity.SecondActivity")
-                            startActivity(intent)
-                        } catch (e : Exception) {
-                            print2LogView("启动小魔镜应用失败")
-                            e.printStackTrace()
-                        }
+        }
+        print2LogView("未知按键 $keyCode")
+        return false
+    }
+
+    /**
+     * 多击窗口到期处理
+     */
+    private fun processMultiClick(keyCode: Int, count: Int) {
+        when (count) {
+            1 -> {
+                if (!isStop) {
+                    if (player?.isPlaying == true) {
+                        ClockActivity.me?.showMsg("暂停")
+                        print2LogView("多击 单击 暂停")
+                        player?.pause()
+                        onPause()
                     } else {
-                        // 开热点
-                        startAp()
+                        ClockActivity.me?.showMsg("播放")
+                        print2LogView("多击 单击 播放")
+                        player?.start()
+                        onPlay()
                     }
                 } else {
-                    handleSingleKey(holdTime)
+                    print2LogView("多击 单击 一键")
+                    ClockActivity.me?.showMsg("一键")
+                    toGo("1key")
                 }
-                return true
+            }
+            2 -> {
+                ClockActivity.me?.showMsg("下一首")
+                print2LogView("多击 双击 下一首")
+                if (!isStop && player?.isPlaying == true) player?.pause()
+                toGo("next")
+            }
+            3 -> {
+                ClockActivity.me?.showMsg("上一首")
+                print2LogView("多击 三击 上一首")
+                if (!isStop && player?.isPlaying == true) player?.pause()
+                toGo("prev")
             }
         }
-        if (keyCode !in knownKey) {
-            print2LogView("未知按键 $keyCode")
-        }
-        return false
+        resetMultiClickState()
+    }
+
+    private fun resetMultiClickState() {
+        multiClickState = 0
+        multiClickCount = 0
+        longPressTriggered = false
+        longPressRunnable = null
+        clickWindowRunnable = null
     }
 
     /**
@@ -1217,36 +1302,6 @@ class MeService : Service() {
     }
 
 
-
-    /**
-     * 处理单按钮事件
-     */
-    fun handleSingleKey(holdTime: Long = 0) {
-        if (holdTime > 2500) {
-            ClockActivity.me?.showMsg("停止")
-            toGo("stop")
-        } else if (holdTime > 1500) {
-            ClockActivity.me?.showMsg("上一首")
-            player?.pause()
-            toGo("prev")
-        } else if (holdTime > 800) {
-            ClockActivity.me?.showMsg("下一首")
-            player?.pause()
-            toGo("next")
-        } else if (!isStop) {
-            if (player!!.isPlaying == true) {
-                ClockActivity.me?.showMsg("暂停")
-                player!!.pause()
-                onPause()
-            } else {
-                ClockActivity.me?.showMsg("播放")
-                player!!.start()
-                onPlay()
-            }
-        } else {
-            toGo("1key")
-        }
-    }
 
     /**
      * 调用Go Api

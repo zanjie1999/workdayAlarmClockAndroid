@@ -28,7 +28,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.zyyme.workdayalarmclock.MainActivity.Companion.keyDownTime
+
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -131,25 +131,25 @@ class ClockActivity : AppCompatActivity() {
             startActivity(intent)
         }
         findViewById<Button>(R.id.btn_prev).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
         }
         findViewById<Button>(R.id.btn_play).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
         }
         findViewById<Button>(R.id.btn_next).setOnClickListener {
-            MeService.me?.keyHandle(2147483645, 0)
+            MeService.me?.keyHandle(2147483645, true)
         }
         findViewById<Button>(R.id.btn_stop).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
         }
         findViewById<Button>(R.id.btn_volm).setOnClickListener {
-            MeService.me?.keyHandle(2147483646, 0)
+            MeService.me?.keyHandle(2147483646, true)
         }
         findViewById<Button>(R.id.btn_volp).setOnClickListener {
-            MeService.me?.keyHandle(2147483647, 0)
+            MeService.me?.keyHandle(2147483647, true)
         }
         findViewById<Button>(R.id.btn_forward).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 0)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, true)
         }
 
         val tvGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -157,7 +157,7 @@ class ClockActivity : AppCompatActivity() {
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 if (clockMode) {
-                    MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
+                    MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
                 } else {
                     isKeepScreenOn = !isKeepScreenOn
                     if (isKeepScreenOn) {
@@ -193,10 +193,10 @@ class ClockActivity : AppCompatActivity() {
                     if (Math.abs(diffX) > 100 && Math.abs(velocityX) > 100) {
                         if (diffX > 0) {
                             // 右
-                            MeService.me?.keyHandle(2147483645, 0)
+                            MeService.me?.keyHandle(2147483645, true)
                         } else {
                             // 左
-                            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
+                            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
                         }
                         return true
                     }
@@ -205,10 +205,10 @@ class ClockActivity : AppCompatActivity() {
                     if (Math.abs(diffY) > 100 && Math.abs(velocityY) > 100) {
                         if (diffY > 0) {
                             // 下
-                            MeService.me?.keyHandle(2147483646, 0)
+                            MeService.me?.keyHandle(2147483646, true)
                         } else {
                             // 上
-                            MeService.me?.keyHandle(2147483647, 0)
+                            MeService.me?.keyHandle(2147483647, true)
                         }
                         return true
                     }
@@ -450,39 +450,13 @@ class ClockActivity : AppCompatActivity() {
         if (clockMode) {
             when (keyEvent?.action) {
                 KeyEvent.ACTION_DOWN -> {
-                    // 每增加一个 单按钮 就要维护一次这个
-                    if (keyEvent.keyCode in setOf(
-                            KeyEvent.KEYCODE_SOFT_SLEEP,
-                            KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
-//                            KeyEvent.KEYCODE_MENU,
-                            KeyEvent.KEYCODE_VOLUME_MUTE,
-                            KeyEvent.KEYCODE_VOLUME_UP,
-                            KeyEvent.KEYCODE_VOLUME_DOWN,
-                        )) {
-                        // 按住时会不停触发
-//                        Log.d("ClockActivity", "keyDown keyDownTime:${keyDownTime} keyCode:${keyEvent.keyCode}")
-                        if (keyDownTime == 0L) {
-                            keyDownTime = System.currentTimeMillis()
-                        }
-                        return true
-                    } else if (MeService.me?.keyHandle(keyEvent.keyCode, 0) == true) {
+                    if (MeService.me?.keyHandle(keyEvent.keyCode, true) == true) {
                         return true
                     }
                 }
                 KeyEvent.ACTION_UP -> {
-                    // 每增加一个 单按钮 就要维护一次这个
-                    if (keyEvent.keyCode in setOf(
-                            KeyEvent.KEYCODE_SOFT_SLEEP,
-                            KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
-//                            KeyEvent.KEYCODE_MENU,
-                            KeyEvent.KEYCODE_VOLUME_MUTE,
-                            KeyEvent.KEYCODE_VOLUME_UP,
-                            KeyEvent.KEYCODE_VOLUME_DOWN,
-                        )) {
-                        val holdTime = System.currentTimeMillis() - keyDownTime
-                        Log.d("ClockActivity", "keyUp holdTime:${holdTime} keyCode:${keyEvent.keyCode}")
-                        keyDownTime = 0L
-                        return MeService.me?.keyHandle(keyEvent.keyCode, holdTime) == true
+                    if (MeService.me?.keyHandle(keyEvent.keyCode, false) == true) {
+                        return true
                     }
                 }
             }

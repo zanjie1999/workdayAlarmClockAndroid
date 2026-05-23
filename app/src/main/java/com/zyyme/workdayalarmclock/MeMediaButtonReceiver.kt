@@ -12,9 +12,6 @@ import android.view.KeyEvent
  * 这传入参数是什么逆天写法
  */
 class MeMediaButtonReceiver : BroadcastReceiver() {
-    companion object {
-        var keyDownTime = 0L
-    }
     override fun onReceive(context: Context?, intent: Intent?) {
 
         val action = intent?.action ?: return
@@ -23,36 +20,33 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
                 val keyEvent =intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent ?: return
                 when (keyEvent.action) {
                     KeyEvent.ACTION_DOWN -> {
-                        if (keyDownTime == 0L) {
-                            keyDownTime = System.currentTimeMillis()
-                        }
+                        MeService.me?.keyHandle(keyEvent.keyCode, true)
                     }
                     KeyEvent.ACTION_UP -> {
-                        MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime)
-                        keyDownTime = 0L
+                        MeService.me?.keyHandle(keyEvent.keyCode, false)
                         Log.d("logView MediaButton", "code: $keyEvent.keyCode")
                     }
                 }
 
             }
             MeService.ACTION_PLAY -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
                 Log.d("logView MediaButton", "ACTION_PLAY")
             }
             MeService.ACTION_NEXT -> {
-                MeService.me?.keyHandle(2147483645, 0)
+                MeService.me?.keyHandle(2147483645, true)
                 Log.d("logView MediaButton", "ACTION_NEXT")
             }
             MeService.ACTION_PREVIOUS -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
                 Log.d("logView MediaButton", "ACTION_PREVIOUS")
             }
             MeService.ACTION_STOP -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
                 Log.d("logView MediaButton", "ACTION_STOP")
             }
             MeService.ACTION_FORWARD -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 0)
+                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, true)
                 Log.d("logView MediaButton", "ACTION_FORWARD")
             }
             MeService.ACTION_WAKE -> {

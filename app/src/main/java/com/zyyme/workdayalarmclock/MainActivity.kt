@@ -32,7 +32,6 @@ class MainActivity : AppCompatActivity() {
         var print2LogViewHandler: Handler? = null
         var me: MainActivity? = null
         var startService = true
-        var keyDownTime = 0L
         private const val MENU_EXIT = 1
         private const val OPEN_WEB = 2
         private const val OPEN_CLOCK = 3
@@ -187,19 +186,19 @@ class MainActivity : AppCompatActivity() {
 
         // toolbar的控制按钮
         findViewById<ImageView>(R.id.iconPrev).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, 0)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
         }
         findViewById<ImageView>(R.id.iconPlay).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
         }
         findViewById<ImageView>(R.id.iconNext).setOnClickListener {
-            MeService.me?.keyHandle(2147483645, 0)
+            MeService.me?.keyHandle(2147483645, true)
         }
         findViewById<ImageView>(R.id.iconStop).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, 0)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
         }
         findViewById<ImageView>(R.id.iconForward).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 0)
+            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, true)
         }
         findViewById<ImageView>(R.id.iconMenu).setOnClickListener {
             showSettingsMenu(it as ImageView)
@@ -350,45 +349,16 @@ class MainActivity : AppCompatActivity() {
         if (findViewById<EditText>(R.id.shellInput).text.toString() == "") {
             when (keyEvent?.action) {
                 KeyEvent.ACTION_DOWN -> {
-                    if (keyDownTime == 0L) {
-                        keyDownTime = System.currentTimeMillis()
-                    }
-                    // 每增加一个按键 就要维护一次这个
-                    if (keyEvent.keyCode in setOf(
-                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                            KeyEvent.KEYCODE_MEDIA_PLAY,
-                            KeyEvent.KEYCODE_MEDIA_PAUSE,
-                            KeyEvent.KEYCODE_MEDIA_PREVIOUS,
-                            KeyEvent.KEYCODE_MEDIA_NEXT,
-                            KeyEvent.KEYCODE_DPAD_CENTER,
-                            KeyEvent.KEYCODE_DPAD_RIGHT,
-                            KeyEvent.KEYCODE_DPAD_LEFT,
-                            KeyEvent.KEYCODE_DPAD_UP,
-                            KeyEvent.KEYCODE_DPAD_DOWN,
-                            KeyEvent.KEYCODE_MEDIA_STOP,
-                            KeyEvent.KEYCODE_FOCUS,
-                            KeyEvent.KEYCODE_MENU,
-                            KeyEvent.KEYCODE_SOFT_SLEEP,
-                            KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
-                            KeyEvent.KEYCODE_VOLUME_MUTE,
-                            KeyEvent.KEYCODE_VOLUME_UP,
-                            KeyEvent.KEYCODE_VOLUME_DOWN,
-                            2147483647,
-                            2147483646,
-                            2147483645
-                        )) {
+                    if (MeService.me?.keyHandle(keyEvent.keyCode, true) == true) {
                         return true
                     }
                 }
                 KeyEvent.ACTION_UP -> {
                     if (keyEvent.keyCode == KeyEvent.KEYCODE_CALL) {
-                        // 拨号键退出
                         exitApp()
-                    } else if (MeService.me?.keyHandle(keyEvent.keyCode, System.currentTimeMillis() - keyDownTime) == true) {
-                        keyDownTime = 0L
+                    } else if (MeService.me?.keyHandle(keyEvent.keyCode, false) == true) {
                         return true
                     }
-                    keyDownTime = 0L
                 }
             }
         } else if (keyEvent?.action == KeyEvent.ACTION_UP && keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
