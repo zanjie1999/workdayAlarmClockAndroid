@@ -987,8 +987,8 @@ class MeService : Service() {
             if (isBonjour) KeyEvent.KEYCODE_VOLUME_MUTE else 0
         )
         val isVolKey = keyCode in setOf(
-            2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP,
-            2147483646, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN
         )
 
         // === 按下 ===
@@ -1071,14 +1071,14 @@ class MeService : Service() {
                 return true
             }
             // 立即调音量
-            if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == 2147483647 || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
                 audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
             } else {
                 audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
             }
             val per = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
             ClockActivity.me?.showMsg("音量${per}%")
-            print2LogView("按键 音量${if (keyCode in setOf(2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP)) "加" else "减"} ${per}%")
+            print2LogView("按键 音量${if (keyCode in setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP)) "加" else "减"} ${per}%")
             resetMultiClickState()
             return true
         }
@@ -1154,6 +1154,15 @@ class MeService : Service() {
                 print2LogView("媒体按键 上一首")
                 if (!isStop && player?.isPlaying == true) player!!.pause()
                 toGo("prev")
+                return true
+            }
+            // 自定义音量键（按钮栏用，立即响应，无长按）
+            2147483647 -> {
+                adjustVolume(keyCode)
+                return true
+            }
+            2147483646 -> {
+                adjustVolume(keyCode)
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_STOP -> {
@@ -1237,6 +1246,17 @@ class MeService : Service() {
         longPressTriggered = false
         longPressRunnable = null
         clickWindowRunnable = null
+    }
+
+    private fun adjustVolume(keyCode: Int) {
+        if (keyCode in setOf(2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP)) {
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+        } else {
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+        }
+        val per = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
+        ClockActivity.me?.showMsg("音量${per}%")
+        print2LogView("按键 音量${if (keyCode in setOf(2147483647, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP)) "加" else "减"} ${per}%")
     }
 
     /**
