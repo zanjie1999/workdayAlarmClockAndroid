@@ -994,6 +994,18 @@ class MeService : Service() {
         // === 按下 ===
         if (isDown) {
             if (isMultiClick || isVolKey) {
+                if (multiClickKeyCode == keyCode) {
+                    return true
+                }
+                if (multiClickKeyCode == KeyEvent.KEYCODE_VOLUME_UP && keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+                    || multiClickKeyCode == KeyEvent.KEYCODE_VOLUME_DOWN && keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                    // 同时按下两个音量键
+                    resetMultiClickState()
+                    print2LogView("两个音量键 停止")
+                    ClockActivity.me?.showMsg("停止")
+                    toGo("stop")
+                    return true
+                }
                 // 取消已有窗口定时器
                 if (multiClickState == 2) {
                     clickWindowRunnable?.let { multiClickHandler.removeCallbacks(it) }
@@ -1005,10 +1017,25 @@ class MeService : Service() {
                 multiClickState = 1 // KEY_DOWN
                 // 启动900ms长按定时器
                 longPressRunnable = Runnable {
+                    if (multiClickKeyCode != keyCode || multiClickState != 1) {
+                        return@Runnable
+                    }
                     if (keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
                         longPressTriggered = true
+                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                        ClockActivity.me?.showMsg("下一首")
+                        print2LogView("长按音量加 下一首")
+                        if (!isStop && player?.isPlaying == true) player?.pause()
+                        toGo("next")
+                        longPressTriggered = true
+                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                        ClockActivity.me?.showMsg("上一首")
+                        print2LogView("长按音量减 上一首")
+                        if (!isStop && player?.isPlaying == true) player?.pause()
+                        toGo("prev")
+                        longPressTriggered = true
                     } else {
-                        print2LogView("按键 长按 停止")
+                        print2LogView("长按停止")
                         ClockActivity.me?.showMsg("停止")
                         toGo("stop")
                         longPressTriggered = true
@@ -1078,7 +1105,7 @@ class MeService : Service() {
             }
             val per = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 100).toInt()
             ClockActivity.me?.showMsg("音量${per}%")
-            print2LogView("按键 音量${if (keyCode in setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP)) "加" else "减"} ${per}%")
+            print2LogView("音量${if (keyCode in setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP)) "加" else "减"} ${per}%")
             resetMultiClickState()
             return true
         }
@@ -1209,30 +1236,30 @@ class MeService : Service() {
                 if (!isStop) {
                     if (player?.isPlaying == true) {
                         ClockActivity.me?.showMsg("暂停")
-                        print2LogView("多击 单击 暂停")
+                        print2LogView("单击 暂停")
                         player?.pause()
                         onPause()
                     } else {
                         ClockActivity.me?.showMsg("播放")
-                        print2LogView("多击 单击 播放")
+                        print2LogView("单击 播放")
                         player?.start()
                         onPlay()
                     }
                 } else {
-                    print2LogView("多击 单击 一键")
+                    print2LogView("单击 一键")
                     ClockActivity.me?.showMsg("一键")
                     toGo("1key")
                 }
             }
             2 -> {
                 ClockActivity.me?.showMsg("下一首")
-                print2LogView("多击 双击 下一首")
+                print2LogView("双击 下一首")
                 if (!isStop && player?.isPlaying == true) player?.pause()
                 toGo("next")
             }
             3 -> {
                 ClockActivity.me?.showMsg("上一首")
-                print2LogView("多击 三击 上一首")
+                print2LogView("三击 上一首")
                 if (!isStop && player?.isPlaying == true) player?.pause()
                 toGo("prev")
             }
@@ -1241,6 +1268,9 @@ class MeService : Service() {
     }
 
     private fun resetMultiClickState() {
+        multiClickKeyCode = 0
+        longPressRunnable?.let { multiClickHandler.removeCallbacks(it) }
+        clickWindowRunnable?.let { multiClickHandler.removeCallbacks(it) }
         multiClickState = 0
         multiClickCount = 0
         longPressTriggered = false
