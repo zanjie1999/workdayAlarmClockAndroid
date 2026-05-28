@@ -1211,6 +1211,10 @@ class MeService : Service() {
                     print2LogView("菜单 一说宝宝摸头")
                 } else if (isBonjour) {
                     // 触摸太灵了，不用
+                } else {
+                    print2LogView("菜单 停止")
+                    player?.stop()
+                    toGo("stop")
                 }
                 return true
             }
