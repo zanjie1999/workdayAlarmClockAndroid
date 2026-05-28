@@ -55,8 +55,8 @@ class MeService : Service() {
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
         // getprop ro.product.model
-        //                                 绿色陪伴音箱，叮咚play，小魔镜
-        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci")
+        //                                 绿色陪伴音箱，叮咚play，小魔镜, 小熊尼奥照照乐和Pro
+        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO")
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
@@ -984,7 +984,9 @@ class MeService : Service() {
         val isMultiClick = keyCode in setOf(
             KeyEvent.KEYCODE_SOFT_SLEEP,
             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
-            if (isBonjour) KeyEvent.KEYCODE_VOLUME_MUTE else 0
+            if (isBonjour) KeyEvent.KEYCODE_VOLUME_MUTE else 0,
+            if (ysLedStatus()) 0 else KeyEvent.KEYCODE_FOCUS,
+            if (ysLedStatus() or isBonjour) 0 else KeyEvent.KEYCODE_MENU
         )
         val isVolKey = keyCode in setOf(
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP,
@@ -1210,10 +1212,6 @@ class MeService : Service() {
                     print2LogView("菜单 一说宝宝摸头")
                 } else if (isBonjour) {
                     // 触摸太灵了，不用
-                } else {
-                    print2LogView("菜单 停止")
-                    player?.stop()
-                    toGo("stop")
                 }
                 return true
             }
