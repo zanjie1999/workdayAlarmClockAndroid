@@ -48,6 +48,16 @@ android {
         }
     }
 
+    flavorDimensions "version"
+    productFlavors {
+        full {
+            dimension "version"
+        }
+        nolauncher {
+            dimension "version"
+        }
+    }
+
     lintOptions {
         checkReleaseBuilds false
         abortOnError false
