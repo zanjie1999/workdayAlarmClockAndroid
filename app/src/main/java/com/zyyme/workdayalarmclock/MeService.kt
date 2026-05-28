@@ -986,7 +986,6 @@ class MeService : Service() {
             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
             if (isBonjour) KeyEvent.KEYCODE_VOLUME_MUTE else 0,
             if (ysLedStatus()) 0 else KeyEvent.KEYCODE_FOCUS,
-            if (ysLedStatus() or isBonjour) 0 else KeyEvent.KEYCODE_MENU
         )
         val isVolKey = keyCode in setOf(
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP,
