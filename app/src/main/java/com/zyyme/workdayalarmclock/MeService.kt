@@ -107,6 +107,9 @@ class MeService : Service() {
 
     @SuppressLint("WrongConstant")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (me != null) {
+            return 0
+        }
         me = this
 
         // 初始化音频服务
