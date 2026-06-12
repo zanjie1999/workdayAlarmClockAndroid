@@ -402,6 +402,11 @@ class ClockActivity : AppCompatActivity() {
             Log.d("ClockActivity", "圆形屏幕")
             val padding = realHeightPixels / 5
             findViewById<LinearLayout>(R.id.root_layout).setPadding(0, padding, 0, padding)
+            // 自动计算大小 搞个左右的边距
+            val textHorizontalPadding = 10
+            tvTop.setPadding(textHorizontalPadding, tvTop.paddingTop, textHorizontalPadding, tvTop.paddingBottom)
+            tvTime.setPadding(textHorizontalPadding, tvTime.paddingTop, textHorizontalPadding, tvTime.paddingBottom)
+            tvDate.setPadding(textHorizontalPadding, tvDate.paddingTop, textHorizontalPadding, tvDate.paddingBottom)
             realHeightPixels -= padding * 2
         }
         if (isRound || isVertical) {

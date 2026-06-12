@@ -22,7 +22,7 @@ class CircularMusicProgressView @JvmOverloads constructor(
     private var progressFraction = 0f
 
     init {
-        progressPaint.strokeWidth = 10f * resources.displayMetrics.density
+        progressPaint.strokeWidth = 15f * resources.displayMetrics.density
         visibility = GONE
         isClickable = false
         isFocusable = false
