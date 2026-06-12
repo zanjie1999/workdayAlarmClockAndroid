@@ -15,6 +15,7 @@ import android.os.Looper
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.DisplayMetrics
 import android.util.Log
+import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -22,9 +23,11 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.widget.TextViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -54,6 +57,8 @@ class ClockActivity : AppCompatActivity() {
     var clockMode = false
 
     var enableTop = false
+
+    private var isUserSeeking = false
 
     fun showMsg(msg: String) {
         runOnUiThread {
@@ -110,6 +115,11 @@ class ClockActivity : AppCompatActivity() {
         setContentView(R.layout.activity_clock)
 //        mediaButtonReceiverInit()
 
+        val tvTop = findViewById<TextView>(R.id.tv_top)
+        val tvTime = findViewById<TextView>(R.id.tv_time)
+        val tvDate = findViewById<TextView>(R.id.tv_date)
+        setupClockTextAutoSize(tvTop, tvTime, tvDate)
+
         // 按钮控制
 //        findViewById<Button>(R.id.btn_back).setOnClickListener {
 //            Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
@@ -126,7 +136,7 @@ class ClockActivity : AppCompatActivity() {
             val intent = Intent(this, AppListActivity::class.java)
             startActivity(intent)
         }
-        findViewById<TextView>(R.id.tv_top).setOnClickListener {
+        tvTop.setOnClickListener {
             val intent = Intent(this, AppListActivity::class.java)
             startActivity(intent)
         }
@@ -151,6 +161,35 @@ class ClockActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_forward).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, true)
         }
+
+        val musicSeekBar = findViewById<SeekBar>(R.id.sb_music_progress)
+        val tvMusicPosition = findViewById<TextView>(R.id.tv_music_position)
+        val tvMusicDuration = findViewById<TextView>(R.id.tv_music_duration)
+        musicSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    tvMusicPosition.text = formatMusicTime(progress)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isUserSeeking = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val player = MeService.me?.player
+                val target = seekBar?.progress ?: 0
+                try {
+                    val duration = player?.duration ?: 0
+                    if (player != null && duration > 0) {
+                        player.seekTo(target.coerceIn(0, duration))
+                    }
+                } catch (e: IllegalStateException) {
+                    Log.w("ClockActivity", "seek music progress failed", e)
+                }
+                isUserSeeking = false
+            }
+        })
 
         val tvGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
@@ -216,11 +255,11 @@ class ClockActivity : AppCompatActivity() {
                 return false
             }
         })
-        findViewById<TextView>(R.id.tv_time).setOnTouchListener { v, event ->
+        tvTime.setOnTouchListener { v, event ->
             tvGestureDetector.onTouchEvent(event)
         }
 
-        findViewById<TextView>(R.id.tv_date).setOnClickListener {
+        tvDate.setOnClickListener {
             if (clockMode) {
                 recreate()
             } else {
@@ -232,7 +271,7 @@ class ClockActivity : AppCompatActivity() {
                 }
             }
         }
-        findViewById<TextView>(R.id.tv_date).setOnLongClickListener {
+        tvDate.setOnLongClickListener {
             val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
             if (devicePolicyManager.isAdminActive(adminComponentName)) {
@@ -270,27 +309,6 @@ class ClockActivity : AppCompatActivity() {
                 Log.d("intent", "收到clockMode")
                 // 直接进入全屏时钟模式
                 setFullScreenClock()
-            } else {
-                // 给Android8以下设备设置字体大小（无法自动缩放）
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                    val height =  rootLaout.height / resources.displayMetrics.density
-                    val width = rootLaout.width / resources.displayMetrics.density
-                    Log.d("ClockActivity", "height: $height width: $width density: ${resources.displayMetrics.density}")
-                    if (height > width) {
-                        // 竖屏
-                        if (resources.displayMetrics.density < 1) {
-                            findViewById<TextView>(R.id.tv_time).textSize = width * 0.2f
-                        } else {
-                            findViewById<TextView>(R.id.tv_time).textSize = width * 0.25f
-                        }
-                    } else {
-                        if (resources.displayMetrics.density < 1) {
-                            findViewById<TextView>(R.id.tv_time).textSize = height * 0.25f
-                        } else {
-                            findViewById<TextView>(R.id.tv_time).textSize = height * 0.3f
-                        }
-                    }
-                }
             }
             // 保持亮屏flag
             if (intent.getBooleanExtra("keepOn", false)) {
@@ -305,17 +323,26 @@ class ClockActivity : AppCompatActivity() {
 
 
         // 时间显示线程 1秒一次
-        val tvTop = findViewById<TextView>(R.id.tv_top)
-        val tvTime = findViewById<TextView>(R.id.tv_time)
-        val tvDate = findViewById<TextView>(R.id.tv_date)
         runnable = object : Runnable {
             override fun run() {
                 val hmsmde = sdfHmsmde.format(Date()).split(".")
                 tvTime.text = hmsmde[0]
+                val player = MeService.me?.player
+                var millis: Int? = null
+                var duration = 0
+                try {
+                    if (player != null) {
+                        millis = player.currentPosition
+                        duration = player.duration
+                    }
+                } catch (e: IllegalStateException) {
+                    millis = null
+                    duration = 0
+                }
+                updateMusicProgress(musicSeekBar, tvMusicPosition, tvMusicDuration, millis, duration)
                 if (showMsgTime > 0) {
                     showMsgTime--
                 } else {
-                    val millis = MeService.me?.player?.currentPosition;
                     if (enableTop) {
                         if (millis != null) {
                             tvTop.text = MeService.me!!.batInfo + "▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
@@ -354,6 +381,7 @@ class ClockActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.btm_layout2).visibility = View.GONE
         findViewById<LinearLayout>(R.id.btm_layout3).visibility = View.GONE
         findViewById<LinearLayout>(R.id.btm_layout4).visibility = View.GONE
+        findViewById<LinearLayout>(R.id.music_progress_layout).visibility = View.GONE
 
         val displayMetrics = DisplayMetrics()
         windowManager.defaultDisplay.getMetrics(displayMetrics)
@@ -391,17 +419,63 @@ class ClockActivity : AppCompatActivity() {
                     sdfHmsmde = SimpleDateFormat("h:mm\nss.M月d日 E")
                 }
             }
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-//                tvTime.textSize = displayMetrics.heightPixels / resources.displayMetrics.density * 0.22f
-                tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.34f
-            }
             tvTime.maxLines = 2
-        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-//            tvTime.textSize = displayMetrics.widthPixels / 7f * resources.displayMetrics.density
-            tvTime.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.25f
-            if (tvDate.textSize < displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f) {
-                tvDate.textSize = displayMetrics.widthPixels / resources.displayMetrics.density * 0.05f
-            }
+        }
+        setupClockTextAutoSize(tvTop, tvTime, tvDate)
+    }
+
+    private fun setupClockTextAutoSize(tvTop: TextView, tvTime: TextView, tvDate: TextView) {
+        setUniformAutoSize(tvTop, 8, 50)
+        setUniformAutoSize(tvTime, 18, 200)
+        setUniformAutoSize(tvDate, 8, 50)
+    }
+
+    private fun setUniformAutoSize(textView: TextView, minSp: Int, maxSp: Int) {
+        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+            textView,
+            minSp,
+            maxSp,
+            1,
+            TypedValue.COMPLEX_UNIT_SP
+        )
+    }
+
+    private fun updateMusicProgress(
+        seekBar: SeekBar,
+        positionView: TextView,
+        durationView: TextView,
+        position: Int?,
+        duration: Int
+    ) {
+        if (position == null || duration <= 0) {
+            seekBar.max = 0
+            seekBar.progress = 0
+            seekBar.isEnabled = false
+            positionView.text = formatMusicTime(0)
+            durationView.text = formatMusicTime(0)
+            return
+        }
+
+        seekBar.isEnabled = true
+        if (seekBar.max != duration) {
+            seekBar.max = duration
+        }
+        if (!isUserSeeking) {
+            seekBar.progress = position.coerceIn(0, duration)
+            positionView.text = formatMusicTime(position)
+        }
+        durationView.text = formatMusicTime(duration)
+    }
+
+    private fun formatMusicTime(millis: Int): String {
+        val totalSeconds = millis.coerceAtLeast(0) / 1000
+        val hours = totalSeconds / 3600
+        val minutes = totalSeconds % 3600 / 60
+        val seconds = totalSeconds % 60
+        return if (hours > 0) {
+            String.format("%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            String.format("%d:%02d", minutes, seconds)
         }
     }
 

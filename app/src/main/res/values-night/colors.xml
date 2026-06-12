@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="clockBtnColor">#333333</color>
+    <color name="clockProgressTrack">#664D4D4D</color>
+    <color name="clockProgressFill">#FF9E9E9E</color>
+    <color name="clockProgressThumb">#FFECEFF1</color>
+    <color name="clockProgressThumbStroke">#FF9E9E9E</color>
 </resources>

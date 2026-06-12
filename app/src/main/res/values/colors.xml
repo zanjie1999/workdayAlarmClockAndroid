@@ -9,4 +9,8 @@
     <color name="white">#FFFFFFFF</color>
     <color name="colorPrimary">#429BDF</color>
     <color name="clockBtnColor">#808080</color>
+    <color name="clockProgressTrack">#4D808080</color>
+    <color name="clockProgressFill">#FF808080</color>
+    <color name="clockProgressThumb">#FFFFFFFF</color>
+    <color name="clockProgressThumbStroke">#FF808080</color>
 </resources>

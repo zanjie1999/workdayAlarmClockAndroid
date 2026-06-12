@@ -11,7 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:weightSum="14">
+        android:weightSum="15">
 
 
         <LinearLayout
@@ -58,7 +58,11 @@
             android:text=""
             android:textSize="25sp"
             android:autoSizeTextType="uniform"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="8sp"
             android:autoSizeMaxTextSize="50sp"
+            app:autoSizeMaxTextSize="50sp"
+            app:autoSizeStepGranularity="1sp"
             android:maxLines="1"
             android:includeFontPadding="false"
             android:textAlignment="center"
@@ -74,7 +78,11 @@
             android:text="12:13:14"
             android:textSize="70sp"
             android:autoSizeTextType="uniform"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="18sp"
             android:autoSizeMaxTextSize="200sp"
+            app:autoSizeMaxTextSize="200sp"
+            app:autoSizeStepGranularity="1sp"
             android:maxLines="1"
             android:includeFontPadding="false"
             android:textAlignment="center"
@@ -90,12 +98,69 @@
             android:text="2月30日 周⑨"
             android:textSize="25sp"
             android:autoSizeTextType="uniform"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="8sp"
             android:autoSizeMaxTextSize="50sp"
+            app:autoSizeMaxTextSize="50sp"
+            app:autoSizeStepGranularity="1sp"
             android:maxLines="1"
             android:includeFontPadding="false"
             android:textAlignment="center"
             android:clickable="true"
             android:focusable="true"/>
+
+        <LinearLayout
+            android:id="@+id/music_progress_layout"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp">
+
+            <SeekBar
+                android:id="@+id/sb_music_progress"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:max="0"
+                android:paddingLeft="0dp"
+                android:paddingRight="0dp"
+                android:progress="0"
+                android:progressDrawable="@drawable/clock_seek_progress"
+                android:thumb="@drawable/clock_seek_thumb_hidden"
+                android:thumbOffset="0dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tv_music_position"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="left|center_vertical"
+                    android:includeFontPadding="false"
+                    android:text="0:00"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tv_music_duration"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="right|center_vertical"
+                    android:includeFontPadding="false"
+                    android:text="0:00"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/btm_layout2"
