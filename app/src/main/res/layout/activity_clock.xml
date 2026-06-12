@@ -6,6 +6,16 @@
     android:layout_height="match_parent"
     tools:context=".ClockActivity">
 
+    <com.zyyme.workdayalarmclock.CircularMusicProgressView
+        android:id="@+id/circular_music_progress"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <LinearLayout
         android:id="@+id/root_layout"
         android:layout_width="match_parent"

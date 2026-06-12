@@ -118,6 +118,7 @@ class ClockActivity : AppCompatActivity() {
         val tvTop = findViewById<TextView>(R.id.tv_top)
         val tvTime = findViewById<TextView>(R.id.tv_time)
         val tvDate = findViewById<TextView>(R.id.tv_date)
+        val circularMusicProgress = findViewById<CircularMusicProgressView>(R.id.circular_music_progress)
         setupClockTextAutoSize(tvTop, tvTime, tvDate)
 
         // 按钮控制
@@ -340,6 +341,7 @@ class ClockActivity : AppCompatActivity() {
                     duration = 0
                 }
                 updateMusicProgress(musicSeekBar, tvMusicPosition, tvMusicDuration, millis, duration)
+                circularMusicProgress.setProgress(millis, duration)
                 if (showMsgTime > 0) {
                     showMsgTime--
                 } else {
@@ -388,10 +390,12 @@ class ClockActivity : AppCompatActivity() {
         val tvTop = findViewById<TextView>(R.id.tv_top)
         val tvTime = findViewById<TextView>(R.id.tv_time)
         val tvDate = findViewById<TextView>(R.id.tv_date)
+        val circularMusicProgress = findViewById<CircularMusicProgressView>(R.id.circular_music_progress)
         val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
         var realHeightPixels = rootLayout.height
         val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  MeSettings.isEnabled(this, MeSettings.KEY_VERTICAL)
         val isRound = rootLayout.height == rootLayout.width || MeSettings.isEnabled(this, MeSettings.KEY_ROUND)
+        circularMusicProgress.visibility = if (isRound) View.VISIBLE else View.GONE
         Log.d("ClockActivity", "realHeight: $realHeightPixels realWidth: ${rootLayout.width} height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (isRound) {
             // 圆形屏幕 增加上下边距

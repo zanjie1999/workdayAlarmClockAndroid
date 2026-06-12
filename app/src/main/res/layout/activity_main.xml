@@ -54,14 +54,6 @@
         app:title="@string/app_name" >
 
         <ImageView
-            android:id="@+id/iconMenu"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:layout_gravity="end"
-            android:contentDescription="设置菜单"
-            android:src="@android:drawable/ic_menu_more" />
-
-        <ImageView
             android:id="@+id/iconForward"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
@@ -100,6 +92,14 @@
             android:layout_gravity="end"
             android:contentDescription="停止"
             android:src="@drawable/icon_stop" />
+
+        <ImageView
+            android:id="@+id/iconMenu"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:contentDescription="设置菜单"
+            android:src="@android:drawable/ic_menu_more" />
 
 <!--        <ImageView-->
 <!--            android:id="@+id/iconClock"-->
