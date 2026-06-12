@@ -138,6 +138,7 @@
                 android:max="0"
                 android:paddingLeft="0dp"
                 android:paddingRight="0dp"
+                android:keyProgressIncrement="5000"
                 android:progress="0"
                 android:progressDrawable="@drawable/clock_seek_progress"
                 android:thumb="@drawable/clock_seek_thumb_hidden"

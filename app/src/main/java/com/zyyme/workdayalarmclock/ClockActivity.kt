@@ -178,19 +178,23 @@ class ClockActivity : AppCompatActivity() {
             }
 
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                val player = MeService.me?.player
-                val target = seekBar?.progress ?: 0
-                try {
-                    val duration = player?.duration ?: 0
-                    if (player != null && duration > 0) {
-                        player.seekTo(target.coerceIn(0, duration))
-                    }
-                } catch (e: IllegalStateException) {
-                    Log.w("ClockActivity", "seek music progress failed", e)
-                }
+                seekMusicTo(seekBar?.progress ?: 0)
                 isUserSeeking = false
             }
         })
+        musicSeekBar.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                isUserSeeking = true
+                tvMusicPosition.text = formatMusicTime(musicSeekBar.progress)
+                false
+            } else if (event.action == KeyEvent.ACTION_UP && (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                seekMusicTo(musicSeekBar.progress)
+                isUserSeeking = false
+                true
+            } else {
+                false
+            }
+        }
 
         val tvGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
@@ -474,6 +478,18 @@ class ClockActivity : AppCompatActivity() {
             positionView.text = formatMusicTime(position)
         }
         durationView.text = formatMusicTime(duration)
+    }
+
+    private fun seekMusicTo(target: Int) {
+        val player = MeService.me?.player
+        try {
+            val duration = player?.duration ?: 0
+            if (player != null && duration > 0) {
+                player.seekTo(target.coerceIn(0, duration))
+            }
+        } catch (e: IllegalStateException) {
+            Log.w("ClockActivity", "seek music progress failed", e)
+        }
     }
 
     private fun formatMusicTime(millis: Int): String {
