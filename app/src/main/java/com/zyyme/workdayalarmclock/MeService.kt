@@ -81,6 +81,9 @@ class MeService : Service() {
 
     val isBonjour = Build.MANUFACTURER + Build.MODEL == "AllwinnerQUAD-CORE A64 ococci"
 
+    // 给OPPO擦屁股 没有放出声音时不能设置音量
+    var lastSetVol = -1
+
     private var batteryReceiver: BroadcastReceiver? = null
     private var notificationBuilder: NotificationCompat.Builder? = null
     private var notificationManager: NotificationManager? = null
@@ -510,6 +513,7 @@ class MeService : Service() {
                 val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                 val per = s.substring(4).toInt()
                 val set = (max * per / 100)
+                lastSetVol = set
                 print2LogView("音量最高" + max + "对应" + per + "%设置为" + set)
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
             } else if (s.startsWith("ECHO ")) {
@@ -782,6 +786,12 @@ class MeService : Service() {
                 wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "workDayAlarmClock:WifiLock")
                 wifiLock?.acquire()
             }
+        }
+        // 在播放时再设置一次音量
+        if (lastSetVol != -1) {
+            Thread.sleep(1000)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, lastSetVol, AudioManager.FLAG_SHOW_UI);
+            lastSetVol = -1
         }
     }
 
