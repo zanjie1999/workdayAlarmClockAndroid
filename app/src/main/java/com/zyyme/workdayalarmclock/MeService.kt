@@ -313,6 +313,17 @@ class MeService : Service() {
             if (!MeSettings.isEnabled(this, MeSettings.KEY_AUTO_BACK_CLOCK)) {
                 return@Runnable
             }
+            // 解决小爱的悬浮窗不会消失的bug  虽然不知道当前显示的app是什么，但是直接启动一下本应启动的小爱同学也无伤大雅
+            val storedApps = this.getSharedPreferences("app_list", Context.MODE_PRIVATE).getString("startup_apps", null).orEmpty().trim()
+            Log.d("scheduleAutoBackToClock", "storedApps: $storedApps")
+            if (storedApps.contains("\"com.xiaomi.xiaoailite\"")) {
+                val intent = packageManager.getLaunchIntentForPackage("com.xiaomi.xiaoailite")
+                if (intent != null) {
+                    Log.d("scheduleAutoBackToClock", "给小米擦屁股")
+                    startActivity(intent)
+                    Thread.sleep(500)
+                }
+            }
             val intent = Intent(this, ClockActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             intent.putExtra("clockMode", true)
