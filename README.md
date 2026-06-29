@@ -1,4 +1,7 @@
 # 工作咩闹钟
+<img width="240" height="240" src="https://github.com/user-attachments/assets/de4e9f0b-16ed-4e68-a8eb-b9f039b12f64" />
+
+
 [workdayAlarmClockGo](https://github.com/zanjie1999/workdayAlarmClockGo)的Android服务端
 
 可以在每次在设定的网抑云歌单中随机播放指定分钟时长（默认4分钟大约1~2首）的音乐作为闹钟铃声，在全部播过一遍之前不会重复，  
@@ -42,6 +45,9 @@ run
 
 ## <del>文件flag</del> 右上角菜单
 23.0开始迁移到了app右上角的菜单里  
+
+<img width="428" height="262" src="https://github.com/user-attachments/assets/f613edf2-40b0-416a-b6ec-55cbedf06261" />
+
 每个功能是做什么的应该还挺直观的，下面是一些注意事项  
 1. “开机开热点”只适合比较新的系统，例如android9,需要开启辅助功能权限，是做给小魔镜用的
 2. “授权熄屏权限”会引导你打开设备管理员权限，在闹钟开始时会自动亮屏，在闹钟结束时会自动锁屏
@@ -49,7 +55,13 @@ run
 
 ## 时钟模式 （智能手表）
 点击控制台顶栏任意非右侧按钮的位置，或者点击常驻的通知，即可开启，或是作为双击电源键打开的相机来打开  
+
+<img width="430" height="206" src="https://github.com/user-attachments/assets/e5f55a3a-3f34-4804-bb00-512225d70d67" />
+
 适合在小屏幕触摸屏设备上使用，比如说智能手表，大屏设备也可以用，有自适应  
+
+<img width="250" src="https://github.com/user-attachments/assets/2433a859-558c-4963-b88e-dbd601c4e176" />
+
 点击时间可以开关保持亮屏的功能  
 点击日期可以切换亮色和暗色模式  
 长按时间可以停止播放  
@@ -58,8 +70,14 @@ run
 支持作为双击电源键打开的相机，双击后启动时钟模式
 长按音量键可以上下一首
 
+收起后（竖屏）：  
+<img width="250" alt="image" src="https://github.com/user-attachments/assets/7d99bc16-155e-4743-a34e-c06b3e62604e" />
+
+
 ## 应用列表
-代替启动器（也就是桌面），实现启动器启动应用这一功能  
+<img width="430" height="268" src="https://github.com/user-attachments/assets/48efb0ac-5c74-49f8-9de2-e72fe386a3ee" />
+
+代替启动器（也就是桌面），实现启动器启动应用这一功能，支持纯按键操作  
 控制台长按顶栏，点击时钟模式顶部（横屏没有这块），“应用”按钮，按HOME键，都可以打开  
 长按应用图标在列表中置顶/取消置顶，长按名称部分进入应用信息
 
