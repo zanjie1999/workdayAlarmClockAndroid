@@ -20,14 +20,10 @@ class MeNotificationListenerService : NotificationListenerService() {
         private const val TAG = "MeNotificationForward"
         private const val CONNECT_TIMEOUT_MILLIS = 5000
         private const val READ_TIMEOUT_MILLIS = 5000
+        private val URL_PLACEHOLDERS = listOf("{title}", "{msg}", "{pkg}", "{app}")
     }
 
-    private data class OngoingNotificationState(
-        var firstForwarded: Boolean,
-        var latestPayload: String
-    )
-
-    private val ongoingNotificationStates = mutableMapOf<String, OngoingNotificationState>()
+    private val forwardedOngoingNotificationIds = mutableSetOf<String>()
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null || sbn.packageName == packageName) {
@@ -45,15 +41,14 @@ class MeNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        val payload = "$title：$content"
         if (isOngoingNotification(notification)) {
-            if (shouldForwardOngoingNotification(sbn, payload)) {
-                sendForwardRequest(forwardUrl, payload)
+            if (shouldForwardOngoingNotification(sbn)) {
+                sendForwardRequest(forwardUrl, title, content, sbn.packageName)
             }
             return
         }
 
-        sendForwardRequest(forwardUrl, payload)
+        sendForwardRequest(forwardUrl, title, content, sbn.packageName)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
@@ -61,34 +56,14 @@ class MeNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        val payload = synchronized(ongoingNotificationStates) {
-            ongoingNotificationStates.remove(getNotificationKey(sbn))?.latestPayload
-        } ?: return
-
-        val forwardUrl = MeSettings.getNotificationForwardUrl(this)
-        if (forwardUrl.isEmpty()) {
-            return
+        synchronized(forwardedOngoingNotificationIds) {
+            forwardedOngoingNotificationIds.remove(getNotificationId(sbn))
         }
-
-        sendForwardRequest(forwardUrl, payload)
     }
 
-    private fun shouldForwardOngoingNotification(sbn: StatusBarNotification, payload: String): Boolean {
-        return synchronized(ongoingNotificationStates) {
-            val key = getNotificationKey(sbn)
-            val state = ongoingNotificationStates[key]
-            if (state == null) {
-                ongoingNotificationStates[key] = OngoingNotificationState(true, payload)
-                true
-            } else {
-                state.latestPayload = payload
-                if (state.firstForwarded) {
-                    false
-                } else {
-                    state.firstForwarded = true
-                    true
-                }
-            }
+    private fun shouldForwardOngoingNotification(sbn: StatusBarNotification): Boolean {
+        return synchronized(forwardedOngoingNotificationIds) {
+            forwardedOngoingNotificationIds.add(getNotificationId(sbn))
         }
     }
 
@@ -96,12 +71,8 @@ class MeNotificationListenerService : NotificationListenerService() {
         return notification.flags and Notification.FLAG_ONGOING_EVENT != 0
     }
 
-    private fun getNotificationKey(sbn: StatusBarNotification): String {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            return sbn.key
-        }
-
-        return "${sbn.packageName}:${sbn.id}:${sbn.tag.orEmpty()}"
+    private fun getNotificationId(sbn: StatusBarNotification): String {
+        return "${sbn.packageName}:${sbn.id}"
     }
 
     private fun getNotificationTitleAndContent(notification: Notification): Pair<String, String> {
@@ -115,12 +86,11 @@ class MeNotificationListenerService : NotificationListenerService() {
         return Pair("", notification.tickerText?.toString().orEmpty())
     }
 
-    private fun sendForwardRequest(baseUrl: String, payload: String) {
+    private fun sendForwardRequest(baseUrl: String, title: String, content: String, packageName: String) {
         Thread(Runnable {
             var connection: HttpURLConnection? = null
             try {
-                val encodedPayload = URLEncoder.encode(payload, "UTF-8")
-                connection = URL(baseUrl + encodedPayload).openConnection() as HttpURLConnection
+                connection = URL(buildForwardUrl(baseUrl, title, content, packageName)).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
                 connection.readTimeout = READ_TIMEOUT_MILLIS
@@ -146,6 +116,40 @@ class MeNotificationListenerService : NotificationListenerService() {
                 connection?.disconnect()
             }
         }).start()
+    }
+
+    private fun buildForwardUrl(baseUrl: String, title: String, content: String, packageName: String): String {
+        if (!hasUrlPlaceholder(baseUrl)) {
+            return baseUrl + urlEncode("$title：$content")
+        }
+
+        var forwardUrl = baseUrl
+            .replace("{title}", urlEncode(title))
+            .replace("{msg}", urlEncode(content))
+            .replace("{pkg}", urlEncode(packageName))
+
+        if (forwardUrl.contains("{app}")) {
+            forwardUrl = forwardUrl.replace("{app}", urlEncode(getAppName(packageName)))
+        }
+
+        return forwardUrl
+    }
+
+    private fun hasUrlPlaceholder(url: String): Boolean {
+        return URL_PLACEHOLDERS.any { url.contains(it) }
+    }
+
+    private fun getAppName(packageName: String): String {
+        return try {
+            val packageInfo = packageManager.getApplicationInfo(packageName, 0)
+            packageManager.getApplicationLabel(packageInfo).toString()
+        } catch (e: Exception) {
+            packageName
+        }
+    }
+
+    private fun urlEncode(value: String): String {
+        return URLEncoder.encode(value, "UTF-8")
     }
 
     private fun log(message: String) {
