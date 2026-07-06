@@ -939,9 +939,11 @@ class MeService : Service() {
     private fun runShell() {
         shellThread = Thread(Runnable {
             try {
+                // 因为经常只更新android app，传个版本号进去
+                val versionName = packageManager.getPackageInfo(packageName, 0).versionName
                 // 输入start可以启动 exit可以退出
                 val command = "alias exit='echo EXIT'\n" +
-                        "alias run='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app'\n" +
+                        "alias run='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app " + versionName + "'\n" +
                         "run"
                 shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)
