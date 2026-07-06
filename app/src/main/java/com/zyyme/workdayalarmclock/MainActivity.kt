@@ -1,6 +1,7 @@
 package com.zyyme.workdayalarmclock
 
 import android.Manifest
+import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
@@ -9,6 +10,7 @@ import android.media.AudioManager
 import android.os.*
 import android.provider.Settings
 import android.support.v4.media.session.MediaSessionCompat
+import android.text.InputType
 import android.util.Log
 import android.view.KeyEvent
 import android.view.Menu
@@ -38,6 +40,7 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_APPLIST = 4
         private const val OPEN_DEVICE_ADMIN = 5
         private const val OPEN_ACCESSIBILITY_SETTINGS = 6
+        private const val OPEN_NOTIFICATION_FORWARD_URL = 7
         private const val MENU_SETTING_START = 100
     }
 
@@ -229,6 +232,7 @@ class MainActivity : AppCompatActivity() {
         }
         popupMenu.menu.add(Menu.NONE, OPEN_DEVICE_ADMIN, MENU_SETTING_START + settingsMenuItems.size, "授权熄屏权限")
         popupMenu.menu.add(Menu.NONE, OPEN_ACCESSIBILITY_SETTINGS, MENU_SETTING_START + settingsMenuItems.size + 1, "辅助功能设置")
+        popupMenu.menu.add(Menu.NONE, OPEN_NOTIFICATION_FORWARD_URL, MENU_SETTING_START + settingsMenuItems.size + 2, "通知转发URL")
 
         popupMenu.setOnMenuItemClickListener { menuItem ->
             if (menuItem.itemId == MENU_EXIT) {
@@ -248,6 +252,9 @@ class MainActivity : AppCompatActivity() {
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_ACCESSIBILITY_SETTINGS) {
                 openAccessibilitySettings()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_NOTIFICATION_FORWARD_URL) {
+                showNotificationForwardUrlDialog()
                 return@setOnMenuItemClickListener true
             }
 
@@ -297,6 +304,69 @@ class MainActivity : AppCompatActivity() {
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         Toast.makeText(this, "请开启工作咩闹钟辅助功能", Toast.LENGTH_LONG).show()
+    }
+
+    private fun showNotificationForwardUrlDialog() {
+        val input = EditText(this).apply {
+            hint = "通知内容将拼在URL末端推送"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine(true)
+            setText(MeSettings.getNotificationForwardUrl(this@MainActivity))
+            setSelection(text.length)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("通知转发URL")
+            .setView(input)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("保存") { _, _ ->
+                val url = input.text.toString().trim()
+                MeSettings.setNotificationForwardUrl(this, url)
+                if (url.isEmpty()) {
+                    Toast.makeText(this, "通知转发功能已关闭", Toast.LENGTH_SHORT).show()
+                } else {
+                    requestNotificationListenerPermissionIfNeeded()
+                }
+            }
+            .show()
+    }
+
+    private fun requestNotificationListenerPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            Toast.makeText(this, "当前系统不支持通知读取权限", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        if (isNotificationListenerEnabled()) {
+            Toast.makeText(this, "通知读取权限已授权", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            Toast.makeText(this, "请开启${getString(R.string.app_name)}通知读取权限", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+                Toast.makeText(this, "请在系统设置中开启通知读取权限", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "打开通知读取权限设置失败", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun isNotificationListenerEnabled(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            return false
+        }
+        val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+            ?: return false
+        val expectedComponent = ComponentName(this, MeNotificationListenerService::class.java)
+        return enabledListeners.split(":").any { listener ->
+            val component = ComponentName.unflattenFromString(listener)
+            component?.packageName == expectedComponent.packageName &&
+                    component.className == expectedComponent.className
+        }
     }
 
     private fun applyClockTheme() {
