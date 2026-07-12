@@ -34,7 +34,7 @@
                 android:layout_height="wrap_content"
                 android:autofillHints=""
                 android:imeOptions="actionSend"
-                android:inputType="text"
+                android:inputType="text|textNoSuggestions"
                 android:hint="> Send to Shell" />
 
         </LinearLayout>

@@ -309,7 +309,9 @@ class MainActivity : AppCompatActivity() {
     private fun showNotificationForwardUrlDialog() {
         val input = EditText(this).apply {
             hint = "通知内容将拼在URL末端推送"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_VARIATION_URI or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(true)
             setText(MeSettings.getNotificationForwardUrl(this@MainActivity))
             setSelection(text.length)

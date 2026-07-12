@@ -41,7 +41,7 @@
             android:padding="12dp"
             android:background="@android:color/transparent"
             android:imeOptions="actionSearch"
-            android:inputType="text"
+            android:inputType="text|textNoSuggestions"
             android:singleLine="true"
             android:focusable="true"
             android:focusableInTouchMode="true"

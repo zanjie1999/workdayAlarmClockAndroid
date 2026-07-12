@@ -332,18 +332,9 @@ class ClockActivity : AppCompatActivity() {
             override fun run() {
                 val hmsmde = sdfHmsmde.format(Date()).split(".")
                 tvTime.text = hmsmde[0]
-                val player = MeService.me?.player
-                var millis: Int? = null
-                var duration = 0
-                try {
-                    if (player != null) {
-                        millis = player.currentPosition
-                        duration = player.duration
-                    }
-                } catch (e: IllegalStateException) {
-                    millis = null
-                    duration = 0
-                }
+                val service = MeService.me
+                val millis = service?.getPlaybackPosition()
+                val duration = service?.getPlaybackDuration() ?: 0
                 updateMusicProgress(musicSeekBar, tvMusicPosition, tvMusicDuration, millis, duration)
                 circularMusicProgress.setProgress(millis, duration)
                 if (showMsgTime > 0) {
@@ -481,15 +472,7 @@ class ClockActivity : AppCompatActivity() {
     }
 
     private fun seekMusicTo(target: Int) {
-        val player = MeService.me?.player
-        try {
-            val duration = player?.duration ?: 0
-            if (player != null && duration > 0) {
-                player.seekTo(target.coerceIn(0, duration))
-            }
-        } catch (e: IllegalStateException) {
-            Log.w("ClockActivity", "seek music progress failed", e)
-        }
+        MeService.me?.seekPlaybackTo(target)
     }
 
     private fun formatMusicTime(millis: Int): String {

@@ -36,6 +36,16 @@ import kotlin.jvm.java
  * 维持工作咩闹钟二进制文件运行
  */
 class MeService : Service() {
+    private enum class PlayerState {
+        IDLE,
+        PREPARING,
+        PREPARED,
+        PLAYING,
+        PAUSED,
+        BUFFERING,
+        ERROR
+    }
+
     companion object {
 //        var mediaButtonReceiverHandler: Handler? = null
         var me: MeService? = null
@@ -51,6 +61,10 @@ class MeService : Service() {
         const val ACTION_FORWARD = "com.zyyme.workdayalarmclock.ACTION_FORWARD"
 
         const val NOTIFICATION_ID = 1
+        private const val MAX_PLAYBACK_RETRIES = 1
+        private const val PLAYBACK_RETRY_DELAY_MS = 1000L
+        private const val PLAYBACK_RESUME_REWIND_MS = 2000
+        private const val PLAYBACK_CHECKPOINT_INTERVAL_MS = 1000L
 
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
@@ -60,7 +74,7 @@ class MeService : Service() {
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
-    var player : MediaPlayer? = null
+    private var player : MediaPlayer? = null
     var writer : PrintWriter? = null
     var lastUrl : String? = null
     var shellThread : Thread? = null
@@ -91,6 +105,23 @@ class MeService : Service() {
     private var udpServerSocket: DatagramSocket? = null
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
     private var autoBackClockRunnable: Runnable? = null
+    private val playbackHandler = Handler(Looper.getMainLooper())
+    private var playerState = PlayerState.IDLE
+    private var playWhenReady = false
+    private var resumeAfterAudioFocusGain = false
+    private var playbackGeneration = 0
+    private var retryCount = 0
+    private var lastKnownPositionMs = 0
+    private var playbackDurationMs = 0
+    private var pendingSeekPositionMs: Int? = null
+    private val playbackCheckpointRunnable = object : Runnable {
+        override fun run() {
+            if (playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING) {
+                snapshotPlaybackPosition()
+                playbackHandler.postDelayed(this, PLAYBACK_CHECKPOINT_INTERVAL_MS)
+            }
+        }
+    }
 
     // 多击检测状态
     private val multiClickHandler = Handler(Looper.getMainLooper())
@@ -221,20 +252,22 @@ class MeService : Service() {
                     // 短暂失去焦点，暂停播放
                     print2LogView("AUDIOFOCUS_LOSS_TRANSIENT, pausing playback.")
                     cancelAutoBackToClock()
-                    player?.pause()
+                    pausePlaybackForAudioFocus()
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                     // 短暂失去焦点，可以降低音量 (如果你的播放器支持)
                     print2LogView("AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, ducking volume.")
                     cancelAutoBackToClock()
-                    player?.setVolume(0.3f, 0.3f)
+                    runOnPlaybackThread {
+                        if (isPlayerControllable()) {
+                            player?.setVolume(0.3f, 0.3f)
+                        }
+                    }
                 }
                 AudioManager.AUDIOFOCUS_GAIN -> {
                     // 重新获得焦点，恢复播放 (如果之前暂停了或降低了音量)
                     print2LogView("AUDIOFOCUS_GAIN, resuming playback or restoring volume.")
-                    player?.setVolume(1.0f, 1.0f) // 恢复音量
-                    player?.start()
-                    scheduleAutoBackToClock()
+                    resumePlaybackAfterAudioFocus()
                 }
             }
         }
@@ -359,6 +392,9 @@ class MeService : Service() {
 
     override fun onDestroy() {
         cancelAutoBackToClock()
+        playbackGeneration++
+        playbackHandler.removeCallbacksAndMessages(null)
+        releasePlayer()
         shellProcess?.destroy()
         shellThread?.interrupt()
         MainActivity.me?.finish()
@@ -541,37 +577,29 @@ class MeService : Service() {
             } else if (s.startsWith("SEEK ")) {
                 // 移动进度条 单位是ms
                 val seek = s.substring(5)
-                player?.seekTo(seek.toInt())
+                seekPlaybackTo(seek.toInt())
             } else if (s.startsWith("DSEEK ")) {
                 // 移动进度条的默认值
                 val seek = s.substring(6)
                 defaultSeek = seek.toInt()
             } else if (s == "STOP") {
                 print2LogView("停止播放")
-                isStop = true
-                player?.release()
-                onPause()
-                player = null
-                meMediaPlaybackManager?.updateMediaMetadata(0, null,null,null)
-                meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 0)
-                ysSetLedsValue(MeYsLed.EMPTY)
+                stopPlayback()
             } else if (s == "SEEK") {
                 // 全屋同步播放补偿
                 if (defaultSeek < 0) {
                     Thread.sleep(defaultSeek * -1L)
-                    player?.seekTo(0)
+                    seekPlaybackTo(0)
                 } else {
-                    player?.seekTo(defaultSeek)
+                    seekPlaybackTo(defaultSeek)
                 }
             } else if (s == "PAUSE") {
                 print2LogView("暂停播放")
-                player?.pause()
-                onPause()
+                requestPausePlayback()
             } else if (s == "RESUME") {
                 print2LogView("恢复播放")
                 if (!isStop) {
-                    player?.start()
-                    onPlay()
+                    requestResumePlayback()
                 } else {
                     // 触发一键 即播放默认歌单
                     toGo("1key")
@@ -800,9 +828,15 @@ class MeService : Service() {
         }
         // 在播放时再设置一次音量
         if (lastSetVol != -1) {
-            Thread.sleep(1000)
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, lastSetVol, AudioManager.FLAG_SHOW_UI);
+            val volume = lastSetVol
             lastSetVol = -1
+            playbackHandler.postDelayed({
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    volume,
+                    AudioManager.FLAG_SHOW_UI
+                )
+            }, 1000)
         }
     }
 
@@ -810,126 +844,433 @@ class MeService : Service() {
      * 播放器播放url
      */
     fun playUrl(url:String, autoPlay:Boolean) {
-        try {
-            // 因为待机可能导致音乐无法进行下一首播放（服务运行正常就音乐放不了）需要重新给cpu加唤醒锁
-//            val pm = getSystemService(POWER_SERVICE) as PowerManager
-//            val wl: PowerManager.WakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, this.javaClass.canonicalName)
-//            wl.acquire()
-
-//            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_6)
-//            ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_5, 100, true)
-
-            ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
-            print2LogView("play播放 " + url)
-            loadProgress = -1
-            val isPlayLastUrl = lastUrl == url
+        runOnPlaybackThread {
+            playbackGeneration++
+            retryCount = 0
+            lastKnownPositionMs = 0
+            playbackDurationMs = 0
+            pendingSeekPositionMs = null
+            playWhenReady = autoPlay
+            resumeAfterAudioFocusGain = false
             lastUrl = url
-            if (player == null) {
-                player = MediaPlayer()
-            } else {
-                // 可以打断正在进行的prepareAsync加载避免阻塞
-                if (player!!.isPlaying) player!!.pause()
-                player!!.reset()
-            }
-            isStop = false
-            // 给音频服务反馈 正在加载
-            meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 0)
-            // 在播放时保持唤醒，暂停和停止时自动销毁   但在跳下一首的时候锁不住，所以其实没啥用
-            player!!.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK);
+            startPlaybackAttempt(playbackGeneration, url, 0)
+        }
+    }
+
+    private fun startPlaybackAttempt(generation: Int, url: String, resumePositionMs: Int) {
+        if (generation != playbackGeneration) {
+            return
+        }
+
+        releasePlayer()
+        loadProgress = -1
+        isStop = false
+        playerState = PlayerState.PREPARING
+        meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 0)
+
+        val mediaPlayer = MediaPlayer()
+        player = mediaPlayer
+
+        try {
+            ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4, 500)
+            print2LogView("play播放 $url")
+            mediaPlayer.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
+
             if (url.startsWith("./")) {
-                player!!.setDataSource(filesDir.absolutePath + "/" + url)
+                mediaPlayer.setDataSource(filesDir.absolutePath + "/" + url)
             } else {
-                player!!.setDataSource(url)
+                mediaPlayer.setDataSource(url)
             }
-            player!!.setOnCompletionListener { mediaPlayer ->
-                //播放完成监听
-                isStop = true
-                print2LogView("play播放完成")
-                meMediaPlaybackManager?.updateMediaMetadata(1, null, null, null)
-                meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 1)
-                if (!MainActivity.startService) {
-                    // 无需启服务 放完就退出
-                    MainActivity.me?.finish()
+
+            mediaPlayer.setOnCompletionListener { completedPlayer ->
+                if (!isCurrentPlayer(generation, completedPlayer)) {
+                    return@setOnCompletionListener
                 }
-                toGo("next")
-                // 此处等待返回决定是回收还是reset
+                finishPlaybackAndGoNext(completedPlayer, false)
             }
-            player!!.setOnPreparedListener { mediaPlayer ->
-                //异步准备监听
-                print2LogView("play音频时长 " + (mediaPlayer.duration / 1000).toString())
-                // 给音频服务上报总时长
+
+            mediaPlayer.setOnPreparedListener { preparedPlayer ->
+                if (!isCurrentPlayer(generation, preparedPlayer)) {
+                    return@setOnPreparedListener
+                }
+
+                playerState = PlayerState.PREPARED
+                playbackDurationMs = preparedPlayer.duration.coerceAtLeast(0)
+                print2LogView("play音频时长 ${playbackDurationMs / 1000}")
                 meMediaPlaybackManager?.updateMediaMetadata(
-                    mediaPlayer.duration.toLong(),
+                    playbackDurationMs.toLong(),
                     meMediaPlaybackManager!!.lastTitle,
                     null,
                     null
                 )
-                if (isPlayLastUrl && !mediaPlayer.isPlaying) {
-                    // 规避Android停止又播放同一首进度不对的bug
-                    mediaPlayer.seekTo(0)
+
+                val requestedPosition = pendingSeekPositionMs ?: resumePositionMs
+                pendingSeekPositionMs = null
+                if (requestedPosition > 0) {
+                    val seekPosition = if (playbackDurationMs > 0) {
+                        requestedPosition.coerceAtMost(playbackDurationMs - 1)
+                    } else {
+                        requestedPosition
+                    }
+                    try {
+                        preparedPlayer.seekTo(seekPosition)
+                        lastKnownPositionMs = seekPosition
+                        print2LogView("play重试续播 ${seekPosition / 1000}秒")
+                    } catch (e: RuntimeException) {
+                        lastKnownPositionMs = 0
+                        print2LogView("play续播失败，从头播放: $e")
+                    }
                 }
-                if (autoPlay && !mediaPlayer.isPlaying) {
-                    if (url.startsWith("http") && loadProgress < 10) {
-                        // 直接等2秒吧，Android经常乱上报加载进度
-                        Thread.sleep(2000)
-                    }
-                    mediaPlayer.start()
-                    onPlay()
-                    ysSetLedsValue(MeYsLed.EMPTY)
-                }
-            }
-            player!!.setOnBufferingUpdateListener { mediaPlayer, i ->
-                //文件缓冲监听
-                if (i != 100) {
-                    if (i > loadProgress) {
-                        loadProgress = i
-                        print2LogView("play加载音频 $i%")
-                    }
-                    if (autoPlay && i >= 10 && !mediaPlayer.isPlaying) {
-                        // 其实是支持边缓冲边放的 得让他先冲一会再调播放
-                        mediaPlayer.start()
-                        onPlay()
-                        ysSetLedsValue(MeYsLed.EMPTY)
-                    }
+
+                if (playWhenReady) {
+                    startPreparedPlayer(preparedPlayer)
                 }
             }
-            player!!.setOnInfoListener { mp, what, extra ->
+
+            mediaPlayer.setOnBufferingUpdateListener { bufferingPlayer, percent ->
+                if (!isCurrentPlayer(generation, bufferingPlayer)) {
+                    return@setOnBufferingUpdateListener
+                }
+                if (percent != 100 && percent > loadProgress) {
+                    loadProgress = percent
+                    print2LogView("play加载音频 $percent%")
+                }
+            }
+
+            mediaPlayer.setOnInfoListener { infoPlayer, what, extra ->
+                if (!isCurrentPlayer(generation, infoPlayer)) {
+                    return@setOnInfoListener true
+                }
                 print2LogView("play信息: what=$what, extra=$extra")
                 when (what) {
                     MediaPlayer.MEDIA_INFO_BUFFERING_START -> {
+                        snapshotPlaybackPosition()
+                        playerState = PlayerState.BUFFERING
+                        meMediaPlaybackManager?.updatePlaybackState(
+                            PlaybackStateCompat.STATE_BUFFERING,
+                            lastKnownPositionMs.toLong()
+                        )
                         print2LogView("play正在缓冲")
                         true
                     }
-
                     MediaPlayer.MEDIA_INFO_BUFFERING_END -> {
+                        playerState = if (playWhenReady) {
+                            PlayerState.PLAYING
+                        } else {
+                            PlayerState.PAUSED
+                        }
+                        if (playWhenReady) {
+                            meMediaPlaybackManager?.updatePlaybackState(
+                                PlaybackStateCompat.STATE_PLAYING,
+                                lastKnownPositionMs.toLong()
+                            )
+                        }
                         print2LogView("play缓冲结束")
                         true
                     }
-
                     else -> false
                 }
             }
-            player!!.setOnErrorListener { mp, what, extra ->
-                print2LogView("play播放错误: what=$what, extra=$extra")
-                // 解释错误代码
-                when (what) {
-                    MediaPlayer.MEDIA_ERROR_SERVER_DIED -> print2LogView("play错误: 服务器连接断开")
-                    MediaPlayer.MEDIA_ERROR_UNSUPPORTED -> print2LogView("play错误: 不支持的格式")
-                    MediaPlayer.MEDIA_ERROR_TIMED_OUT -> print2LogView("play错误: 操作超时")
-                    else -> print2LogView("play错误: 未知错误 ($what, $extra)")
+
+            mediaPlayer.setOnErrorListener { errorPlayer, what, extra ->
+                if (!isCurrentPlayer(generation, errorPlayer)) {
+                    return@setOnErrorListener true
                 }
-                // false会自动OnCompletionListener
-                false
+                print2LogView("play播放错误: what=$what, extra=$extra")
+                handlePlaybackError(generation, errorPlayer, what, extra)
+                true
             }
-            player!!.prepareAsync()
+
+            mediaPlayer.prepareAsync()
         } catch (e: IOException) {
             e.printStackTrace()
-            print2LogView("播放失败" + e.toString())
-            // 如果路径不可用，需要触发停止，避免播放天气音频失败一直没有停止
-            toGo("stop")
+            print2LogView("播放失败$e")
+            handlePlaybackError(
+                generation,
+                mediaPlayer,
+                MediaPlayer.MEDIA_ERROR_UNKNOWN,
+                MediaPlayer.MEDIA_ERROR_IO
+            )
         } catch (e: Exception) {
             e.printStackTrace()
-            print2LogView("播放失败" + e.toString())
+            print2LogView("播放失败$e")
+            handlePlaybackError(
+                generation,
+                mediaPlayer,
+                MediaPlayer.MEDIA_ERROR_UNKNOWN,
+                0
+            )
+        }
+    }
+
+    private fun handlePlaybackError(
+        generation: Int,
+        errorPlayer: MediaPlayer,
+        what: Int,
+        extra: Int
+    ) {
+        if (!isCurrentPlayer(generation, errorPlayer)) {
+            return
+        }
+
+        playerState = PlayerState.ERROR
+        stopPlaybackCheckpoint()
+        val errorMessage = when {
+            what == MediaPlayer.MEDIA_ERROR_SERVER_DIED -> "服务器连接断开"
+            extra == MediaPlayer.MEDIA_ERROR_IO -> "文件或网络读取失败"
+            extra == MediaPlayer.MEDIA_ERROR_MALFORMED -> "音频数据损坏"
+            extra == MediaPlayer.MEDIA_ERROR_UNSUPPORTED -> "不支持的格式"
+            extra == MediaPlayer.MEDIA_ERROR_TIMED_OUT -> "操作超时"
+            extra == -38 -> "播放器状态异常"
+            else -> "未知错误 ($what, $extra)"
+        }
+        print2LogView("play错误: $errorMessage")
+        meMediaPlaybackManager?.updatePlaybackState(
+            PlaybackStateCompat.STATE_ERROR,
+            lastKnownPositionMs.toLong(),
+            errorMessage
+        )
+
+        val retryUrl = lastUrl
+        val retryPosition = (lastKnownPositionMs - PLAYBACK_RESUME_REWIND_MS).coerceAtLeast(0)
+        releasePlayer()
+
+        if (retryUrl != null && retryCount < MAX_PLAYBACK_RETRIES) {
+            retryCount++
+            print2LogView("play将在1秒后重试，位置 ${retryPosition / 1000}秒")
+            playbackHandler.postDelayed({
+                if (generation == playbackGeneration && lastUrl == retryUrl && !isStop) {
+                    startPlaybackAttempt(generation, retryUrl, retryPosition)
+                }
+            }, PLAYBACK_RETRY_DELAY_MS)
+        } else {
+            finishPlaybackAndGoNext(errorPlayer, true)
+        }
+    }
+
+    private fun finishPlaybackAndGoNext(mediaPlayer: MediaPlayer, fromError: Boolean) {
+        if (!fromError && mediaPlayer !== player) {
+            return
+        }
+
+        stopPlaybackCheckpoint()
+        releasePlayer()
+        playerState = PlayerState.IDLE
+        isStop = true
+        playWhenReady = false
+        resumeAfterAudioFocusGain = false
+        retryCount = 0
+        lastKnownPositionMs = 0
+        playbackDurationMs = 0
+        pendingSeekPositionMs = null
+
+        print2LogView(if (fromError) "play重试失败，跳到下一首" else "play播放完成")
+        onPause()
+        meMediaPlaybackManager?.updateMediaMetadata(1, null, null, null)
+        meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING, 1)
+        if (!MainActivity.startService) {
+            MainActivity.me?.finish()
+        }
+        toGo("next")
+    }
+
+    private fun startPreparedPlayer(mediaPlayer: MediaPlayer) {
+        if (mediaPlayer !== player ||
+            (playerState != PlayerState.PREPARED && playerState != PlayerState.PAUSED)
+        ) {
+            return
+        }
+
+        try {
+            mediaPlayer.start()
+            playerState = PlayerState.PLAYING
+            playWhenReady = true
+            onPlay()
+            startPlaybackCheckpoint()
+            ysSetLedsValue(MeYsLed.EMPTY)
+        } catch (e: IllegalStateException) {
+            print2LogView("play启动失败: $e")
+        }
+    }
+
+    private fun isCurrentPlayer(generation: Int, mediaPlayer: MediaPlayer): Boolean {
+        return generation == playbackGeneration && mediaPlayer === player
+    }
+
+    private fun releasePlayer() {
+        stopPlaybackCheckpoint()
+        val oldPlayer = player
+        player = null
+        try {
+            oldPlayer?.release()
+        } catch (e: RuntimeException) {
+            Log.w("MeService", "release player failed", e)
+        }
+    }
+
+    private fun runOnPlaybackThread(action: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            action()
+        } else {
+            playbackHandler.post(action)
+        }
+    }
+
+    private fun startPlaybackCheckpoint() {
+        playbackHandler.removeCallbacks(playbackCheckpointRunnable)
+        playbackHandler.postDelayed(
+            playbackCheckpointRunnable,
+            PLAYBACK_CHECKPOINT_INTERVAL_MS
+        )
+    }
+
+    private fun stopPlaybackCheckpoint() {
+        playbackHandler.removeCallbacks(playbackCheckpointRunnable)
+    }
+
+    private fun snapshotPlaybackPosition() {
+        if (!isPlayerControllable()) {
+            return
+        }
+        try {
+            lastKnownPositionMs = player?.currentPosition?.coerceAtLeast(0)
+                ?: lastKnownPositionMs
+        } catch (e: RuntimeException) {
+            Log.w("MeService", "read playback position failed", e)
+        }
+    }
+
+    private fun isPlayerControllable(): Boolean {
+        return playerState == PlayerState.PREPARED ||
+            playerState == PlayerState.PLAYING ||
+            playerState == PlayerState.PAUSED ||
+            playerState == PlayerState.BUFFERING
+    }
+
+    private fun isPlaybackPlaying(): Boolean {
+        return playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING
+    }
+
+    private fun requestPausePlayback(resumeAfterFocusGain: Boolean = false) {
+        runOnPlaybackThread {
+            this.resumeAfterAudioFocusGain = resumeAfterFocusGain && playWhenReady
+            playWhenReady = false
+            if (isPlaybackPlaying()) {
+                snapshotPlaybackPosition()
+                try {
+                    player?.pause()
+                    playerState = PlayerState.PAUSED
+                    stopPlaybackCheckpoint()
+                    onPause()
+                } catch (e: IllegalStateException) {
+                    print2LogView("play暂停失败: $e")
+                }
+            }
+        }
+    }
+
+    private fun requestResumePlayback() {
+        runOnPlaybackThread {
+            playWhenReady = true
+            resumeAfterAudioFocusGain = false
+            val currentPlayer = player
+            if (currentPlayer != null &&
+                (playerState == PlayerState.PREPARED || playerState == PlayerState.PAUSED)
+            ) {
+                startPreparedPlayer(currentPlayer)
+            }
+        }
+    }
+
+    private fun pausePlaybackForAudioFocus() {
+        requestPausePlayback(true)
+    }
+
+    private fun resumePlaybackAfterAudioFocus() {
+        runOnPlaybackThread {
+            if (isPlayerControllable()) {
+                player?.setVolume(1.0f, 1.0f)
+            }
+            if (resumeAfterAudioFocusGain) {
+                requestResumePlayback()
+                scheduleAutoBackToClock()
+            }
+        }
+    }
+
+    fun seekPlaybackTo(positionMs: Int) {
+        runOnPlaybackThread {
+            val target = positionMs.coerceAtLeast(0)
+            if (playerState == PlayerState.PREPARING) {
+                pendingSeekPositionMs = target
+                return@runOnPlaybackThread
+            }
+            if (!isPlayerControllable()) {
+                return@runOnPlaybackThread
+            }
+            try {
+                val clampedTarget = if (playbackDurationMs > 0) {
+                    target.coerceAtMost(playbackDurationMs - 1)
+                } else {
+                    target
+                }
+                player?.seekTo(clampedTarget)
+                lastKnownPositionMs = clampedTarget
+            } catch (e: IllegalStateException) {
+                print2LogView("play跳转失败: $e")
+            }
+        }
+    }
+
+    fun getPlaybackPosition(): Int? {
+        if (!isPlayerControllable()) {
+            return null
+        }
+        return try {
+            player?.currentPosition
+        } catch (e: IllegalStateException) {
+            null
+        }
+    }
+
+    fun getPlaybackDuration(): Int {
+        return if (isPlayerControllable()) playbackDurationMs else 0
+    }
+
+    private fun stopPlayback(resetProgress: Boolean = true) {
+        runOnPlaybackThread {
+            playbackGeneration++
+            releasePlayer()
+            playerState = PlayerState.IDLE
+            playWhenReady = false
+            resumeAfterAudioFocusGain = false
+            retryCount = 0
+            pendingSeekPositionMs = null
+            isStop = true
+            if (resetProgress) {
+                lastKnownPositionMs = 0
+                playbackDurationMs = 0
+            }
+            onPause()
+            meMediaPlaybackManager?.updateMediaMetadata(0, null, null, null)
+            meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_CONNECTING, 0)
+            ysSetLedsValue(MeYsLed.EMPTY)
+        }
+    }
+
+    private fun requestTrackChange(action: String) {
+        runOnPlaybackThread {
+            playbackGeneration++
+            releasePlayer()
+            playerState = PlayerState.IDLE
+            playWhenReady = false
+            resumeAfterAudioFocusGain = false
+            retryCount = 0
+            lastKnownPositionMs = 0
+            playbackDurationMs = 0
+            pendingSeekPositionMs = null
+            isStop = true
+            toGo(action)
         }
     }
 
@@ -1052,19 +1393,17 @@ class MeService : Service() {
                     } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
                         ClockActivity.me?.showMsg("下一首")
                         print2LogView("长按音量加 下一首")
-                        if (!isStop && player?.isPlaying == true) player?.pause()
-                        toGo("next")
+                        requestTrackChange("next")
                         longPressTriggered = true
                     } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
                         ClockActivity.me?.showMsg("上一首")
                         print2LogView("长按音量减 上一首")
-                        if (!isStop && player?.isPlaying == true) player?.pause()
-                        toGo("prev")
+                        requestTrackChange("prev")
                         longPressTriggered = true
                     } else {
                         print2LogView("长按停止")
                         ClockActivity.me?.showMsg("停止")
-                        toGo("stop")
+                        requestTrackChange("stop")
                         longPressTriggered = true
                     }
                     multiClickState = 3 // LONG_PRESSED
@@ -1149,14 +1488,12 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
                 if (!isStop) {
                     print2LogView("媒体按键 播放暂停")
-                    if (player?.isPlaying == true) {
+                    if (playWhenReady) {
                         ClockActivity.me?.showMsg("暂停")
-                        player?.pause()
-                        onPause()
+                        requestPausePlayback()
                     } else {
                         ClockActivity.me?.showMsg("播放")
-                        player?.start()
-                        onPlay()
+                        requestResumePlayback()
                     }
                     return true
                 } else {
@@ -1170,10 +1507,7 @@ class MeService : Service() {
                 print2LogView("媒体按键 播放")
                 if (!isStop) {
                     ClockActivity.me?.showMsg("播放")
-                    if (player?.isPlaying == false) {
-                        player!!.start()
-                        onPlay()
-                    }
+                    requestResumePlayback()
                 } else {
                     ClockActivity.me?.showMsg("一键")
                     toGo("1key")
@@ -1183,31 +1517,27 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 print2LogView("媒体按键 暂停")
                 ClockActivity.me?.showMsg("暂停")
-                if (!isStop && player?.isPlaying == true) {
-                    player!!.pause()
-                    onPause()
+                if (!isStop) {
+                    requestPausePlayback()
                 }
                 return true
             }
             2147483645, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (player?.isPlaying == true || keyCode == 2147483645) {
+                if (isPlaybackPlaying() || keyCode == 2147483645) {
                     ClockActivity.me?.showMsg("下一首")
                     print2LogView("媒体按键 下一首")
-                    player?.pause()
-                    toGo("next")
+                    requestTrackChange("next")
                 } else {
                     ClockActivity.me?.showMsg("触发停止")
                     print2LogView("媒体按键 下一首 触发停止")
-                    player?.pause()
-                    toGo("stop")
+                    requestTrackChange("stop")
                 }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_DPAD_LEFT -> {
                 ClockActivity.me?.showMsg("上一首")
                 print2LogView("媒体按键 上一首")
-                if (!isStop && player?.isPlaying == true) player!!.pause()
-                toGo("prev")
+                requestTrackChange("prev")
                 return true
             }
             // 自定义音量键（按钮栏用，立即响应，无长按）
@@ -1222,14 +1552,12 @@ class MeService : Service() {
             KeyEvent.KEYCODE_MEDIA_STOP -> {
                 ClockActivity.me?.showMsg("停止")
                 print2LogView("媒体按键 停止")
-                player?.stop()
-                toGo("stop")
+                requestTrackChange("stop")
                 return true
             }
             KeyEvent.KEYCODE_FOCUS -> {
                 print2LogView("媒体按键 鼻子")
-                player?.stop()
-                toGo("stop")
+                requestTrackChange("stop")
                 return true
             }
             KeyEvent.KEYCODE_MENU -> {
@@ -1239,14 +1567,13 @@ class MeService : Service() {
                     // 触摸太灵了，不用
                 } else {
                     print2LogView("菜单 停止")
-                    player?.stop()
-                    toGo("stop")
+                    requestTrackChange("stop")
                 }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
                 print2LogView("媒体按键 快进")
-                player?.seekTo(player!!.currentPosition + 5000)
+                getPlaybackPosition()?.let { seekPlaybackTo(it + 5000) }
                 return true
             }
         }
@@ -1261,16 +1588,14 @@ class MeService : Service() {
         when (count) {
             1 -> {
                 if (!isStop) {
-                    if (player?.isPlaying == true) {
+                    if (playWhenReady) {
                         ClockActivity.me?.showMsg("暂停")
                         print2LogView("单击 暂停")
-                        player?.pause()
-                        onPause()
+                        requestPausePlayback()
                     } else {
                         ClockActivity.me?.showMsg("播放")
                         print2LogView("单击 播放")
-                        player?.start()
-                        onPlay()
+                        requestResumePlayback()
                     }
                 } else {
                     print2LogView("单击 一键")
@@ -1281,14 +1606,12 @@ class MeService : Service() {
             2 -> {
                 ClockActivity.me?.showMsg("下一首")
                 print2LogView("双击 下一首")
-                if (!isStop && player?.isPlaying == true) player?.pause()
-                toGo("next")
+                requestTrackChange("next")
             }
             3 -> {
                 ClockActivity.me?.showMsg("上一首")
                 print2LogView("三击 上一首")
-                if (!isStop && player?.isPlaying == true) player?.pause()
-                toGo("prev")
+                requestTrackChange("prev")
             }
         }
         resetMultiClickState()

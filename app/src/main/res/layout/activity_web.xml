@@ -44,7 +44,7 @@
             android:ellipsize="end"
             android:gravity="center_vertical"
             android:imeOptions="actionGo"
-            android:inputType="textUri"
+            android:inputType="textUri|textNoSuggestions"
             android:paddingStart="4dp"
             android:paddingEnd="4dp"
             android:selectAllOnFocus="true"
