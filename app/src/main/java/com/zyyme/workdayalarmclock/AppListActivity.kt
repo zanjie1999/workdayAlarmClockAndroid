@@ -245,6 +245,7 @@ class AppListActivity : AppCompatActivity() {
             val intent: Intent = Intent(this, ClockActivity::class.java)
             intent.putExtra("clockMode", true)
             startActivity(intent)
+            finish()
         } else {
             super.onBackPressed()
         }

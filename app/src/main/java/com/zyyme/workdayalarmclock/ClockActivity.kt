@@ -372,6 +372,17 @@ class ClockActivity : AppCompatActivity() {
         setFullscreen()
     }
 
+    override fun onBackPressed() {
+        // 默认时钟模式的设备 返回退到main控制台
+        if (MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)) {
+            val intent: Intent = Intent(this, MainActivity::class.java)
+            startActivity(intent)
+            finish()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     private fun setFullScreenClock() {
         clockMode = true
         findViewById<LinearLayout>(R.id.btm_layout1).visibility = View.GONE
