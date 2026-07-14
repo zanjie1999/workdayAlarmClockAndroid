@@ -21,6 +21,7 @@ import android.widget.ImageButton
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.util.concurrent.Executors
@@ -231,6 +232,22 @@ class AppListActivity : AppCompatActivity() {
 
         // 置顶应用在前，其余名称排序
         return appList.sortedWith(compareByDescending<AppInfo> { it.isPinned } .thenBy { it.name })
+    }
+
+    override fun onBackPressed() {
+        // 默认时钟模式的设备 返回退到全屏时钟
+        if (MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)) {
+            if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            } else {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            }
+            val intent: Intent = Intent(this, ClockActivity::class.java)
+            intent.putExtra("clockMode", true)
+            startActivity(intent)
+        } else {
+            super.onBackPressed()
+        }
     }
 
     override fun onDestroy() {
