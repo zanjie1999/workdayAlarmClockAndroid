@@ -355,7 +355,7 @@ class ClockActivity : AppCompatActivity() {
                         String.format("%2d:%02d", it / 60000, (it % 60000) / 1000)
                     }
                     if (showLyrics && !clockMode) {
-                        tvDate.text = lyric
+                        tvDate.text = if (millis != null) lyric else batInfo + hmsmde[1]
                     } else if (lyricsOnTop) {
                         if (isVerticalLayout) {
                             val secondLine = (batInfo + (playTime?.let { "▷$it" } ?: "")).trimEnd()
