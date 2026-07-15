@@ -14,6 +14,7 @@ object MeSettings {
     const val KEY_TSS = "tss"
     const val KEY_T24 = "t24"
     const val KEY_WHITE = "white"
+    const val KEY_LYRICS = "lyrics"
     const val KEY_LANDSCAPE = "landscape"
     const val KEY_VERTICAL = "vertical"
     const val KEY_ROUND = "round"

@@ -60,6 +60,7 @@ class MainActivity : AppCompatActivity() {
         SettingMenuItem(MeSettings.KEY_TSS, "时钟不显示秒"),
         SettingMenuItem(MeSettings.KEY_T24, "时钟24小时制"),
         SettingMenuItem(MeSettings.KEY_WHITE, "时钟亮色主题"),
+        SettingMenuItem(MeSettings.KEY_LYRICS, "显示歌词"),
         SettingMenuItem(MeSettings.KEY_LANDSCAPE, "锁定横屏"),
         SettingMenuItem(MeSettings.KEY_VERTICAL, "强制竖屏布局"),
         SettingMenuItem(MeSettings.KEY_ROUND, "强制圆屏布局"),
@@ -263,6 +264,9 @@ class MainActivity : AppCompatActivity() {
             if (settingItem != null) {
                 val enabled = !MeSettings.isEnabled(this, settingItem.key)
                 MeSettings.setEnabled(this, settingItem.key, enabled)
+                if (settingItem.key == MeSettings.KEY_LYRICS) {
+                    MeService.me?.syncLyricsSetting()
+                }
                 menuItem.isChecked = enabled
                 true
             } else {

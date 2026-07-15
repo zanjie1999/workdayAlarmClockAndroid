@@ -22,6 +22,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
@@ -29,6 +30,8 @@ import java.io.PrintWriter
 import java.lang.reflect.Method
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.jvm.java
 
 /**
@@ -36,6 +39,8 @@ import kotlin.jvm.java
  * 维持工作咩闹钟二进制文件运行
  */
 class MeService : Service() {
+    private data class LyricLine(val timeMs: Int, val text: String)
+
     private enum class PlayerState {
         IDLE,
         PREPARING,
@@ -114,6 +119,11 @@ class MeService : Service() {
     private var lastKnownPositionMs = 0
     private var playbackDurationMs = 0
     private var pendingSeekPositionMs: Int? = null
+    @Volatile private var currentSongId: String? = null
+    @Volatile private var lyricSongId: String? = null
+    @Volatile private var lyricLines = emptyList<LyricLine>()
+    @Volatile private var lyricVersion = 0
+    @Volatile private var hasPendingSongId = false
     private val playbackCheckpointRunnable = object : Runnable {
         override fun run() {
             if (playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING) {
@@ -563,10 +573,27 @@ class MeService : Service() {
                 cmdLastT = System.currentTimeMillis()
                 cmdLastMsg = s
             }
-            if (s.startsWith("PLAY ")) {
-                playUrl(s.substring(5), true)
+            if (s.startsWith("SONGID ")) {
+                val songId = s.substring(7).trim().toLongOrNull()
+                if (songId != null && songId > 0) {
+                    hasPendingSongId = true
+                    synchronized(this) {
+                        currentSongId = songId.toString()
+                        lyricSongId = null
+                        lyricLines = emptyList()
+                        lyricVersion++
+                    }
+                    syncLyricsSetting()
+                } else {
+                    hasPendingSongId = false
+                    print2LogView("歌曲ID无效: $s")
+                }
+            } else if (s.startsWith("PLAY ")) {
+                playUrl(s.substring(5), true, hasPendingSongId)
+                hasPendingSongId = false
             } else if (s.startsWith("LOAD ")) {
-                playUrl(s.substring(5), false)
+                playUrl(s.substring(5), false, hasPendingSongId)
+                hasPendingSongId = false
             } else if (s.startsWith("VOL ")) {
                 val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                 val per = s.substring(4).toInt()
@@ -842,7 +869,10 @@ class MeService : Service() {
     /**
      * 播放器播放url
      */
-    fun playUrl(url:String, autoPlay:Boolean) {
+    fun playUrl(url:String, autoPlay:Boolean, keepLyrics:Boolean = false) {
+        if (!keepLyrics) {
+            clearLyrics()
+        }
         runOnPlaybackThread {
             playbackGeneration++
             retryCount = 0
@@ -1062,6 +1092,7 @@ class MeService : Service() {
         lastKnownPositionMs = 0
         playbackDurationMs = 0
         pendingSeekPositionMs = null
+        clearLyrics()
 
         print2LogView(if (fromError) "play重试失败，跳到下一首" else "play播放完成")
         onPause()
@@ -1236,7 +1267,112 @@ class MeService : Service() {
         return if (isPlayerControllable()) playbackDurationMs else 0
     }
 
+    fun getCurrentLyric(positionMs: Int?): String {
+        if (positionMs == null || !MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)) {
+            return ""
+        }
+        var current = ""
+        for (line in lyricLines) {
+            if (line.timeMs > positionMs) break
+            current = line.text
+        }
+        return current
+    }
+
+    @Synchronized
+    fun syncLyricsSetting() {
+        if (!MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)) {
+            clearLyrics(false)
+            return
+        }
+        val songId = currentSongId
+        if (songId != null && lyricSongId != songId) {
+            loadLyrics(songId)
+        }
+    }
+
+    @Synchronized
+    private fun clearLyrics(clearSongId: Boolean = true) {
+        lyricVersion++
+        lyricSongId = null
+        lyricLines = emptyList()
+        if (clearSongId) {
+            currentSongId = null
+            hasPendingSongId = false
+        }
+    }
+
+    private fun loadLyrics(songId: String) {
+        val version = synchronized(this) {
+            lyricVersion++
+            lyricSongId = songId
+            lyricLines = emptyList()
+            lyricVersion
+        }
+        Thread {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = URL("http://music.163.com/api/song/lyric?lv=-1&tv=-1&id=$songId")
+                    .openConnection() as HttpURLConnection
+                connection.connectTimeout = 8000
+                connection.readTimeout = 8000
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
+                if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                    throw IOException("HTTP ${connection.responseCode}")
+                }
+                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                val original = parseLyric(json.optJSONObject("lrc")?.optString("lyric").orEmpty())
+                val translated = parseLyric(json.optJSONObject("tlyric")?.optString("lyric").orEmpty())
+                    .associateBy { it.timeMs }
+                val result = original.map { line ->
+                    val translation = translated[line.timeMs]?.text
+                    if (line.text.isBlank() || translation.isNullOrBlank() || translation == line.text) {
+                        line
+                    } else {
+                        line.copy(text = line.text + "\n" + translation)
+                    }
+                }
+
+                // 切歌后丢弃旧请求返回的歌词
+                synchronized(this) {
+                    if (version == lyricVersion && currentSongId == songId &&
+                        MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)) {
+                        lyricLines = result
+                    }
+                }
+            } catch (e: Exception) {
+                print2LogView("获取歌词失败: ${e.message}")
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+    }
+
+    private fun parseLyric(text: String): List<LyricLine> {
+        val timeRegex = Regex("\\[(\\d+):(\\d{2})(?:[.:](\\d{1,3}))?]")
+        val offset = Regex("\\[offset:([+-]?\\d+)]", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val result = mutableListOf<LyricLine>()
+
+        // 一行可能对应多个时间点
+        text.lineSequence().forEach { row ->
+            val times = timeRegex.findAll(row).toList()
+            if (times.isEmpty()) return@forEach
+            val content = row.substring(times.last().range.last + 1).trim()
+            times.forEach { match ->
+                val fraction = match.groupValues[3].padEnd(3, '0').take(3).toInt()
+                val timeMs = (match.groupValues[1].toInt() * 60000 +
+                    match.groupValues[2].toInt() * 1000 + fraction + offset).coerceAtLeast(0)
+                result.add(LyricLine(timeMs, content))
+            }
+        }
+        return result.groupBy { it.timeMs }
+            .map { it.value.last() }
+            .sortedBy { it.timeMs }
+    }
+
     private fun stopPlayback(resetProgress: Boolean = true) {
+        clearLyrics()
         runOnPlaybackThread {
             playbackGeneration++
             releasePlayer()
@@ -1258,6 +1394,7 @@ class MeService : Service() {
     }
 
     private fun requestTrackChange(action: String) {
+        clearLyrics()
         runOnPlaybackThread {
             playbackGeneration++
             releasePlayer()

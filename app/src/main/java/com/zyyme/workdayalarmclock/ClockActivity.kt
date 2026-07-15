@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.DisplayMetrics
 import android.util.Log
@@ -52,18 +53,21 @@ class ClockActivity : AppCompatActivity() {
 
     var isKeepScreenOn = false
     
-    var showMsgTime = 0
+    private var showMsgUntil = 0L
 
     var clockMode = false
 
     var enableTop = false
 
+    private var showLyrics = false
+    private val lyricsOnTop get() = showLyrics && clockMode
+
     private var isUserSeeking = false
 
     fun showMsg(msg: String) {
         runOnUiThread {
-            showMsgTime = 3
-            if (enableTop) {
+            showMsgUntil = SystemClock.elapsedRealtime() + 3000
+            if (enableTop && !lyricsOnTop) {
                 findViewById<TextView>(R.id.tv_top).text = msg
             } else {
                 findViewById<TextView>(R.id.tv_date).text = msg
@@ -119,6 +123,7 @@ class ClockActivity : AppCompatActivity() {
         val tvTime = findViewById<TextView>(R.id.tv_time)
         val tvDate = findViewById<TextView>(R.id.tv_date)
         val circularMusicProgress = findViewById<CircularMusicProgressView>(R.id.circular_music_progress)
+        showLyrics = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
         setupClockTextAutoSize(tvTop, tvTime, tvDate)
 
         // 按钮控制
@@ -327,7 +332,7 @@ class ClockActivity : AppCompatActivity() {
 
 
 
-        // 时间显示线程 1秒一次
+        // 歌词播放时提高刷新频率，其余情况仍按秒刷新
         runnable = object : Runnable {
             override fun run() {
                 val hmsmde = sdfHmsmde.format(Date()).split(".")
@@ -337,29 +342,32 @@ class ClockActivity : AppCompatActivity() {
                 val duration = service?.getPlaybackDuration() ?: 0
                 updateMusicProgress(musicSeekBar, tvMusicPosition, tvMusicDuration, millis, duration)
                 circularMusicProgress.setProgress(millis, duration)
-                if (showMsgTime > 0) {
-                    showMsgTime--
-                } else {
-                    if (enableTop) {
-                        if (millis != null) {
-                            tvTop.text = MeService.me!!.batInfo + "▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
-                            tvDate.text = hmsmde[1]
-                        } else {
-                            tvTop.text = MeService.me!!.batInfo
-                            tvDate.text = hmsmde[1]
-                        }
-                    } else {
-                        if (millis != null) {
-                            tvDate.text = MeService.me!!.batInfo + hmsmde[1] + " ▷" + String.format("%2d:%02d", millis / 60000, (millis % 60000) / 1000)
-                        } else {
-                            tvDate.text = MeService.me!!.batInfo + hmsmde[1]
-                        }
+                val lyric = if (showLyrics) service?.getCurrentLyric(millis).orEmpty() else ""
+                if (lyricsOnTop) {
+                    if (tvTop.text.toString() != lyric) {
+                        tvTop.text = lyric
                     }
                 }
-                if ((System.currentTimeMillis() / 1000) % 10 == 0L) {
-                    timeHandler.postDelayed(this, 1000 - System.currentTimeMillis() % 1000)
+                if (SystemClock.elapsedRealtime() >= showMsgUntil) {
+                    val batInfo = service?.batInfo.orEmpty()
+                    val playTime = millis?.let {
+                        String.format("%2d:%02d", it / 60000, (it % 60000) / 1000)
+                    }
+                    if (showLyrics && !clockMode) {
+                        tvDate.text = lyric
+                    } else if (lyricsOnTop) {
+                        tvDate.text = batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: "")
+                    } else if (enableTop) {
+                        tvTop.text = batInfo + (playTime?.let { "▷$it" } ?: "")
+                        tvDate.text = hmsmde[1]
+                    } else {
+                        tvDate.text = batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: "")
+                    }
+                }
+                if (showLyrics && millis != null) {
+                    timeHandler.postDelayed(this, 500)
                 } else {
-                    timeHandler.postDelayed(this, 1000)
+                    timeHandler.postDelayed(this, 1000 - System.currentTimeMillis() % 1000)
                 }
             }
         }
@@ -369,6 +377,8 @@ class ClockActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        showLyrics = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
+        MeService.me?.syncLyricsSetting()
         setFullscreen()
     }
 
@@ -385,6 +395,7 @@ class ClockActivity : AppCompatActivity() {
 
     private fun setFullScreenClock() {
         clockMode = true
+        showLyrics = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
         findViewById<LinearLayout>(R.id.btm_layout1).visibility = View.GONE
         findViewById<LinearLayout>(R.id.btm_layout2).visibility = View.GONE
         findViewById<LinearLayout>(R.id.btm_layout3).visibility = View.GONE
@@ -415,13 +426,15 @@ class ClockActivity : AppCompatActivity() {
             tvDate.setPadding(textHorizontalPadding, tvDate.paddingTop, textHorizontalPadding, tvDate.paddingBottom)
             realHeightPixels -= padding * 2
         }
-        if (isRound || isVertical) {
-            // 启用顶部框 圆形 竖屏
+        if (isRound || isVertical || showLyrics) {
+            // 圆屏、竖屏或歌词模式启用顶部框
             tvTime.layoutParams.height = (realHeightPixels * 0.6).toInt()
             tvTop.layoutParams.height = (realHeightPixels * 0.2).toInt()
             enableTop = true
         } else {
             tvTime.layoutParams.height = (realHeightPixels * 0.8).toInt()
+            tvTop.layoutParams.height = 0
+            enableTop = false
         }
         tvDate.layoutParams.height = (realHeightPixels * 0.2).toInt()
 
