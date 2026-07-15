@@ -117,7 +117,18 @@ class MeService : Service() {
     private val playbackCheckpointRunnable = object : Runnable {
         override fun run() {
             if (playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING) {
+                val previousPositionMs = lastKnownPositionMs
                 snapshotPlaybackPosition()
+                if (lastSetVol != -1 && lastKnownPositionMs > previousPositionMs) {
+                    val volume = lastSetVol
+                    audioManager.setStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        volume,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+                    lastSetVol = -1
+                    print2LogView("检测到播放进度变化，再次设置音量为$volume")
+                }
                 playbackHandler.postDelayed(this, PLAYBACK_CHECKPOINT_INTERVAL_MS)
             }
         }
@@ -825,18 +836,6 @@ class MeService : Service() {
                 wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "workDayAlarmClock:WifiLock")
                 wifiLock?.acquire()
             }
-        }
-        // 在播放时再设置一次音量
-        if (lastSetVol != -1) {
-            val volume = lastSetVol
-            lastSetVol = -1
-            playbackHandler.postDelayed({
-                audioManager.setStreamVolume(
-                    AudioManager.STREAM_MUSIC,
-                    volume,
-                    AudioManager.FLAG_SHOW_UI
-                )
-            }, 1000)
         }
     }
 
