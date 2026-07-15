@@ -343,10 +343,10 @@ class ClockActivity : AppCompatActivity() {
                 val duration = service?.getPlaybackDuration() ?: 0
                 updateMusicProgress(musicSeekBar, tvMusicPosition, tvMusicDuration, millis, duration)
                 circularMusicProgress.setProgress(millis, duration)
-                val lyric = if (showLyrics) service?.getCurrentLyric(millis).orEmpty() else ""
+                val lyric = if (showLyrics) service?.getCurrentLyric(millis) else null
                 if (lyricsOnTop) {
-                    if (tvTop.text.toString() != lyric) {
-                        tvTop.text = lyric
+                    if (tvTop.text.toString() != lyric.orEmpty()) {
+                        tvTop.text = lyric.orEmpty()
                     }
                 }
                 if (SystemClock.elapsedRealtime() >= showMsgUntil) {
@@ -355,7 +355,7 @@ class ClockActivity : AppCompatActivity() {
                         String.format("%2d:%02d", it / 60000, (it % 60000) / 1000)
                     }
                     if (showLyrics && !clockMode) {
-                        tvDate.text = if (millis != null) lyric else batInfo + hmsmde[1]
+                        tvDate.text = if (millis != null && lyric != null) lyric else batInfo + hmsmde[1]
                     } else if (lyricsOnTop) {
                         if (isVerticalLayout) {
                             val secondLine = (batInfo + (playTime?.let { "▷$it" } ?: "")).trimEnd()
@@ -460,9 +460,10 @@ class ClockActivity : AppCompatActivity() {
     }
 
     private fun setupClockTextAutoSize(tvTop: TextView, tvTime: TextView, tvDate: TextView) {
-        setUniformAutoSize(tvTop, 8, 50)
-        setUniformAutoSize(tvTime, 18, 200)
-        setUniformAutoSize(tvDate, 8, 50)
+        // 修改字号需要同步修改
+        setUniformAutoSize(tvTop, 8, 80)
+        setUniformAutoSize(tvTime, 18, 400)
+        setUniformAutoSize(tvDate, 8, 80)
     }
 
     private fun setUniformAutoSize(textView: TextView, minSp: Int, maxSp: Int) {

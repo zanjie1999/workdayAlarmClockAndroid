@@ -1267,12 +1267,14 @@ class MeService : Service() {
         return if (isPlayerControllable()) playbackDurationMs else 0
     }
 
-    fun getCurrentLyric(positionMs: Int?): String {
+    fun getCurrentLyric(positionMs: Int?): String? {
         if (positionMs == null || !MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)) {
-            return ""
+            return null
         }
+        val lines = lyricLines
+        if (lines.isEmpty()) return null
         var current = ""
-        for (line in lyricLines) {
+        for (line in lines) {
             if (line.timeMs > positionMs) break
             current = line.text
         }
@@ -1321,15 +1323,19 @@ class MeService : Service() {
                     throw IOException("HTTP ${connection.responseCode}")
                 }
                 val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                val original = parseLyric(json.optJSONObject("lrc")?.optString("lyric").orEmpty())
-                val translated = parseLyric(json.optJSONObject("tlyric")?.optString("lyric").orEmpty())
-                    .associateBy { it.timeMs }
-                val result = original.map { line ->
-                    val translation = translated[line.timeMs]?.text
-                    if (line.text.isBlank() || translation.isNullOrBlank() || translation == line.text) {
-                        line
-                    } else {
-                        line.copy(text = line.text + "\n" + translation)
+                val result = if (json.optBoolean("pureMusic")) {
+                    emptyList()
+                } else {
+                    val original = parseLyric(json.optJSONObject("lrc")?.optString("lyric").orEmpty())
+                    val translated = parseLyric(json.optJSONObject("tlyric")?.optString("lyric").orEmpty())
+                        .associateBy { it.timeMs }
+                    original.map { line ->
+                        val translation = translated[line.timeMs]?.text
+                        if (line.text.isBlank() || translation.isNullOrBlank() || translation == line.text) {
+                            line
+                        } else {
+                            line.copy(text = line.text + "\n" + translation)
+                        }
                     }
                 }
 
