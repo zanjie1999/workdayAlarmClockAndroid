@@ -61,6 +61,7 @@ class ClockActivity : AppCompatActivity() {
 
     private var showLyrics = false
     private val lyricsOnTop get() = showLyrics && clockMode
+    private var isVerticalLayout = false
 
     private var isUserSeeking = false
 
@@ -356,7 +357,12 @@ class ClockActivity : AppCompatActivity() {
                     if (showLyrics && !clockMode) {
                         tvDate.text = lyric
                     } else if (lyricsOnTop) {
-                        tvDate.text = batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: "")
+                        if (isVerticalLayout) {
+                            val secondLine = (batInfo + (playTime?.let { "▷$it" } ?: "")).trimEnd()
+                            tvDate.text = hmsmde[1] + (secondLine.takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: "")
+                        } else {
+                            tvDate.text = batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: "")
+                        }
                     } else if (enableTop) {
                         tvTop.text = batInfo + (playTime?.let { "▷$it" } ?: "")
                         tvDate.text = hmsmde[1]
@@ -411,6 +417,7 @@ class ClockActivity : AppCompatActivity() {
         val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
         var realHeightPixels = rootLayout.height
         val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  MeSettings.isEnabled(this, MeSettings.KEY_VERTICAL)
+        isVerticalLayout = isVertical
         val isRound = rootLayout.height == rootLayout.width || MeSettings.isEnabled(this, MeSettings.KEY_ROUND)
         circularMusicProgress.visibility = if (isRound) View.VISIBLE else View.GONE
         Log.d("ClockActivity", "realHeight: $realHeightPixels realWidth: ${rootLayout.width} height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
