@@ -1273,12 +1273,9 @@ class MeService : Service() {
         }
         val lines = lyricLines
         if (lines.isEmpty()) return null
-        var current = ""
-        for (line in lines) {
-            if (line.timeMs > positionMs) break
-            current = line.text
-        }
-        return current
+        val result = lines.binarySearchBy(positionMs) { it.timeMs }
+        val index = if (result >= 0) result else -result - 2
+        return if (index >= 0) lines[index].text else ""
     }
 
     @Synchronized

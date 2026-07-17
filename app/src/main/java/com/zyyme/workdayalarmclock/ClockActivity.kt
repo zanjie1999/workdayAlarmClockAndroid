@@ -371,7 +371,7 @@ class ClockActivity : AppCompatActivity() {
                     }
                 }
                 if (showLyrics && millis != null) {
-                    timeHandler.postDelayed(this, 500)
+                    timeHandler.postDelayed(this, 250)
                 } else {
                     timeHandler.postDelayed(this, 1000 - System.currentTimeMillis() % 1000)
                 }
