@@ -416,36 +416,37 @@ class ClockActivity : AppCompatActivity() {
         val circularMusicProgress = findViewById<CircularMusicProgressView>(R.id.circular_music_progress)
         val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
         var realHeightPixels = rootLayout.height
-        val isVertical = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  MeSettings.isEnabled(this, MeSettings.KEY_VERTICAL)
-        isVerticalLayout = isVertical
+        var realWidthPixels = rootLayout.width
+        isVerticalLayout = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  MeSettings.isEnabled(this, MeSettings.KEY_VERTICAL)
         val isRound = rootLayout.height == rootLayout.width || MeSettings.isEnabled(this, MeSettings.KEY_ROUND)
         circularMusicProgress.visibility = if (isRound) View.VISIBLE else View.GONE
-        Log.d("ClockActivity", "realHeight: $realHeightPixels realWidth: ${rootLayout.width} height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
+        Log.d("ClockActivity", "realHeight: $realHeightPixels realWidth: ${realWidthPixels} height: ${displayMetrics.heightPixels} width: ${displayMetrics.widthPixels} density: ${displayMetrics.density} 比例:${displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat()}")
         if (isRound) {
             // 圆形屏幕 增加上下边距
             Log.d("ClockActivity", "圆形屏幕")
-            val padding = realHeightPixels / 5
+            val padding = realHeightPixels / 8
             findViewById<LinearLayout>(R.id.root_layout).setPadding(0, padding, 0, padding)
             // 自动计算大小 搞个左右的边距
             val textHorizontalPadding = 10
-            tvTop.setPadding(textHorizontalPadding, tvTop.paddingTop, textHorizontalPadding, tvTop.paddingBottom)
+            val edgeHorizontalPadding = (realWidthPixels / 7) + textHorizontalPadding
+            tvTop.setPadding(edgeHorizontalPadding, tvTop.paddingTop, edgeHorizontalPadding, tvTop.paddingBottom)
             tvTime.setPadding(textHorizontalPadding, tvTime.paddingTop, textHorizontalPadding, tvTime.paddingBottom)
-            tvDate.setPadding(textHorizontalPadding, tvDate.paddingTop, textHorizontalPadding, tvDate.paddingBottom)
+            tvDate.setPadding(edgeHorizontalPadding, tvDate.paddingTop, edgeHorizontalPadding, tvDate.paddingBottom)
             realHeightPixels -= padding * 2
         }
-        if (isRound || isVertical || showLyrics) {
+        if (isRound || isVerticalLayout || showLyrics) {
             // 圆屏、竖屏或歌词模式启用顶部框
-            tvTime.layoutParams.height = (realHeightPixels * 0.6).toInt()
-            tvTop.layoutParams.height = (realHeightPixels * 0.2).toInt()
+            tvTime.layoutParams.height = (realHeightPixels * 0.5).toInt()
+            tvTop.layoutParams.height = (realHeightPixels * 0.25).toInt()
             enableTop = true
         } else {
-            tvTime.layoutParams.height = (realHeightPixels * 0.8).toInt()
+            tvTime.layoutParams.height = (realHeightPixels * 0.75).toInt()
             tvTop.layoutParams.height = 0
             enableTop = false
         }
-        tvDate.layoutParams.height = (realHeightPixels * 0.2).toInt()
+        tvDate.layoutParams.height = (realHeightPixels * 0.25).toInt()
 
-        if (isVertical) {
+        if (isVerticalLayout) {
             // 竖屏秒换行
             if (!MeSettings.isEnabled(this, MeSettings.KEY_TSS)) {
                 if (MeSettings.isEnabled(this, MeSettings.KEY_T24)) {
@@ -455,6 +456,10 @@ class ClockActivity : AppCompatActivity() {
                 }
             }
             tvTime.maxLines = 2
+        }
+        if (isRound) {
+            // 用竖屏布局，让tvDate元素换行
+            isVerticalLayout = true
         }
         setupClockTextAutoSize(tvTop, tvTime, tvDate)
     }
