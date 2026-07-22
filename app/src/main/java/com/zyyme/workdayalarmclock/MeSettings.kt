@@ -22,27 +22,36 @@ object MeSettings {
     const val KEY_AUTO_BACK_CLOCK = "auto_back_clock"
     const val KEY_NOTIFICATION_FORWARD_URL = "notification_forward_url"
 
+    private fun preferences(context: Context) =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
     fun isEnabled(context: Context, key: String): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean(key, false)
+        return preferences(context).getBoolean(key, false)
+    }
+
+    fun getEnabledKeys(context: Context, keys: Iterable<String>): Set<String> {
+        val preferences = preferences(context)
+        return keys.filterTo(mutableSetOf()) { key ->
+            preferences.getBoolean(key, false)
+        }
     }
 
     fun setEnabled(context: Context, key: String, enabled: Boolean) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        preferences(context)
             .edit()
             .putBoolean(key, enabled)
             .apply()
     }
 
     fun getNotificationForwardUrl(context: Context): String {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return preferences(context)
             .getString(KEY_NOTIFICATION_FORWARD_URL, "")
             .orEmpty()
     }
 
     fun setNotificationForwardUrl(context: Context, url: String) {
         val cleanUrl = url.trim()
-        val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+        val editor = preferences(context).edit()
         if (cleanUrl.isEmpty()) {
             editor.remove(KEY_NOTIFICATION_FORWARD_URL)
         } else {

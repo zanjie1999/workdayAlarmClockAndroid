@@ -27,6 +27,7 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import kotlin.system.exitProcess
 import androidx.core.net.toUri
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 class MainActivity : AppCompatActivity() {
@@ -42,11 +43,39 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_ACCESSIBILITY_SETTINGS = 6
         private const val OPEN_NOTIFICATION_FORWARD_URL = 7
         private const val MENU_SETTING_START = 100
+        private const val LOG_REFRESH_DELAY_MILLIS = 250L
     }
 
     var mediaSessionCompat: MediaSessionCompat? = null
     var mediaComponentName: ComponentName? = null
     var isActivityVisible = false
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val logRefreshPending = AtomicBoolean(false)
+    private lateinit var logView: TextView
+    private lateinit var logScrollView: ScrollView
+    private var settingsPopupMenu: PopupMenu? = null
+
+    private val scrollLogToBottom = Runnable {
+        if (isActivityVisible && ::logScrollView.isInitialized) {
+            logScrollView.fullScroll(ScrollView.FOCUS_DOWN)
+        }
+    }
+
+    private val refreshLogView = Runnable {
+        // 控制台更新节流
+        logRefreshPending.set(false)
+        if (!isActivityVisible || !::logView.isInitialized) return@Runnable
+
+        val latestLog = synchronized(MeService.logBuilder) {
+            MeService.logBuilder.toString()
+        }
+        if (logView.text.toString() != latestLog) {
+            logView.text = latestLog
+            logScrollView.removeCallbacks(scrollLogToBottom)
+            logScrollView.post(scrollLogToBottom)
+        }
+    }
 
     // 时钟模式
     var useClockMode = false
@@ -75,6 +104,11 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         isActivityVisible = false
+        mainHandler.removeCallbacks(refreshLogView)
+        logRefreshPending.set(false)
+        if (::logScrollView.isInitialized) {
+            logScrollView.removeCallbacks(scrollLogToBottom)
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -131,6 +165,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         setSupportActionBar(findViewById(R.id.toolbar));
+        logView = findViewById(R.id.logView)
+        logScrollView = findViewById(R.id.scrollView)
 
         // 存储空间权限 Android11
         if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
@@ -204,8 +240,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.iconForward).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, true)
         }
-        findViewById<ImageView>(R.id.iconMenu).setOnClickListener {
-            showSettingsMenu(it as ImageView)
+        val menuIcon = findViewById<ImageView>(R.id.iconMenu)
+        menuIcon.setOnClickListener {
+            showSettingsMenu(menuIcon)
+        }
+        // Build the menu after the initial layout instead of doing all setup on the first click.
+        menuIcon.post {
+            if (!isFinishing) getOrCreateSettingsMenu(menuIcon)
         }
         findViewById<Toolbar>(R.id.toolbar).setOnClickListener {
             val intent: Intent = Intent(this, ClockActivity::class.java)
@@ -220,6 +261,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettingsMenu(anchor: ImageView) {
+        val popupMenu = getOrCreateSettingsMenu(anchor)
+        val enabledSettings = MeSettings.getEnabledKeys(
+            this,
+            settingsMenuItems.map { it.key }
+        )
+        settingsMenuItems.forEachIndexed { index, item ->
+            popupMenu.menu.findItem(MENU_SETTING_START + index)?.isChecked =
+                item.key in enabledSettings
+        }
+        popupMenu.show()
+    }
+
+    private fun getOrCreateSettingsMenu(anchor: ImageView): PopupMenu {
+        settingsPopupMenu?.let { return it }
+
         val popupMenu = PopupMenu(this, anchor)
         popupMenu.menu.add(Menu.NONE, MENU_EXIT, 0, "退出${getString(R.string.app_name)}")
         popupMenu.menu.add(Menu.NONE, OPEN_WEB, 1, "打开Web控制台")
@@ -228,7 +284,6 @@ class MainActivity : AppCompatActivity() {
         settingsMenuItems.forEachIndexed { index, item ->
             popupMenu.menu.add(Menu.NONE, MENU_SETTING_START + index, index + 4, item.label).apply {
                 isCheckable = true
-                isChecked = MeSettings.isEnabled(this@MainActivity, item.key)
             }
         }
         popupMenu.menu.add(Menu.NONE, OPEN_DEVICE_ADMIN, MENU_SETTING_START + settingsMenuItems.size, "授权熄屏权限")
@@ -262,7 +317,7 @@ class MainActivity : AppCompatActivity() {
 
             val settingItem = settingsMenuItems.getOrNull(menuItem.itemId - MENU_SETTING_START)
             if (settingItem != null) {
-                val enabled = !MeSettings.isEnabled(this, settingItem.key)
+                val enabled = !menuItem.isChecked
                 MeSettings.setEnabled(this, settingItem.key, enabled)
                 if (settingItem.key == MeSettings.KEY_LYRICS) {
                     MeService.me?.syncLyricsSetting()
@@ -273,7 +328,8 @@ class MainActivity : AppCompatActivity() {
                 false
             }
         }
-        popupMenu.show()
+        settingsPopupMenu = popupMenu
+        return popupMenu
     }
 
     private fun openDeviceAdminSettings() {
@@ -400,6 +456,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(refreshLogView)
+        if (::logScrollView.isInitialized) {
+            logScrollView.removeCallbacks(scrollLogToBottom)
+        }
+        settingsPopupMenu?.dismiss()
+        settingsPopupMenu = null
         print2LogView("控制台退出...")
 //        mediaButtonReceiverDestroy()
 //        stopService(Intent(this, MeService::class.java))
@@ -452,12 +514,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun show2LogView() {
-        if (isActivityVisible) {
-            runOnUiThread {
-                findViewById<TextView>(R.id.logView).text = MeService.logBuilder.toString()
-                val scrollView = findViewById<ScrollView>(R.id.scrollView)
-                scrollView.post(Runnable { scrollView.fullScroll(ScrollView.FOCUS_DOWN) })
-            }
+        if (isActivityVisible && logRefreshPending.compareAndSet(false, true)) {
+            mainHandler.postDelayed(refreshLogView, LOG_REFRESH_DELAY_MILLIS)
         }
     }
 
