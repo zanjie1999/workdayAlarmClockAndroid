@@ -424,15 +424,16 @@ class ClockActivity : AppCompatActivity() {
         if (isRound) {
             // 圆形屏幕 增加上下边距
             Log.d("ClockActivity", "圆形屏幕")
-            val padding = realHeightPixels / 8
-            findViewById<LinearLayout>(R.id.root_layout).setPadding(0, padding, 0, padding)
+            val topPadding = realHeightPixels / 8
+            val bottomPadding = (topPadding - (realWidthPixels - realHeightPixels).coerceAtLeast(0)).coerceAtLeast(0)
+            rootLayout.setPadding(0, topPadding, 0, bottomPadding)
             // 自动计算大小 搞个左右的边距
             val textHorizontalPadding = 10
             val edgeHorizontalPadding = (realWidthPixels / 7) + textHorizontalPadding
             tvTop.setPadding(edgeHorizontalPadding, tvTop.paddingTop, edgeHorizontalPadding, tvTop.paddingBottom)
             tvTime.setPadding(textHorizontalPadding, tvTime.paddingTop, textHorizontalPadding, tvTime.paddingBottom)
             tvDate.setPadding(edgeHorizontalPadding, tvDate.paddingTop, edgeHorizontalPadding, tvDate.paddingBottom)
-            realHeightPixels -= padding * 2
+            realHeightPixels -= topPadding + bottomPadding
         }
         if (isRound || isVerticalLayout || showLyrics) {
             // 圆屏、竖屏或歌词模式启用顶部框

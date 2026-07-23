@@ -44,9 +44,9 @@ class CircularMusicProgressView @JvmOverloads constructor(
         super.onDraw(canvas)
         if (progressFraction <= 0f) return
 
-        val diameter = minOf(width, height).toFloat()
+        val diameter = maxOf(width, height).toFloat()
         val left = (width - diameter) / 2f
-        val top = (height - diameter) / 2f
+        val top = 0f
         arcBounds.set(left, top, left + diameter, top + diameter)
         arcBounds.inset(progressPaint.strokeWidth / 2f, progressPaint.strokeWidth / 2f)
         canvas.drawArc(arcBounds, -90f, progressFraction * 360f, false, progressPaint)
