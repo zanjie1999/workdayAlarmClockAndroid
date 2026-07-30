@@ -1184,6 +1184,7 @@ class MeService : Service() {
     }
 
     private fun requestPausePlayback(resumeAfterFocusGain: Boolean = false) {
+        toGo("pause1")
         runOnPlaybackThread {
             this.resumeAfterAudioFocusGain = resumeAfterFocusGain && playWhenReady
             playWhenReady = false
@@ -1202,6 +1203,7 @@ class MeService : Service() {
     }
 
     private fun requestResumePlayback() {
+        toGo("pause0")
         runOnPlaybackThread {
             playWhenReady = true
             resumeAfterAudioFocusGain = false
