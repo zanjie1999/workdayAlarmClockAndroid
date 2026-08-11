@@ -423,30 +423,50 @@ internal class CameraHttpServer(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>摄像头</title>
+<title>咩咩摄像头</title>
 <style>
-body{font-family:sans-serif;max-width:960px;margin:24px auto;padding:0 16px;background:#111;color:#eee}
-label{display:inline-block;margin:4px 12px 4px 0}input,button{font-size:16px;padding:6px}input{width:180px}
-button{cursor:pointer;margin:4px}video{display:block;width:100%;max-height:80vh;background:#000;margin-top:16px}
+*{box-sizing:border-box}body{font-family:sans-serif;max-width:960px;margin:0 auto;padding:16px;background:#000;color:#eee}
+#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:end}label{display:flex;flex:1 1 180px;min-width:0;flex-direction:column;gap:4px;font-size:14px;color:#bbb}
+input,button{width:100%;min-height:42px;font:inherit;font-size:16px;padding:8px 10px;border:1px solid #555;border-radius:4px}input{background:#222;color:#eee}
+button{flex:0 1 110px;cursor:pointer;background:#333;color:#eee}button[type=submit]{background:#1769aa;border-color:#278bd2}
+#videoFrame{width:100%;max-width:100vw;max-height:100vh;aspect-ratio:16/9;margin:16px auto 0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
+video{display:block;width:100%;height:100%;object-fit:contain;transform-origin:center center}
 #status{color:#aaa;margin-top:8px;min-height:1.4em}
+@media (max-width:520px){body{padding:10px}#controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{grid-column:span 2}button{flex:auto;width:auto}#videoFrame{margin-top:10px}}
 </style>
 </head>
 <body>
 <form id="controls">
 <label>密码 <input id="password" type="text" autocomplete="off"></label>
 <label>摄像头 <input id="camera" type="number" min="1" value="1"></label>
-<button type="submit">播放</button>
-<button id="stop" type="button">停止</button>
+<button id="playStop" type="submit">播放</button>
+<button id="rotate" type="button" aria-label="旋转画面">旋转 0°</button>
 </form>
-<video id="video" controls autoplay muted playsinline></video>
+<div id="videoFrame"><video id="video" controls autoplay muted playsinline></video></div>
 <div id="status"></div>
 <script>
 const video=document.getElementById('video');
+const videoFrame=document.getElementById('videoFrame');
 const form=document.getElementById('controls');
-const stopButton=document.getElementById('stop');
+const playStopButton=document.getElementById('playStop');
+const rotateButton=document.getElementById('rotate');
 const statusView=document.getElementById('status');
-let runId=0,abortController=null,retryTimer=null,objectUrl=null;
+let runId=0,abortController=null,retryTimer=null,objectUrl=null,rotation=0,playbackActive=false;
 function setStatus(value){statusView.textContent=value;}
+function setPlaybackState(active){
+  playbackActive=active;
+  playStopButton.textContent=active?'停止':'播放';
+}
+function updateVideoShape(){
+  const width=video.videoWidth||16,height=video.videoHeight||9;
+  const rotated=rotation%180!==0;
+  const ratio=rotated?height/width:width/height;
+  videoFrame.style.aspectRatio=ratio+' / 1';
+  video.style.width=rotated?(width/height*100)+'%':'100%';
+  video.style.height=rotated?(height/width*100)+'%':'100%';
+  video.style.transform='rotate('+rotation+'deg)';
+  rotateButton.textContent='旋转 '+rotation+'°';
+}
 function waitEvent(target,event){return new Promise(resolve=>target.addEventListener(event,resolve,{once:true}));}
 async function appendChunk(sourceBuffer,data){
   if(!data||!data.byteLength)return;
@@ -460,6 +480,7 @@ async function appendChunk(sourceBuffer,data){
 }
 function stopPlayback(showStatus){
   runId++;
+  setPlaybackState(false);
   if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}
   if(abortController){abortController.abort();abortController=null;}
   if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}
@@ -468,7 +489,7 @@ function stopPlayback(showStatus){
 }
 async function connect(id,password,camera){
   if(id!==runId)return;
-  if(!window.MediaSource){setStatus('当前浏览器不支持 MediaSource');return;}
+  if(!window.MediaSource){setStatus('当前浏览器不支持 MediaSource');setPlaybackState(false);return;}
   const mediaSource=new MediaSource();
   if(objectUrl)URL.revokeObjectURL(objectUrl);
   objectUrl=URL.createObjectURL(mediaSource);video.src=objectUrl;
@@ -485,7 +506,7 @@ async function connect(id,password,camera){
     if(!MediaSource.isTypeSupported(mime))throw new Error('浏览器不支持 '+mime);
     const sourceBuffer=mediaSource.addSourceBuffer(mime);
     const reader=response.body.getReader();
-    setStatus('正在连接摄像头 '+camera+' ...');
+    setStatus('正在播放摄像头 '+camera+' ...');
     while(id===runId){
       const item=await reader.read();
       if(item.done)throw new Error('视频连接已结束');
@@ -500,14 +521,26 @@ async function connect(id,password,camera){
 }
 form.addEventListener('submit',event=>{
   event.preventDefault();
-  stopPlayback(false);
-  const id=runId;
+  if(playbackActive){stopPlayback(true);return;}
   const password=document.getElementById('password').value.trim().replace(/^\/+|\/+$/g,'');
   const camera=parseInt(document.getElementById('camera').value,10);
   if(!Number.isInteger(camera)||camera<1){setStatus('摄像头编号无效');return;}
-  connect(id,password,camera);
+  try{
+    localStorage.setItem('cameraPassword',password);
+    localStorage.setItem('cameraNumber',String(camera));
+  }catch(error){}
+  setPlaybackState(true);
+  connect(runId,password,camera);
 });
-stopButton.addEventListener('click',()=>stopPlayback(true));
+rotateButton.addEventListener('click',()=>{rotation=(rotation+90)%360;updateVideoShape();});
+video.addEventListener('loadedmetadata',updateVideoShape);
+try{
+  const savedPassword=localStorage.getItem('cameraPassword');
+  const savedCamera=localStorage.getItem('cameraNumber');
+  if(savedPassword!==null)document.getElementById('password').value=savedPassword;
+  if(savedCamera!==null&&/^[1-9][0-9]*$/.test(savedCamera))document.getElementById('camera').value=savedCamera;
+}catch(error){}
+updateVideoShape();
 </script>
 </body>
 </html>
