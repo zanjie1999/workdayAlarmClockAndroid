@@ -9,7 +9,8 @@ internal enum class CameraStreamFormat {
 
 internal data class CameraStreamKey(
     val format: CameraStreamFormat,
-    val cameraIndex: Int
+    val cameraIndex: Int,
+    val resolutionIndex: Int? = null
 )
 
 internal data class CameraStreamPacket(

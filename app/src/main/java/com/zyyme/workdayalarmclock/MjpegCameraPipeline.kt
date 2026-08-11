@@ -7,6 +7,7 @@ import android.graphics.YuvImage
 import android.hardware.Camera
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CountDownLatch
@@ -23,6 +24,7 @@ internal class MjpegCameraPipeline(
         private const val TARGET_FPS = 30_000
         private const val MAX_PREFERRED_WIDTH = 2048
         private const val JPEG_QUALITY = 80
+        private const val MIN_JPEG_QUALITY = 50
     }
 
     private val frameHub = CameraFrameHub(maxPackets = 1, keepLatestOnly = true)
@@ -47,7 +49,6 @@ internal class MjpegCameraPipeline(
         val success = AtomicBoolean(false)
         cameraThread = HandlerThread("camera-mjpeg-${key.cameraIndex}").apply { start() }
         cameraHandler = Handler(cameraThread!!.looper)
-        startEncoderThread()
 
         cameraHandler?.post {
             try {
@@ -64,6 +65,7 @@ internal class MjpegCameraPipeline(
                 frameWidth = selection.size.width
                 frameHeight = selection.size.height
                 selectedFps = selection.outputFps
+                startEncoderThread()
 
                 parameters.previewFormat = ImageFormat.NV21
                 parameters.setPreviewSize(frameWidth, frameHeight)
@@ -111,6 +113,10 @@ internal class MjpegCameraPipeline(
 
     private fun startEncoderThread() {
         encoderThread = Thread({
+            val output = ByteArrayOutputStream(frameWidth * frameHeight / 4)
+            var jpegQuality = JPEG_QUALITY
+            var slowFrames = 0
+            var fastFrames = 0
             while (running.get()) {
                 val data = try {
                     frameQueue.poll(500, TimeUnit.MILLISECONDS)
@@ -119,7 +125,8 @@ internal class MjpegCameraPipeline(
                 } ?: continue
 
                 try {
-                    val output = ByteArrayOutputStream()
+                    output.reset()
+                    val encodeStartedAt = SystemClock.elapsedRealtime()
                     val image = YuvImage(
                         data,
                         ImageFormat.NV21,
@@ -129,11 +136,31 @@ internal class MjpegCameraPipeline(
                     )
                     if (image.compressToJpeg(
                             Rect(0, 0, frameWidth, frameHeight),
-                            JPEG_QUALITY,
+                            jpegQuality,
                             output
                         )
                     ) {
                         frameHub.publish(output.toByteArray())
+                    }
+                    val encodeMillis = SystemClock.elapsedRealtime() - encodeStartedAt
+                    if (encodeMillis > 100L) {
+                        slowFrames++
+                        fastFrames = 0
+                        if (slowFrames >= 3 && jpegQuality > MIN_JPEG_QUALITY) {
+                            jpegQuality = (jpegQuality - 5).coerceAtLeast(MIN_JPEG_QUALITY)
+                            slowFrames = 0
+                            log("MJPEG编码较慢，JPEG质量降为$jpegQuality")
+                        }
+                    } else if (encodeMillis < 60L) {
+                        fastFrames++
+                        slowFrames = 0
+                        if (fastFrames >= 30 && jpegQuality < JPEG_QUALITY) {
+                            jpegQuality++
+                            fastFrames = 0
+                        }
+                    } else {
+                        slowFrames = 0
+                        fastFrames = 0
                     }
                 } catch (e: Exception) {
                     if (running.get()) log("MJPEG帧编码失败：${e.message}")
@@ -162,12 +189,17 @@ internal class MjpegCameraPipeline(
             .sortedWith(compareByDescending<IntArray> { it[0] }.thenBy { it[1] - it[0] })
             .firstOrNull()
 
-        val preferredSizes = if (targetRange != null) {
-            sizes.filter { it.width <= MAX_PREFERRED_WIDTH }
+        val resolutionIndex = key.resolutionIndex
+        val chosenSize = if (resolutionIndex != null) {
+            sortedSizes(sizes).getOrNull(resolutionIndex) ?: return null
         } else {
-            emptyList()
+            val preferredSizes = if (targetRange != null) {
+                sizes.filter { it.width <= MAX_PREFERRED_WIDTH }
+            } else {
+                emptyList()
+            }
+            largestSize(if (preferredSizes.isNotEmpty()) preferredSizes else sizes)
         }
-        val chosenSize = largestSize(if (preferredSizes.isNotEmpty()) preferredSizes else sizes)
 
         val fallbackRange = fpsRanges
             .filter { it.size >= 2 }
@@ -182,10 +214,14 @@ internal class MjpegCameraPipeline(
     }
 
     private fun largestSize(sizes: List<Camera.Size>): Camera.Size {
-        return sizes.maxWithOrNull(
-            compareBy<Camera.Size> { it.width.toLong() * it.height }
-                .thenBy { it.width }
-        )!!
+        return sortedSizes(sizes).first()
+    }
+
+    private fun sortedSizes(sizes: List<Camera.Size>): List<Camera.Size> {
+        return sizes.sortedWith(
+            compareByDescending<Camera.Size> { it.width.toLong() * it.height }
+                .thenByDescending { it.width }
+        )
     }
 
     override fun awaitPacket(afterSequence: Long): CameraStreamPacket? {

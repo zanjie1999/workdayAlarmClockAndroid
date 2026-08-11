@@ -200,30 +200,33 @@ internal class AvcCameraPipeline(
         }
         if (usableSizes.isEmpty()) return null
 
-        val preferredSizes = usableSizes.filter { size ->
-            if (size.width > MAX_PREFERRED_WIDTH) return@filter false
-            if (targetAeRange == null) return@filter false
-            val cameraDuration = try {
-                streamMap.getOutputMinFrameDuration(ImageFormat.PRIVATE, size)
-            } catch (_: Exception) {
-                0L
+        val resolutionIndex = key.resolutionIndex
+        val chosenSize = if (resolutionIndex != null) {
+            sortedSizes(usableSizes).getOrNull(resolutionIndex) ?: return null
+        } else {
+            val preferredSizes = usableSizes.filter { size ->
+                if (size.width > MAX_PREFERRED_WIDTH) return@filter false
+                if (targetAeRange == null) return@filter false
+                val cameraDuration = try {
+                    streamMap.getOutputMinFrameDuration(ImageFormat.PRIVATE, size)
+                } catch (_: Exception) {
+                    0L
+                }
+                val cameraSupportsTarget = cameraDuration <= 0L ||
+                    cameraDuration <= 1_000_000_000L / TARGET_FPS
+                val encoderSupportsTarget = try {
+                    videoCapabilities.areSizeAndRateSupported(
+                        size.width,
+                        size.height,
+                        TARGET_FPS.toDouble()
+                    )
+                } catch (_: Exception) {
+                    false
+                }
+                cameraSupportsTarget && encoderSupportsTarget
             }
-            val cameraSupportsTarget = cameraDuration <= 0L ||
-                cameraDuration <= 1_000_000_000L / TARGET_FPS
-            val encoderSupportsTarget = try {
-                videoCapabilities.areSizeAndRateSupported(
-                    size.width,
-                    size.height,
-                    TARGET_FPS.toDouble()
-                )
-            } catch (_: Exception) {
-                false
-            }
-            cameraSupportsTarget && encoderSupportsTarget
+            largestSize(if (preferredSizes.isNotEmpty()) preferredSizes else usableSizes)
         }
-        val chosenSize = largestSize(
-            if (preferredSizes.isNotEmpty()) preferredSizes else usableSizes
-        )
 
         val cameraDuration = try {
             streamMap.getOutputMinFrameDuration(ImageFormat.PRIVATE, chosenSize)
@@ -274,10 +277,14 @@ internal class AvcCameraPipeline(
     }
 
     private fun largestSize(sizes: List<Size>): Size {
-        return sizes.maxWithOrNull(
-            compareBy<Size> { it.width.toLong() * it.height }
-                .thenBy { it.width }
-        )!!
+        return sortedSizes(sizes).first()
+    }
+
+    private fun sortedSizes(sizes: List<Size>): List<Size> {
+        return sizes.sortedWith(
+            compareByDescending<Size> { it.width.toLong() * it.height }
+                .thenByDescending { it.width }
+        )
     }
 
     private fun selectFpsRange(ranges: List<Range<Int>>, targetFps: Int): Range<Int>? {

@@ -178,14 +178,26 @@ internal class CameraHttpServer(
         val avcPrefix = "$prefix/avc/"
         if (path.startsWith(avcPrefix)) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return null
-            val index = parseOneBasedIndex(path.substring(avcPrefix.length)) ?: return null
-            return CameraStreamKey(CameraStreamFormat.AVC, index - 1)
+            val indices = parseCameraIndices(path.substring(avcPrefix.length)) ?: return null
+            return CameraStreamKey(CameraStreamFormat.AVC, indices.first, indices.second)
         }
 
         val mjpegPrefix = "$prefix/"
         if (!path.startsWith(mjpegPrefix)) return null
-        val index = parseOneBasedIndex(path.substring(mjpegPrefix.length)) ?: return null
-        return CameraStreamKey(CameraStreamFormat.MJPEG, index - 1)
+        val indices = parseCameraIndices(path.substring(mjpegPrefix.length)) ?: return null
+        return CameraStreamKey(CameraStreamFormat.MJPEG, indices.first, indices.second)
+    }
+
+    private fun parseCameraIndices(value: String): Pair<Int, Int?>? {
+        val parts = value.split('/')
+        if (parts.size !in 1..2) return null
+        val cameraIndex = parseOneBasedIndex(parts[0]) ?: return null
+        val resolutionIndex = if (parts.size == 2) {
+            parseOneBasedIndex(parts[1]) ?: return null
+        } else {
+            null
+        }
+        return Pair(cameraIndex - 1, resolutionIndex?.minus(1))
     }
 
     private fun parseOneBasedIndex(value: String): Int? {
@@ -439,6 +451,7 @@ video{display:block;width:100%;height:100%;object-fit:contain;transform-origin:c
 <form id="controls">
 <label>密码 <input id="password" type="text" autocomplete="off"></label>
 <label>摄像头 <input id="camera" type="number" min="1" value="1"></label>
+<label>分辨率档位 <input id="resolution" type="number" min="1" placeholder="自动"></label>
 <button id="playStop" type="submit">播放</button>
 <button id="rotate" type="button" aria-label="旋转画面">旋转 0°</button>
 </form>
@@ -453,6 +466,17 @@ const rotateButton=document.getElementById('rotate');
 const statusView=document.getElementById('status');
 let runId=0,abortController=null,retryTimer=null,objectUrl=null,rotation=0,playbackActive=false;
 function setStatus(value){statusView.textContent=value;}
+function showMjpegFallback(password,camera,resolution){
+  const prefix=password?encodeURIComponent(password)+'/':'';
+  const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
+  const path='/'+prefix+encodeURIComponent(camera)+resolutionPath;
+  const link=document.createElement('a');
+  link.href=path;
+  link.textContent=path;
+  link.style.color='#64b5f6';
+  statusView.textContent='不支持h264，MJPEG：';
+  statusView.appendChild(link);
+}
 function setPlaybackState(active){
   playbackActive=active;
   playStopButton.textContent=active?'停止':'播放';
@@ -487,7 +511,7 @@ function stopPlayback(showStatus){
   video.removeAttribute('src');video.load();
   if(showStatus)setStatus('已停止');
 }
-async function connect(id,password,camera){
+async function connect(id,password,camera,resolution){
   if(id!==runId)return;
   if(!window.MediaSource){setStatus('当前浏览器不支持 MediaSource');setPlaybackState(false);return;}
   const mediaSource=new MediaSource();
@@ -498,15 +522,16 @@ async function connect(id,password,camera){
     if(id!==runId)return;
     abortController=new AbortController();
     const prefix=password?encodeURIComponent(password)+'/':'';
-    const response=await fetch('/'+prefix+'avc/'+encodeURIComponent(camera),{cache:'no-store',signal:abortController.signal});
-    if(!response.ok)throw new Error('HTTP '+response.status);
+    const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
+    const response=await fetch('/'+prefix+'avc/'+encodeURIComponent(camera)+resolutionPath,{cache:'no-store',signal:abortController.signal});
+    if(!response.ok){const error=new Error('HTTP '+response.status);error.status=response.status;throw error;}
     const codec=response.headers.get('X-Video-Codec');
     if(!codec)throw new Error('没有收到视频编码信息');
     const mime='video/mp4; codecs="'+codec+'"';
     if(!MediaSource.isTypeSupported(mime))throw new Error('浏览器不支持 '+mime);
     const sourceBuffer=mediaSource.addSourceBuffer(mime);
     const reader=response.body.getReader();
-    setStatus('正在播放摄像头 '+camera+' ...');
+    setStatus('正在播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution)+' ...');
     while(id===runId){
       const item=await reader.read();
       if(item.done)throw new Error('视频连接已结束');
@@ -515,8 +540,9 @@ async function connect(id,password,camera){
     }
   }catch(error){
     if(id!==runId||error.name==='AbortError')return;
+    if(error.status===404){stopPlayback(false);showMjpegFallback(password,camera,resolution);return;}
     setStatus('连接失败，2秒后重试：'+error.message);
-    retryTimer=setTimeout(()=>connect(id,password,camera),2000);
+    retryTimer=setTimeout(()=>connect(id,password,camera,resolution),2000);
   }
 }
 form.addEventListener('submit',event=>{
@@ -524,21 +550,27 @@ form.addEventListener('submit',event=>{
   if(playbackActive){stopPlayback(true);return;}
   const password=document.getElementById('password').value.trim().replace(/^\/+|\/+$/g,'');
   const camera=parseInt(document.getElementById('camera').value,10);
+  const resolutionText=document.getElementById('resolution').value.trim();
+  const resolution=resolutionText===''?null:Number(resolutionText);
   if(!Number.isInteger(camera)||camera<1){setStatus('摄像头编号无效');return;}
+  if(resolution!==null&&(!Number.isInteger(resolution)||resolution<1)){setStatus('分辨率档位无效');return;}
   try{
     localStorage.setItem('cameraPassword',password);
     localStorage.setItem('cameraNumber',String(camera));
+    localStorage.setItem('cameraResolution',resolution===null?'':String(resolution));
   }catch(error){}
   setPlaybackState(true);
-  connect(runId,password,camera);
+  connect(runId,password,camera,resolution);
 });
 rotateButton.addEventListener('click',()=>{rotation=(rotation+90)%360;updateVideoShape();});
 video.addEventListener('loadedmetadata',updateVideoShape);
 try{
   const savedPassword=localStorage.getItem('cameraPassword');
   const savedCamera=localStorage.getItem('cameraNumber');
+  const savedResolution=localStorage.getItem('cameraResolution');
   if(savedPassword!==null)document.getElementById('password').value=savedPassword;
   if(savedCamera!==null&&/^[1-9][0-9]*$/.test(savedCamera))document.getElementById('camera').value=savedCamera;
+  if(savedResolution!==null&&/^[1-9][0-9]*$/.test(savedResolution))document.getElementById('resolution').value=savedResolution;
 }catch(error){}
 updateVideoShape();
 </script>
