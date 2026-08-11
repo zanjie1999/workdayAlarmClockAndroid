@@ -4,11 +4,12 @@ import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.content.Context
 import android.graphics.ImageFormat
-import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.params.OutputConfiguration
+import android.hardware.camera2.params.SessionConfiguration
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -23,6 +24,7 @@ import android.view.Surface
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.floor
@@ -41,18 +43,47 @@ internal class AvcCameraPipeline(
         private const val START_TIMEOUT_SECONDS = 10L
         private val START_CODE = byteArrayOf(0, 0, 0, 1)
 
+        private data class CameraTarget(
+            val logicalCameraId: String,
+            val physicalCameraId: String?
+        )
+
         fun cameraCount(context: Context): Int {
             return try {
                 val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                manager.cameraIdList.size
+                enumerateTargets(manager).size
             } catch (_: Exception) {
                 0
+            }
+        }
+
+        private fun enumerateTargets(manager: CameraManager): List<CameraTarget> {
+            return manager.cameraIdList.flatMap { logicalId ->
+                val targets = mutableListOf(CameraTarget(logicalId, null))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    try {
+                        val characteristics = manager.getCameraCharacteristics(logicalId)
+                        val physicalIds = characteristics
+                            .getPhysicalCameraIds()
+                            .toList()
+                            .sorted()
+                        physicalIds.forEach { physicalId ->
+                            if (physicalId != logicalId) {
+                                targets.add(CameraTarget(logicalId, physicalId))
+                            }
+                        }
+                    } catch (_: Exception) {
+                        // Keep the logical camera when physical metadata is unavailable.
+                    }
+                }
+                targets
             }
         }
     }
 
     private data class Selection(
         val cameraId: String,
+        val physicalCameraId: String?,
         val size: Size,
         val fps: Int,
         val aeRange: Range<Int>?
@@ -90,7 +121,7 @@ internal class AvcCameraPipeline(
             cameraHandler = Handler(cameraThread!!.looper)
 
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            var encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             codec = encoder
             val selection = selectConfiguration(cameraManager, encoder)
                 ?: throw IllegalStateException("没有可用的H.264输出规格")
@@ -98,39 +129,14 @@ internal class AvcCameraPipeline(
             selectedHeight = selection.size.height
             selectedFps = selection.fps
 
-            try {
-                encoder.configure(
-                    createEncoderFormat(includeBaselineProfile = true),
-                    null,
-                    null,
-                    MediaCodec.CONFIGURE_FLAG_ENCODE
-                )
-                codecSurface = encoder.createInputSurface()
-                encoder.start()
-            } catch (profileError: Exception) {
-                // Some old codecs advertise Baseline but reject it during configure/start.
-                // Retry with the same surface/size settings and let the codec choose its profile.
-                log("H.264基线配置失败，尝试兼容模式：${profileError.message}")
-                try {
-                    codecSurface?.release()
-                } catch (_: Exception) {
-                }
-                codecSurface = null
-                try {
-                    encoder.release()
-                } catch (_: Exception) {
-                }
-                encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-                codec = encoder
-                encoder.configure(
-                    createEncoderFormat(includeBaselineProfile = false),
-                    null,
-                    null,
-                    MediaCodec.CONFIGURE_FLAG_ENCODE
-                )
-                codecSurface = encoder.createInputSurface()
-                encoder.start()
-            }
+            encoder.configure(
+                createEncoderFormat(),
+                null,
+                null,
+                MediaCodec.CONFIGURE_FLAG_ENCODE
+            )
+            codecSurface = encoder.createInputSurface()
+            encoder.start()
             startDrainThread(encoder)
 
             cameraManager.openCamera(
@@ -159,9 +165,10 @@ internal class AvcCameraPipeline(
         cameraManager: CameraManager,
         encoder: MediaCodec
     ): Selection? {
-        val cameraIds = cameraManager.cameraIdList
-        val cameraId = cameraIds.getOrNull(key.cameraIndex) ?: return null
-        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+        val target = enumerateTargets(cameraManager).getOrNull(key.cameraIndex) ?: return null
+        val characteristics = cameraManager.getCameraCharacteristics(
+            target.physicalCameraId ?: target.logicalCameraId
+        )
         val streamMap = characteristics.get(
             CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP
         ) ?: return null
@@ -174,10 +181,6 @@ internal class AvcCameraPipeline(
         val codecCapabilities = encoder.codecInfo.getCapabilitiesForType(
             MediaFormat.MIMETYPE_VIDEO_AVC
         )
-        if (codecCapabilities.profileLevels.none {
-                it.profile == MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline
-            }
-        ) return null
         if (!codecCapabilities.colorFormats.contains(
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
             )
@@ -245,10 +248,16 @@ internal class AvcCameraPipeline(
         val outputFps = min(TARGET_FPS, min(cameraMaxFps, encoderMaxFps)).coerceAtLeast(1)
         val aeRange = selectFpsRange(aeRanges, outputFps)
         val actualFps = min(outputFps, aeRange?.upper ?: outputFps).coerceAtLeast(1)
-        return Selection(cameraId, chosenSize, actualFps, aeRange)
+        return Selection(
+            target.logicalCameraId,
+            target.physicalCameraId,
+            chosenSize,
+            actualFps,
+            aeRange
+        )
     }
 
-    private fun createEncoderFormat(includeBaselineProfile: Boolean): MediaFormat {
+    private fun createEncoderFormat(): MediaFormat {
         return MediaFormat.createVideoFormat(
             MediaFormat.MIMETYPE_VIDEO_AVC,
             selectedWidth,
@@ -261,12 +270,6 @@ internal class AvcCameraPipeline(
             setInteger(MediaFormat.KEY_BIT_RATE, max(128_000, selectedWidth * selectedHeight * 2))
             setInteger(MediaFormat.KEY_FRAME_RATE, selectedFps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-            if (includeBaselineProfile) {
-                setInteger(
-                    MediaFormat.KEY_PROFILE,
-                    MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline
-                )
-            }
         }
     }
 
@@ -308,12 +311,8 @@ internal class AvcCameraPipeline(
                     return
                 }
                 try {
-                    openedCamera.createCaptureSession(
-                        listOf(surface),
-                        captureSessionCallback(openedCamera, surface, selection),
-                        cameraHandler
-                    )
-                } catch (e: CameraAccessException) {
+                    createCaptureSession(openedCamera, surface, selection)
+                } catch (e: Exception) {
                     log("创建H.264采集会话失败：${e.message}")
                     resolveStart(false)
                 }
@@ -333,6 +332,36 @@ internal class AvcCameraPipeline(
                 resolveStart(false)
                 closeStreamAfterRuntimeFailure()
             }
+        }
+    }
+
+    @Suppress("NewApi")
+    private fun createCaptureSession(
+        openedCamera: CameraDevice,
+        surface: Surface,
+        selection: Selection
+    ) {
+        val callback = captureSessionCallback(openedCamera, surface, selection)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+            selection.physicalCameraId != null
+        ) {
+            val output = OutputConfiguration(surface).apply {
+                setPhysicalCameraId(selection.physicalCameraId)
+            }
+            val executor = Executor { command ->
+                val handler = cameraHandler
+                if (handler != null) handler.post(command) else command.run()
+            }
+            openedCamera.createCaptureSession(
+                SessionConfiguration(
+                    SessionConfiguration.SESSION_REGULAR,
+                    listOf(output),
+                    executor,
+                    callback
+                )
+            )
+        } else {
+            openedCamera.createCaptureSession(listOf(surface), callback, cameraHandler)
         }
     }
 
