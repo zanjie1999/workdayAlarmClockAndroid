@@ -1,9 +1,12 @@
 package com.zyyme.workdayalarmclock
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.*
 import android.app.admin.DevicePolicyManager
 import android.content.*
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -108,6 +111,7 @@ class MeService : Service() {
     private var notificationManager: NotificationManager? = null
     private var wakePendingIntent: PendingIntent? = null
     private var udpServerSocket: DatagramSocket? = null
+    private var cameraHttpServer: CameraHttpServer? = null
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
     private var autoBackClockRunnable: Runnable? = null
     private val playbackHandler = Handler(Looper.getMainLooper())
@@ -248,12 +252,10 @@ class MeService : Service() {
             notificationBuilder?.setStyle(mediaStyle)
         }
 
-        try {
-            startForeground(NOTIFICATION_ID, notificationBuilder?.build())
-        } catch (e: Exception) {
-            print2LogView("切换前台服务失败 $e")
-            e.printStackTrace()
-        }
+        updateForegroundServiceType(
+            MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) && hasCameraPermission()
+        )
+        syncCameraServerSetting()
 
         // 如果不需要启动Go服务，这个服务将只有播放音频url的功能
         if (!MainActivity.startService) {
@@ -411,7 +413,57 @@ class MeService : Service() {
         }
     }
 
+    fun syncCameraServerSetting() {
+        val configured = MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
+        val enabled = configured && hasCameraPermission()
+        if (configured && !enabled) {
+            MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_SERVER, false)
+            print2LogView("摄像头权限未授权，摄像头服务未启动")
+        }
+
+        updateForegroundServiceType(enabled)
+        if (!enabled) {
+            cameraHttpServer?.stop()
+            cameraHttpServer = null
+            return
+        }
+
+        val server = cameraHttpServer ?: CameraHttpServer(this) { message ->
+            print2LogView(message)
+        }.also { cameraHttpServer = it }
+        server.start(MeSettings.getCameraPassword(this))
+    }
+
+    fun updateCameraPassword() {
+        cameraHttpServer?.updatePassword(MeSettings.getCameraPassword(this))
+    }
+
+    private fun hasCameraPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun updateForegroundServiceType(cameraEnabled: Boolean) {
+        val notification = notificationBuilder?.build() ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                if (cameraEnabled) {
+                    serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                }
+                startForeground(NOTIFICATION_ID, notification, serviceType)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            print2LogView("切换前台服务失败 $e")
+            e.printStackTrace()
+        }
+    }
+
     override fun onDestroy() {
+        cameraHttpServer?.stop()
+        cameraHttpServer = null
         cancelAutoBackToClock()
         playbackGeneration++
         playbackHandler.removeCallbacksAndMessages(null)

@@ -42,7 +42,11 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_DEVICE_ADMIN = 5
         private const val OPEN_ACCESSIBILITY_SETTINGS = 6
         private const val OPEN_NOTIFICATION_FORWARD_URL = 7
+        private const val TOGGLE_CAMERA_SERVER = 8
+        private const val EDIT_CAMERA_PASSWORD = 9
+        private const val OPEN_DEVELOPER_OPTIONS = 10
         private const val MENU_SETTING_START = 100
+        private const val REQUEST_CAMERA_PERMISSION = 102
         private const val LOG_REFRESH_DELAY_MILLIS = 250L
     }
 
@@ -270,6 +274,8 @@ class MainActivity : AppCompatActivity() {
             popupMenu.menu.findItem(MENU_SETTING_START + index)?.isChecked =
                 item.key in enabledSettings
         }
+        popupMenu.menu.findItem(TOGGLE_CAMERA_SERVER)?.isChecked =
+            MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
         popupMenu.show()
     }
 
@@ -289,6 +295,11 @@ class MainActivity : AppCompatActivity() {
         popupMenu.menu.add(Menu.NONE, OPEN_DEVICE_ADMIN, MENU_SETTING_START + settingsMenuItems.size, "授权熄屏权限")
         popupMenu.menu.add(Menu.NONE, OPEN_ACCESSIBILITY_SETTINGS, MENU_SETTING_START + settingsMenuItems.size + 1, "辅助功能设置")
         popupMenu.menu.add(Menu.NONE, OPEN_NOTIFICATION_FORWARD_URL, MENU_SETTING_START + settingsMenuItems.size + 2, "通知转发URL")
+        popupMenu.menu.add(Menu.NONE, TOGGLE_CAMERA_SERVER, MENU_SETTING_START + settingsMenuItems.size + 3, "IP摄像头").apply {
+            isCheckable = true
+        }
+        popupMenu.menu.add(Menu.NONE, EDIT_CAMERA_PASSWORD, MENU_SETTING_START + settingsMenuItems.size + 4, "摄像头密码")
+        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 5, "开发者选项")
 
         popupMenu.setOnMenuItemClickListener { menuItem ->
             if (menuItem.itemId == MENU_EXIT) {
@@ -311,6 +322,15 @@ class MainActivity : AppCompatActivity() {
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_NOTIFICATION_FORWARD_URL) {
                 showNotificationForwardUrlDialog()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == TOGGLE_CAMERA_SERVER) {
+                toggleCameraServer(menuItem.isChecked)
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == EDIT_CAMERA_PASSWORD) {
+                showCameraPasswordDialog()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_DEVELOPER_OPTIONS) {
+                openDeveloperOptions()
                 return@setOnMenuItemClickListener true
             }
 
@@ -364,6 +384,94 @@ class MainActivity : AppCompatActivity() {
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         Toast.makeText(this, "请开启工作咩闹钟辅助功能", Toast.LENGTH_LONG).show()
+    }
+
+    private fun toggleCameraServer(currentlyChecked: Boolean) {
+        if (currentlyChecked) {
+            MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_SERVER, false)
+            settingsPopupMenu?.menu?.findItem(TOGGLE_CAMERA_SERVER)?.isChecked = false
+            MeService.me?.syncCameraServerSetting()
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                REQUEST_CAMERA_PERMISSION
+            )
+            return
+        }
+        enableCameraServer()
+    }
+
+    private fun enableCameraServer() {
+        MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_SERVER, true)
+        settingsPopupMenu?.menu?.findItem(TOGGLE_CAMERA_SERVER)?.isChecked = true
+        MeService.me?.syncCameraServerSetting()
+    }
+
+    private fun showCameraPasswordDialog() {
+        val input = EditText(this).apply {
+            hint = "这样打开ip:8880/密码/1"
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_VARIATION_URI or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setSingleLine(true)
+            setText(MeSettings.getCameraPassword(this@MainActivity))
+            setSelection(text.length)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("摄像头密码")
+            .setView(input)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("保存", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val password = input.text.toString().trim().trim('/')
+                if (password.any { it == '/' || it == '?' || it == '#' }) {
+                    input.error = "密码不能包含 /、?、#"
+                    return@setOnClickListener
+                }
+                MeSettings.setCameraPassword(this, password)
+                MeService.me?.updateCameraPassword()
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun openDeveloperOptions() {
+        try {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            } catch (_: Exception) {
+                Toast.makeText(this, "打开开发者选项失败", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_CAMERA_PERMISSION) return
+
+        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            enableCameraServer()
+        } else {
+            MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_SERVER, false)
+            settingsPopupMenu?.menu?.findItem(TOGGLE_CAMERA_SERVER)?.isChecked = false
+            Toast.makeText(this, "摄像头权限未授权", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun showNotificationForwardUrlDialog() {
