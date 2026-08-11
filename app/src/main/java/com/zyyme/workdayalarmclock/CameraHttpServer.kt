@@ -25,6 +25,7 @@ internal class CameraHttpServer(
     companion object {
         const val PORT = 8880
         private val HTTP_CHARSET: Charset = Charset.forName("US-ASCII")
+        private val HTML_CHARSET: Charset = Charset.forName("UTF-8")
     }
 
     private val appContext = context.applicationContext
@@ -109,7 +110,12 @@ internal class CameraHttpServer(
     private fun handleClient(socket: Socket) {
         var pipeline: CameraStreamPipeline? = null
         try {
-            val route = readRoute(socket)
+            val path = readRequestPath(socket)
+            if (path == "/") {
+                writePlayerPage(socket)
+                return
+            }
+            val route = path?.let { parseRoute(it) }
             if (route == null || !cameraExists(route)) {
                 writeEmptyResponse(socket, 404, "Not Found")
                 return
@@ -123,7 +129,14 @@ internal class CameraHttpServer(
             socket.soTimeout = 0
             when (route.format) {
                 CameraStreamFormat.MJPEG -> streamMjpeg(socket, pipeline)
-                CameraStreamFormat.AVC -> streamAvc(socket, pipeline)
+                CameraStreamFormat.AVC -> {
+                    val config = pipeline.awaitAvcConfig(10_000L)
+                    if (config == null) {
+                        writeEmptyResponse(socket, 503, "Service Unavailable")
+                    } else {
+                        streamAvc(socket, pipeline, config)
+                    }
+                }
             }
         } catch (_: Exception) {
             // Client disconnects are expected while streams switch or viewers close.
@@ -136,7 +149,7 @@ internal class CameraHttpServer(
         }
     }
 
-    private fun readRoute(socket: Socket): CameraStreamKey? {
+    private fun readRequestPath(socket: Socket): String? {
         val reader = BufferedReader(InputStreamReader(socket.getInputStream(), HTTP_CHARSET))
         val requestLine = reader.readLine() ?: return null
         val parts = requestLine.split(' ')
@@ -156,7 +169,10 @@ internal class CameraHttpServer(
             return null
         }
         if (uri.query != null || uri.fragment != null) return null
-        val path = uri.path ?: return null
+        return uri.path
+    }
+
+    private fun parseRoute(path: String): CameraStreamKey? {
         val prefix = if (password.isEmpty()) "" else "/$password"
 
         val avcPrefix = "$prefix/avc/"
@@ -300,16 +316,23 @@ internal class CameraHttpServer(
         }
     }
 
-    private fun streamAvc(socket: Socket, pipeline: CameraStreamPipeline) {
+    private fun streamAvc(
+        socket: Socket,
+        pipeline: CameraStreamPipeline,
+        config: AvcStreamConfig
+    ) {
+        val muxer = FragmentedMp4Muxer(config)
         val output = socket.getOutputStream()
         output.write(
             ("HTTP/1.0 200 OK\r\n" +
                 "Connection: close\r\n" +
                 "Cache-Control: no-cache, no-store\r\n" +
                 "Pragma: no-cache\r\n" +
-                "Content-Type: video/mp4\r\n\r\n")
+                "Content-Type: video/mp4\r\n" +
+                "X-Video-Codec: ${config.codecString}\r\n\r\n")
                 .toByteArray(HTTP_CHARSET)
         )
+        output.write(muxer.initializationSegment())
         output.flush()
 
         pipeline.requestKeyFrame()
@@ -320,13 +343,25 @@ internal class CameraHttpServer(
             sequence = packet.sequence
             if (!started) {
                 if (!packet.keyFrame) continue
-                val config = pipeline.codecConfig()
-                if (config.isNotEmpty()) output.write(config)
                 started = true
             }
-            output.write(packet.data)
+            val fragment = muxer.mediaFragment(packet) ?: continue
+            output.write(fragment)
             output.flush()
         }
+    }
+
+    private fun writePlayerPage(socket: Socket) {
+        val body = PLAYER_PAGE.toByteArray(HTML_CHARSET)
+        val header = "HTTP/1.0 200 OK\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-cache, no-store\r\n" +
+            "Content-Type: text/html; charset=utf-8\r\n" +
+            "Content-Length: ${body.size}\r\n\r\n"
+        val output = socket.getOutputStream()
+        output.write(header.toByteArray(HTTP_CHARSET))
+        output.write(body)
+        output.flush()
     }
 
     private fun writeEmptyResponse(socket: Socket, status: Int, reason: String) {
@@ -381,4 +416,100 @@ internal class CameraHttpServer(
         }
         wifiLock = null
     }
+
+    private val PLAYER_PAGE = """
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>摄像头</title>
+<style>
+body{font-family:sans-serif;max-width:960px;margin:24px auto;padding:0 16px;background:#111;color:#eee}
+label{display:inline-block;margin:4px 12px 4px 0}input,button{font-size:16px;padding:6px}input{width:180px}
+button{cursor:pointer;margin:4px}video{display:block;width:100%;max-height:80vh;background:#000;margin-top:16px}
+#status{color:#aaa;margin-top:8px;min-height:1.4em}
+</style>
+</head>
+<body>
+<form id="controls">
+<label>密码 <input id="password" type="text" autocomplete="off"></label>
+<label>摄像头 <input id="camera" type="number" min="1" value="1"></label>
+<button type="submit">播放</button>
+<button id="stop" type="button">停止</button>
+</form>
+<video id="video" controls autoplay muted playsinline></video>
+<div id="status"></div>
+<script>
+const video=document.getElementById('video');
+const form=document.getElementById('controls');
+const stopButton=document.getElementById('stop');
+const statusView=document.getElementById('status');
+let runId=0,abortController=null,retryTimer=null,objectUrl=null;
+function setStatus(value){statusView.textContent=value;}
+function waitEvent(target,event){return new Promise(resolve=>target.addEventListener(event,resolve,{once:true}));}
+async function appendChunk(sourceBuffer,data){
+  if(!data||!data.byteLength)return;
+  while(sourceBuffer.updating)await waitEvent(sourceBuffer,'updateend');
+  sourceBuffer.appendBuffer(data);
+  await waitEvent(sourceBuffer,'updateend');
+  if(video.buffered.length&&video.currentTime>10&&!sourceBuffer.updating){
+    const removeEnd=video.currentTime-10;
+    if(removeEnd>video.buffered.start(0)){sourceBuffer.remove(0,removeEnd);await waitEvent(sourceBuffer,'updateend');}
+  }
+}
+function stopPlayback(showStatus){
+  runId++;
+  if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}
+  if(abortController){abortController.abort();abortController=null;}
+  if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}
+  video.removeAttribute('src');video.load();
+  if(showStatus)setStatus('已停止');
+}
+async function connect(id,password,camera){
+  if(id!==runId)return;
+  if(!window.MediaSource){setStatus('当前浏览器不支持 MediaSource');return;}
+  const mediaSource=new MediaSource();
+  if(objectUrl)URL.revokeObjectURL(objectUrl);
+  objectUrl=URL.createObjectURL(mediaSource);video.src=objectUrl;
+  try{
+    await waitEvent(mediaSource,'sourceopen');
+    if(id!==runId)return;
+    abortController=new AbortController();
+    const prefix=password?encodeURIComponent(password)+'/':'';
+    const response=await fetch('/'+prefix+'avc/'+encodeURIComponent(camera),{cache:'no-store',signal:abortController.signal});
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    const codec=response.headers.get('X-Video-Codec');
+    if(!codec)throw new Error('没有收到视频编码信息');
+    const mime='video/mp4; codecs="'+codec+'"';
+    if(!MediaSource.isTypeSupported(mime))throw new Error('浏览器不支持 '+mime);
+    const sourceBuffer=mediaSource.addSourceBuffer(mime);
+    const reader=response.body.getReader();
+    setStatus('正在连接摄像头 '+camera+' ...');
+    while(id===runId){
+      const item=await reader.read();
+      if(item.done)throw new Error('视频连接已结束');
+      await appendChunk(sourceBuffer,item.value);
+      if(video.paused)video.play().catch(()=>{});
+    }
+  }catch(error){
+    if(id!==runId||error.name==='AbortError')return;
+    setStatus('连接失败，2秒后重试：'+error.message);
+    retryTimer=setTimeout(()=>connect(id,password,camera),2000);
+  }
+}
+form.addEventListener('submit',event=>{
+  event.preventDefault();
+  stopPlayback(false);
+  const id=runId;
+  const password=document.getElementById('password').value.trim().replace(/^\/+|\/+$/g,'');
+  const camera=parseInt(document.getElementById('camera').value,10);
+  if(!Number.isInteger(camera)||camera<1){setStatus('摄像头编号无效');return;}
+  connect(id,password,camera);
+});
+stopButton.addEventListener('click',()=>stopPlayback(true));
+</script>
+</body>
+</html>
+"""
 }

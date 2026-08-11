@@ -15,7 +15,17 @@ internal data class CameraStreamKey(
 internal data class CameraStreamPacket(
     val sequence: Long,
     val data: ByteArray,
-    val keyFrame: Boolean = true
+    val keyFrame: Boolean = true,
+    val presentationTimeUs: Long = 0L
+)
+
+internal data class AvcStreamConfig(
+    val sps: ByteArray,
+    val pps: ByteArray,
+    val width: Int,
+    val height: Int,
+    val frameRate: Int,
+    val codecString: String
 )
 
 internal interface CameraStreamPipeline {
@@ -25,7 +35,7 @@ internal interface CameraStreamPipeline {
     fun start(): Boolean
     fun stop()
     fun awaitPacket(afterSequence: Long): CameraStreamPacket?
-    fun codecConfig(): ByteArray = ByteArray(0)
+    fun awaitAvcConfig(timeoutMillis: Long): AvcStreamConfig? = null
     fun requestKeyFrame() = Unit
 }
 
@@ -38,12 +48,18 @@ internal class CameraFrameHub(
     private var sequence = 0L
     private var closed = false
 
-    fun publish(data: ByteArray, keyFrame: Boolean = true) {
+    fun publish(
+        data: ByteArray,
+        keyFrame: Boolean = true,
+        presentationTimeUs: Long = 0L
+    ) {
         synchronized(monitor) {
             if (closed) return
             sequence++
             if (keepLatestOnly) packets.clear()
-            packets.addLast(CameraStreamPacket(sequence, data, keyFrame))
+            packets.addLast(
+                CameraStreamPacket(sequence, data, keyFrame, presentationTimeUs)
+            )
             while (packets.size > maxPackets) packets.removeFirst()
             monitor.notifyAll()
         }

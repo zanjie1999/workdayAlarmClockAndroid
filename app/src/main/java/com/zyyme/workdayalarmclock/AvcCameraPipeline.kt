@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.content.Context
+import android.graphics.ImageFormat
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
@@ -15,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Range
 import android.util.Size
 import android.view.Surface
@@ -62,9 +64,9 @@ internal class AvcCameraPipeline(
     private val startResolved = AtomicBoolean(false)
     private val startSucceeded = AtomicBoolean(false)
     private val startLatch = CountDownLatch(1)
-    private val codecConfigLock = Any()
+    private val codecConfigMonitor = java.lang.Object()
 
-    private var codecConfig = ByteArray(0)
+    private var avcStreamConfig: AvcStreamConfig? = null
     private var cameraThread: HandlerThread? = null
     private var cameraHandler: Handler? = null
     private var cameraDevice: CameraDevice? = null
@@ -88,7 +90,7 @@ internal class AvcCameraPipeline(
             cameraHandler = Handler(cameraThread!!.looper)
 
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            var encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             codec = encoder
             val selection = selectConfiguration(cameraManager, encoder)
                 ?: throw IllegalStateException("没有可用的H.264输出规格")
@@ -96,22 +98,39 @@ internal class AvcCameraPipeline(
             selectedHeight = selection.size.height
             selectedFps = selection.fps
 
-            val mediaFormat = MediaFormat.createVideoFormat(
-                MediaFormat.MIMETYPE_VIDEO_AVC,
-                selectedWidth,
-                selectedHeight
-            ).apply {
-                setInteger(
-                    MediaFormat.KEY_COLOR_FORMAT,
-                    MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+            try {
+                encoder.configure(
+                    createEncoderFormat(includeBaselineProfile = true),
+                    null,
+                    null,
+                    MediaCodec.CONFIGURE_FLAG_ENCODE
                 )
-                setInteger(MediaFormat.KEY_BIT_RATE, max(128_000, selectedWidth * selectedHeight * 2))
-                setInteger(MediaFormat.KEY_FRAME_RATE, selectedFps)
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+                codecSurface = encoder.createInputSurface()
+                encoder.start()
+            } catch (profileError: Exception) {
+                // Some old codecs advertise Baseline but reject it during configure/start.
+                // Retry with the same surface/size settings and let the codec choose its profile.
+                log("H.264基线配置失败，尝试兼容模式：${profileError.message}")
+                try {
+                    codecSurface?.release()
+                } catch (_: Exception) {
+                }
+                codecSurface = null
+                try {
+                    encoder.release()
+                } catch (_: Exception) {
+                }
+                encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                codec = encoder
+                encoder.configure(
+                    createEncoderFormat(includeBaselineProfile = false),
+                    null,
+                    null,
+                    MediaCodec.CONFIGURE_FLAG_ENCODE
+                )
+                codecSurface = encoder.createInputSurface()
+                encoder.start()
             }
-            encoder.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            codecSurface = encoder.createInputSurface()
-            encoder.start()
             startDrainThread(encoder)
 
             cameraManager.openCamera(
@@ -146,12 +165,19 @@ internal class AvcCameraPipeline(
         val streamMap = characteristics.get(
             CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP
         ) ?: return null
-        val sizes = streamMap.getOutputSizes(MediaCodec::class.java)?.toList().orEmpty()
+        // ImageFormat.PRIVATE is the camera output format used by an encoder input Surface.
+        // The integer overload is available on API 21, unlike getOutputSizes(Class), which
+        // was added later and would break Android 5.0/5.1 devices at runtime.
+        val sizes = streamMap.getOutputSizes(ImageFormat.PRIVATE)?.toList().orEmpty()
         if (sizes.isEmpty()) return null
 
         val codecCapabilities = encoder.codecInfo.getCapabilitiesForType(
             MediaFormat.MIMETYPE_VIDEO_AVC
         )
+        if (codecCapabilities.profileLevels.none {
+                it.profile == MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline
+            }
+        ) return null
         if (!codecCapabilities.colorFormats.contains(
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
             )
@@ -175,7 +201,7 @@ internal class AvcCameraPipeline(
             if (size.width > MAX_PREFERRED_WIDTH) return@filter false
             if (targetAeRange == null) return@filter false
             val cameraDuration = try {
-                streamMap.getOutputMinFrameDuration(MediaCodec::class.java, size)
+                streamMap.getOutputMinFrameDuration(ImageFormat.PRIVATE, size)
             } catch (_: Exception) {
                 0L
             }
@@ -197,7 +223,7 @@ internal class AvcCameraPipeline(
         )
 
         val cameraDuration = try {
-            streamMap.getOutputMinFrameDuration(MediaCodec::class.java, chosenSize)
+            streamMap.getOutputMinFrameDuration(ImageFormat.PRIVATE, chosenSize)
         } catch (_: Exception) {
             0L
         }
@@ -220,6 +246,28 @@ internal class AvcCameraPipeline(
         val aeRange = selectFpsRange(aeRanges, outputFps)
         val actualFps = min(outputFps, aeRange?.upper ?: outputFps).coerceAtLeast(1)
         return Selection(cameraId, chosenSize, actualFps, aeRange)
+    }
+
+    private fun createEncoderFormat(includeBaselineProfile: Boolean): MediaFormat {
+        return MediaFormat.createVideoFormat(
+            MediaFormat.MIMETYPE_VIDEO_AVC,
+            selectedWidth,
+            selectedHeight
+        ).apply {
+            setInteger(
+                MediaFormat.KEY_COLOR_FORMAT,
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+            )
+            setInteger(MediaFormat.KEY_BIT_RATE, max(128_000, selectedWidth * selectedHeight * 2))
+            setInteger(MediaFormat.KEY_FRAME_RATE, selectedFps)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+            if (includeBaselineProfile) {
+                setInteger(
+                    MediaFormat.KEY_PROFILE,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline
+                )
+            }
+        }
     }
 
     private fun largestSize(sizes: List<Size>): Size {
@@ -362,14 +410,16 @@ internal class AvcCameraPipeline(
                                 val isConfig = bufferInfo.flags and
                                     MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
                                 if (isConfig) {
-                                    synchronized(codecConfigLock) {
-                                        codecConfig = normalized
-                                    }
+                                    updateCodecConfig(normalized)
                                 } else {
                                     val keyFrame = bufferInfo.flags and
                                         MediaCodec.BUFFER_FLAG_KEY_FRAME != 0 ||
                                         containsIdr(normalized)
-                                    frameHub.publish(normalized, keyFrame)
+                                    frameHub.publish(
+                                        normalized,
+                                        keyFrame,
+                                        bufferInfo.presentationTimeUs
+                                    )
                                 }
                             }
                             encoder.releaseOutputBuffer(outputIndex, false)
@@ -392,8 +442,19 @@ internal class AvcCameraPipeline(
             duplicate.get(bytes)
             output.write(toAnnexB(bytes))
         }
-        synchronized(codecConfigLock) {
-            codecConfig = output.toByteArray()
+        updateCodecConfig(output.toByteArray())
+    }
+
+    private fun updateCodecConfig(annexBConfig: ByteArray) {
+        val parsed = FragmentedMp4Muxer.parseAvcConfig(
+            annexBConfig,
+            selectedWidth,
+            selectedHeight,
+            selectedFps
+        ) ?: return
+        synchronized(codecConfigMonitor) {
+            avcStreamConfig = parsed
+            codecConfigMonitor.notifyAll()
         }
     }
 
@@ -455,8 +516,20 @@ internal class AvcCameraPipeline(
         return frameHub.awaitNext(afterSequence)
     }
 
-    override fun codecConfig(): ByteArray {
-        return synchronized(codecConfigLock) { codecConfig.copyOf() }
+    override fun awaitAvcConfig(timeoutMillis: Long): AvcStreamConfig? {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        synchronized(codecConfigMonitor) {
+            while (running.get() && avcStreamConfig == null) {
+                val remaining = deadline - SystemClock.elapsedRealtime()
+                if (remaining <= 0L) break
+                try {
+                    codecConfigMonitor.wait(remaining)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+            return avcStreamConfig
+        }
     }
 
     override fun requestKeyFrame() {
@@ -471,6 +544,9 @@ internal class AvcCameraPipeline(
     private fun closeStreamAfterRuntimeFailure() {
         running.set(false)
         frameHub.close()
+        synchronized(codecConfigMonitor) {
+            codecConfigMonitor.notifyAll()
+        }
     }
 
     override fun stop() {
@@ -478,6 +554,9 @@ internal class AvcCameraPipeline(
         running.set(false)
         frameHub.close()
         resolveStart(false)
+        synchronized(codecConfigMonitor) {
+            codecConfigMonitor.notifyAll()
+        }
 
         try {
             captureSession?.stopRepeating()
