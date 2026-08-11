@@ -1422,39 +1422,32 @@ class MeService : Service() {
         shellThread = Thread(Runnable {
             try {
                 // 因为经常只更新android app，传个版本号进去
-                val versionName = packageManager.getPackageInfo(packageName, 0).versionName ?: ""
-                val binaryPath = applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so"
-
-                // 直接启动主程序 尝试解决 Bad system call
-                val mainProcess = ProcessBuilder(binaryPath, "app", versionName)
-                    .directory(filesDir)
+                val versionName = packageManager.getPackageInfo(packageName, 0).versionName
+                // 输入start可以启动 exit可以退出
+                val workdayAlarmClock = applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app "
+                val command = "alias exit='echo EXIT'\n" +
+                        "alias run='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + workdayAlarmClock + versionName + "||" + workdayAlarmClock + "'\n" +
+                        "run"
+                shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)
                     .start()
-                shellProcess = mainProcess
-                writer = PrintWriter(mainProcess.outputStream)
-                readProcessOutput(mainProcess)
 
-                val exitCode = mainProcess.waitFor()
-                writer?.close()
-                writer = null
-                print2LogView("主程序已退出 exitCode=$exitCode")
+                val reader = BufferedReader(InputStreamReader(shellProcess!!.inputStream))
+                writer = PrintWriter(shellProcess!!.outputStream)
+                send2Shell(command)
 
-                if (!Thread.currentThread().isInterrupted) {
-                    // 主程序退出后启动shell
-                    val command = "alias exit='echo EXIT'\n" +
-                            "alias run='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + binaryPath + " app " + versionName + "'"
-                    val interactiveShell = ProcessBuilder("sh")
-                        .directory(filesDir)
-                        .redirectErrorStream(true)
-                        .start()
-                    shellProcess = interactiveShell
-                    writer = PrintWriter(interactiveShell.outputStream)
-                    send2Shell(command)
-                    readProcessOutput(interactiveShell)
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    try {
+                        checkAction(line, true)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        print2LogView("Shell解析出错 $e")
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                print2LogView("进程运行出错 $e")
+                print2LogView("Shell运行出错 $e")
             }
         })
         shellThread!!.start()
