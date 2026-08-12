@@ -77,8 +77,8 @@ class MeService : Service() {
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
         // getprop ro.product.model
-        //                                 绿色陪伴音箱，叮咚play，小魔镜, 小熊尼奥照照乐和Pro
-        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO")
+        //                                 绿色陪伴音箱，叮咚play，小魔镜, 小熊尼奥照照乐和Pro，Sayinfo音箱
+        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO", "rockchiprk3326_m2g")
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
