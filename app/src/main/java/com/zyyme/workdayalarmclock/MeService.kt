@@ -92,6 +92,7 @@ class MeService : Service() {
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
     var wakeLockPlay: PowerManager.WakeLock? = null
+    private var screenWakeLock: PowerManager.WakeLock? = null
     var wifiLock: WifiManager.WifiLock? = null
     var shellProcess: Process? = null
     var loadProgress: Int = 0
@@ -475,6 +476,10 @@ class MeService : Service() {
         udpServerSocket?.close()
         wakeLock?.release()
         wakeLockPlay?.release()
+        if (screenWakeLock?.isHeld == true) {
+            screenWakeLock?.release()
+        }
+        screenWakeLock = null
         wifiLock?.release()
         unregisterReceiver(batteryReceiver)
         stopForeground(true)
@@ -486,6 +491,26 @@ class MeService : Service() {
         super.onDestroy()
         // 不知道为什么服务进程不退出 给他退出强制回收掉
         System.exit(0)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun wakeScreen() {
+        try {
+            if (screenWakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                screenWakeLock = powerManager.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    "workDayAlarmClock:ScreenWake"
+                ).apply {
+                    setReferenceCounted(false)
+                }
+            }
+            screenWakeLock?.acquire(5000L)
+            print2LogView("已请求唤醒屏幕")
+        } catch (e: Exception) {
+            print2LogView("唤醒屏幕失败: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     /**
@@ -760,6 +785,7 @@ class MeService : Service() {
                             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                         intent.putExtra("clockMode", true)
                         intent.putExtra("keepOn", true)
+                        wakeScreen()
                         startActivity(intent)
                         print2LogView("已亮屏")
                     }
@@ -774,6 +800,7 @@ class MeService : Service() {
                     val intent = Intent(this, ClockActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     intent.putExtra("clockMode", true)
+                    wakeScreen()
                     startActivity(intent)
                 }
                 print2LogView("已亮屏")
