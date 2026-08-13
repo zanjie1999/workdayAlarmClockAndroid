@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.Camera
+import android.media.MediaCodec
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -115,6 +116,10 @@ internal class CameraHttpServer(
                 writePlayerPage(socket)
                 return
             }
+            if (path?.let { isAvcCapabilityRoute(it) } == true) {
+                writeAvcCapability(socket)
+                return
+            }
             val route = path?.let { parseRoute(it) }
             if (route == null || !cameraExists(route)) {
                 writeEmptyResponse(socket, 404, "Not Found")
@@ -186,6 +191,34 @@ internal class CameraHttpServer(
         if (!path.startsWith(mjpegPrefix)) return null
         val indices = parseCameraIndices(path.substring(mjpegPrefix.length)) ?: return null
         return CameraStreamKey(CameraStreamFormat.MJPEG, indices.first, indices.second)
+    }
+
+    private fun isAvcCapabilityRoute(path: String): Boolean {
+        val prefix = if (password.isEmpty()) "" else "/$password"
+        val capabilityPath = path.removePrefix(prefix)
+        return capabilityPath == "/avc/capability"
+    }
+
+    private fun writeAvcCapability(socket: Socket) {
+        val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && try {
+            MediaCodec.createEncoderByType("video/avc").run {
+                release()
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+        val body = "{\"supported\":$supported}"
+            .toByteArray(HTTP_CHARSET)
+        val header = "HTTP/1.0 200 OK\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-cache, no-store\r\n" +
+            "Content-Type: application/json; charset=utf-8\r\n" +
+            "Content-Length: ${body.size}\r\n\r\n"
+        val output = socket.getOutputStream()
+        output.write(header.toByteArray(HTTP_CHARSET))
+        output.write(body)
+        output.flush()
     }
 
     private fun parseCameraIndices(value: String): Pair<Int, Int?>? {
@@ -442,7 +475,7 @@ internal class CameraHttpServer(
 input,button{width:100%;min-height:42px;font:inherit;font-size:16px;padding:8px 10px;border:1px solid #555;border-radius:4px}input{background:#222;color:#eee}
 button{flex:0 1 110px;cursor:pointer;background:#333;color:#eee}button[type=submit]{background:#1769aa;border-color:#278bd2}
 #videoFrame{width:100%;max-width:100vw;max-height:100vh;aspect-ratio:16/9;margin:16px auto 0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
-video{display:block;width:100%;height:100%;object-fit:contain;transform-origin:center center}
+video,#mjpeg{display:block;width:100%;height:100%;object-fit:contain;transform-origin:center center}
 #status{color:#aaa;margin-top:8px;min-height:1.4em}
 @media (max-width:520px){body{padding:10px}#controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{grid-column:span 2}button{flex:auto;width:auto}#videoFrame{margin-top:10px}}
 </style>
@@ -464,18 +497,23 @@ const form=document.getElementById('controls');
 const playStopButton=document.getElementById('playStop');
 const rotateButton=document.getElementById('rotate');
 const statusView=document.getElementById('status');
-let runId=0,abortController=null,retryTimer=null,objectUrl=null,rotation=0,playbackActive=false;
+let runId=0,abortController=null,retryTimer=null,objectUrl=null,rotation=0,playbackActive=false,mjpegImage=null;
 function setStatus(value){statusView.textContent=value;}
 function showMjpegFallback(password,camera,resolution){
+  setPlaybackState(true);
+  if(mjpegImage)mjpegImage.remove();
+  video.removeAttribute('src');video.load();
   const prefix=password?encodeURIComponent(password)+'/':'';
   const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
   const path='/'+prefix+encodeURIComponent(camera)+resolutionPath;
-  const link=document.createElement('a');
-  link.href=path;
-  link.textContent=path;
-  link.style.color='#64b5f6';
-  statusView.textContent='不支持h264，MJPEG：';
-  statusView.appendChild(link);
+  mjpegImage=document.createElement('img');
+  mjpegImage.id='mjpeg';
+  mjpegImage.alt='MJPEG摄像头画面';
+  mjpegImage.src=path;
+  mjpegImage.onload=()=>setStatus('正在使用MJPEG播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution));
+  mjpegImage.onerror=()=>setStatus('MJPEG连接失败');
+  videoFrame.appendChild(mjpegImage);
+  setStatus('正在切换到MJPEG ...');
 }
 function setPlaybackState(active){
   playbackActive=active;
@@ -508,12 +546,41 @@ function stopPlayback(showStatus){
   if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}
   if(abortController){abortController.abort();abortController=null;}
   if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}
+  if(mjpegImage){mjpegImage.remove();mjpegImage=null;}
+  video.onerror=null;
   video.removeAttribute('src');video.load();
   if(showStatus)setStatus('已停止');
 }
+async function avcSupported(password){
+  const prefix=password?encodeURIComponent(password)+'/':'';
+  try{
+    const response=await fetch('/'+prefix+'avc/capability',{cache:'no-store'});
+    if(!response.ok)return false;
+    const result=await response.json();
+    return result&&result.supported===true;
+  }catch(error){return false;}
+}
 async function connect(id,password,camera,resolution){
   if(id!==runId)return;
-  if(!window.MediaSource){setStatus('当前浏览器不支持 MediaSource');setPlaybackState(false);return;}
+  if(!await avcSupported(password)){
+    if(id===runId)showMjpegFallback(password,camera,resolution);
+    return;
+  }
+  const prefix=password?encodeURIComponent(password)+'/':'';
+  const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
+  const avcPath='/'+prefix+'avc/'+encodeURIComponent(camera)+resolutionPath;
+  if(!window.MediaSource){
+    video.onerror=()=>{
+      if(id!==runId)return;
+      video.onerror=null;
+      stopPlayback(false);showMjpegFallback(password,camera,resolution);
+    };
+    video.src=avcPath;
+    video.load();
+    setStatus('正在播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution)+' ...');
+    video.play().catch(()=>{});
+    return;
+  }
   const mediaSource=new MediaSource();
   if(objectUrl)URL.revokeObjectURL(objectUrl);
   objectUrl=URL.createObjectURL(mediaSource);video.src=objectUrl;
@@ -521,9 +588,7 @@ async function connect(id,password,camera,resolution){
     await waitEvent(mediaSource,'sourceopen');
     if(id!==runId)return;
     abortController=new AbortController();
-    const prefix=password?encodeURIComponent(password)+'/':'';
-    const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
-    const response=await fetch('/'+prefix+'avc/'+encodeURIComponent(camera)+resolutionPath,{cache:'no-store',signal:abortController.signal});
+    const response=await fetch(avcPath,{cache:'no-store',signal:abortController.signal});
     if(!response.ok){const error=new Error('HTTP '+response.status);error.status=response.status;throw error;}
     const codec=response.headers.get('X-Video-Codec');
     if(!codec)throw new Error('没有收到视频编码信息');
@@ -540,7 +605,9 @@ async function connect(id,password,camera,resolution){
     }
   }catch(error){
     if(id!==runId||error.name==='AbortError')return;
-    if(error.status===404){stopPlayback(false);showMjpegFallback(password,camera,resolution);return;}
+    if(error.status===404||error.status===503||String(error.message||'').indexOf('浏览器不支持')>=0){
+      stopPlayback(false);showMjpegFallback(password,camera,resolution);return;
+    }
     setStatus('连接失败，2秒后重试：'+error.message);
     retryTimer=setTimeout(()=>connect(id,password,camera,resolution),2000);
   }
