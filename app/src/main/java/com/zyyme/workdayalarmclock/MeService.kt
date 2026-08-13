@@ -1,9 +1,12 @@
 package com.zyyme.workdayalarmclock
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.*
 import android.app.admin.DevicePolicyManager
 import android.content.*
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -74,8 +77,8 @@ class MeService : Service() {
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
         // getprop ro.product.model
-        //                                 绿色陪伴音箱，叮咚play，小魔镜, 小熊尼奥照照乐和Pro
-        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO")
+        //                                 绿色陪伴音箱，叮咚play，小魔镜, 小熊尼奥照照乐和Pro，Sayinfo音箱
+        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO", "rockchiprk3326_m2g")
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
@@ -89,6 +92,7 @@ class MeService : Service() {
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
     var wakeLockPlay: PowerManager.WakeLock? = null
+    private var screenWakeLock: PowerManager.WakeLock? = null
     var wifiLock: WifiManager.WifiLock? = null
     var shellProcess: Process? = null
     var loadProgress: Int = 0
@@ -108,6 +112,7 @@ class MeService : Service() {
     private var notificationManager: NotificationManager? = null
     private var wakePendingIntent: PendingIntent? = null
     private var udpServerSocket: DatagramSocket? = null
+    private var cameraHttpServer: CameraHttpServer? = null
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
     private var autoBackClockRunnable: Runnable? = null
     private val playbackHandler = Handler(Looper.getMainLooper())
@@ -248,12 +253,10 @@ class MeService : Service() {
             notificationBuilder?.setStyle(mediaStyle)
         }
 
-        try {
-            startForeground(NOTIFICATION_ID, notificationBuilder?.build())
-        } catch (e: Exception) {
-            print2LogView("切换前台服务失败 $e")
-            e.printStackTrace()
-        }
+        updateForegroundServiceType(
+            MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) && hasCameraPermission()
+        )
+        syncCameraServerSetting()
 
         // 如果不需要启动Go服务，这个服务将只有播放音频url的功能
         if (!MainActivity.startService) {
@@ -411,7 +414,57 @@ class MeService : Service() {
         }
     }
 
+    fun syncCameraServerSetting() {
+        val configured = MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
+        val enabled = configured && hasCameraPermission()
+        if (configured && !enabled) {
+            MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_SERVER, false)
+            print2LogView("摄像头权限未授权，摄像头服务未启动")
+        }
+
+        updateForegroundServiceType(enabled)
+        if (!enabled) {
+            cameraHttpServer?.stop()
+            cameraHttpServer = null
+            return
+        }
+
+        val server = cameraHttpServer ?: CameraHttpServer(this) { message ->
+            print2LogView(message)
+        }.also { cameraHttpServer = it }
+        server.start(MeSettings.getCameraPassword(this))
+    }
+
+    fun updateCameraPassword() {
+        cameraHttpServer?.updatePassword(MeSettings.getCameraPassword(this))
+    }
+
+    private fun hasCameraPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun updateForegroundServiceType(cameraEnabled: Boolean) {
+        val notification = notificationBuilder?.build() ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                if (cameraEnabled) {
+                    serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                }
+                startForeground(NOTIFICATION_ID, notification, serviceType)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            print2LogView("切换前台服务失败 $e")
+            e.printStackTrace()
+        }
+    }
+
     override fun onDestroy() {
+        cameraHttpServer?.stop()
+        cameraHttpServer = null
         cancelAutoBackToClock()
         playbackGeneration++
         playbackHandler.removeCallbacksAndMessages(null)
@@ -423,6 +476,10 @@ class MeService : Service() {
         udpServerSocket?.close()
         wakeLock?.release()
         wakeLockPlay?.release()
+        if (screenWakeLock?.isHeld == true) {
+            screenWakeLock?.release()
+        }
+        screenWakeLock = null
         wifiLock?.release()
         unregisterReceiver(batteryReceiver)
         stopForeground(true)
@@ -434,6 +491,26 @@ class MeService : Service() {
         super.onDestroy()
         // 不知道为什么服务进程不退出 给他退出强制回收掉
         System.exit(0)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun wakeScreen() {
+        try {
+            if (screenWakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                screenWakeLock = powerManager.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    "workDayAlarmClock:ScreenWake"
+                ).apply {
+                    setReferenceCounted(false)
+                }
+            }
+            screenWakeLock?.acquire(5000L)
+            print2LogView("已请求唤醒屏幕")
+        } catch (e: Exception) {
+            print2LogView("唤醒屏幕失败: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     /**
@@ -708,6 +785,7 @@ class MeService : Service() {
                             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                         intent.putExtra("clockMode", true)
                         intent.putExtra("keepOn", true)
+                        wakeScreen()
                         startActivity(intent)
                         print2LogView("已亮屏")
                     }
@@ -722,6 +800,7 @@ class MeService : Service() {
                     val intent = Intent(this, ClockActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     intent.putExtra("clockMode", true)
+                    wakeScreen()
                     startActivity(intent)
                 }
                 print2LogView("已亮屏")
@@ -1424,39 +1503,32 @@ class MeService : Service() {
         shellThread = Thread(Runnable {
             try {
                 // 因为经常只更新android app，传个版本号进去
-                val versionName = packageManager.getPackageInfo(packageName, 0).versionName ?: ""
-                val binaryPath = applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so"
-
-                // 直接启动主程序 尝试解决 Bad system call
-                val mainProcess = ProcessBuilder(binaryPath, "app", versionName)
-                    .directory(filesDir)
+                val versionName = packageManager.getPackageInfo(packageName, 0).versionName
+                // 输入start可以启动 exit可以退出
+                val workdayAlarmClock = applicationInfo.nativeLibraryDir + "/libWorkdayAlarmClock.so app "
+                val command = "alias exit='echo EXIT'\n" +
+                        "alias run='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + workdayAlarmClock + versionName + "||" + workdayAlarmClock + "'\n" +
+                        "run"
+                shellProcess = ProcessBuilder("sh")
                     .redirectErrorStream(true)
                     .start()
-                shellProcess = mainProcess
-                writer = PrintWriter(mainProcess.outputStream)
-                readProcessOutput(mainProcess)
 
-                val exitCode = mainProcess.waitFor()
-                writer?.close()
-                writer = null
-                print2LogView("主程序已退出 exitCode=$exitCode")
+                val reader = BufferedReader(InputStreamReader(shellProcess!!.inputStream))
+                writer = PrintWriter(shellProcess!!.outputStream)
+                send2Shell(command)
 
-                if (!Thread.currentThread().isInterrupted) {
-                    // 主程序退出后启动shell
-                    val command = "alias exit='echo EXIT'\n" +
-                            "alias run='cd " + filesDir.absolutePath + ";pwd;getprop ro.product.cpu.abilist;getprop ro.product.cpu.abi;ip a|grep \"et \";" + binaryPath + " app " + versionName + "'"
-                    val interactiveShell = ProcessBuilder("sh")
-                        .directory(filesDir)
-                        .redirectErrorStream(true)
-                        .start()
-                    shellProcess = interactiveShell
-                    writer = PrintWriter(interactiveShell.outputStream)
-                    send2Shell(command)
-                    readProcessOutput(interactiveShell)
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    try {
+                        checkAction(line, true)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        print2LogView("Shell解析出错 $e")
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                print2LogView("进程运行出错 $e")
+                print2LogView("Shell运行出错 $e")
             }
         })
         shellThread!!.start()

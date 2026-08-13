@@ -316,7 +316,9 @@ class ClockActivity : AppCompatActivity() {
         val rootLaout = findViewById<LinearLayout>(R.id.root_layout)
         rootLaout.post {
             // 延迟进行字体大小调整  初始化完后延时执行
-            if (intent.getBooleanExtra("clockMode", false)) {
+            if (intent.getBooleanExtra("clockMode", false) ||
+                intent.action == "android.media.action.STILL_IMAGE_CAMERA"
+            ) {
                 Log.d("intent", "收到clockMode")
                 // 直接进入全屏时钟模式
                 setFullScreenClock()

@@ -21,6 +21,8 @@ object MeSettings {
     const val KEY_AP = "ap"
     const val KEY_AUTO_BACK_CLOCK = "auto_back_clock"
     const val KEY_NOTIFICATION_FORWARD_URL = "notification_forward_url"
+    const val KEY_CAMERA_SERVER = "camera_server"
+    const val KEY_CAMERA_PASSWORD = "camera_password"
 
     private fun preferences(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -56,6 +58,23 @@ object MeSettings {
             editor.remove(KEY_NOTIFICATION_FORWARD_URL)
         } else {
             editor.putString(KEY_NOTIFICATION_FORWARD_URL, cleanUrl)
+        }
+        editor.apply()
+    }
+
+    fun getCameraPassword(context: Context): String {
+        return preferences(context)
+            .getString(KEY_CAMERA_PASSWORD, "")
+            .orEmpty()
+    }
+
+    fun setCameraPassword(context: Context, password: String) {
+        val cleanPassword = password.trim().trim('/')
+        val editor = preferences(context).edit()
+        if (cleanPassword.isEmpty()) {
+            editor.remove(KEY_CAMERA_PASSWORD)
+        } else {
+            editor.putString(KEY_CAMERA_PASSWORD, cleanPassword)
         }
         editor.apply()
     }
