@@ -4,10 +4,13 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.Camera
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
+import android.view.Surface
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
@@ -195,19 +198,11 @@ internal class CameraHttpServer(
 
     private fun isAvcCapabilityRoute(path: String): Boolean {
         val prefix = if (password.isEmpty()) "" else "/$password"
-        val capabilityPath = path.removePrefix(prefix)
-        return capabilityPath == "/avc/capability"
+        return path == "$prefix/avc/capability"
     }
 
     private fun writeAvcCapability(socket: Socket) {
-        val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && try {
-            MediaCodec.createEncoderByType("video/avc").run {
-                release()
-                true
-            }
-        } catch (_: Exception) {
-            false
-        }
+        val supported = isAvcEncoderUsable()
         val body = "{\"supported\":$supported}"
             .toByteArray(HTTP_CHARSET)
         val header = "HTTP/1.0 200 OK\r\n" +
@@ -219,6 +214,74 @@ internal class CameraHttpServer(
         output.write(header.toByteArray(HTTP_CHARSET))
         output.write(body)
         output.flush()
+    }
+
+    private fun isAvcEncoderUsable(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
+
+        var encoder: MediaCodec? = null
+        var inputSurface: Surface? = null
+        var started = false
+        return try {
+            val testEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            encoder = testEncoder
+            val capabilities = testEncoder.codecInfo.getCapabilitiesForType(
+                MediaFormat.MIMETYPE_VIDEO_AVC
+            )
+            if (!capabilities.colorFormats.contains(
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+                )
+            ) return false
+            val videoCapabilities = capabilities.videoCapabilities ?: return false
+            val testSize = listOf(
+                Pair(640, 480),
+                Pair(1280, 720),
+                Pair(320, 240),
+                Pair(1920, 1080),
+                Pair(176, 144)
+            ).firstOrNull { (width, height) ->
+                try {
+                    videoCapabilities.areSizeAndRateSupported(width, height, 15.0)
+                } catch (_: Exception) {
+                    false
+                }
+            } ?: return false
+            val format = MediaFormat.createVideoFormat(
+                MediaFormat.MIMETYPE_VIDEO_AVC,
+                testSize.first,
+                testSize.second
+            ).apply {
+                setInteger(
+                    MediaFormat.KEY_COLOR_FORMAT,
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+                )
+                setInteger(MediaFormat.KEY_BIT_RATE, 512_000)
+                setInteger(MediaFormat.KEY_FRAME_RATE, 15)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+            }
+            testEncoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            inputSurface = testEncoder.createInputSurface()
+            testEncoder.start()
+            started = true
+            true
+        } catch (_: Exception) {
+            false
+        } finally {
+            if (started) {
+                try {
+                    encoder?.stop()
+                } catch (_: Exception) {
+                }
+            }
+            try {
+                inputSurface?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                encoder?.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun parseCameraIndices(value: String): Pair<Int, Int?>? {
@@ -502,7 +565,9 @@ function setStatus(value){statusView.textContent=value;}
 function showMjpegFallback(password,camera,resolution){
   setPlaybackState(true);
   if(mjpegImage)mjpegImage.remove();
+  video.onerror=null;
   video.removeAttribute('src');video.load();
+  video.style.display='none';
   const prefix=password?encodeURIComponent(password)+'/':'';
   const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
   const path='/'+prefix+encodeURIComponent(camera)+resolutionPath;
@@ -549,23 +614,33 @@ function stopPlayback(showStatus){
   if(mjpegImage){mjpegImage.remove();mjpegImage=null;}
   video.onerror=null;
   video.removeAttribute('src');video.load();
+  video.style.display='block';
   if(showStatus)setStatus('已停止');
 }
-async function avcSupported(password){
+async function getAvcCapability(password){
   const prefix=password?encodeURIComponent(password)+'/':'';
   try{
     const response=await fetch('/'+prefix+'avc/capability',{cache:'no-store'});
-    if(!response.ok)return false;
+    if(response.status===404)return 'password-error';
+    if(!response.ok)return 'unsupported';
     const result=await response.json();
-    return result&&result.supported===true;
-  }catch(error){return false;}
+    return result&&result.supported===true?'supported':'unsupported';
+  }catch(error){return 'unsupported';}
 }
 async function connect(id,password,camera,resolution){
   if(id!==runId)return;
-  if(!await avcSupported(password)){
-    if(id===runId)showMjpegFallback(password,camera,resolution);
+  const capability=await getAvcCapability(password);
+  if(id!==runId)return;
+  if(capability==='password-error'){
+    stopPlayback(false);setStatus('密码错误');
     return;
   }
+  if(capability!=='supported'){
+    showMjpegFallback(password,camera,resolution);
+    return;
+  }
+  if(mjpegImage){mjpegImage.remove();mjpegImage=null;}
+  video.style.display='block';
   const prefix=password?encodeURIComponent(password)+'/':'';
   const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
   const avcPath='/'+prefix+'avc/'+encodeURIComponent(camera)+resolutionPath;
