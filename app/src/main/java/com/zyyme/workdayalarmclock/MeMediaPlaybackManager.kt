@@ -51,7 +51,7 @@ class MeMediaPlaybackManager(
             null
         )
 
-        val sessionActivityIntent = Intent(applicationContext, ClockActivity::class.java)
+        val sessionActivityIntent = MeSettings.createClockIntent(applicationContext)
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {

@@ -242,7 +242,7 @@ class AppListActivity : AppCompatActivity() {
             } else {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             }
-            val intent: Intent = Intent(this, ClockActivity::class.java)
+            val intent = MeSettings.createClockIntent(this)
             intent.putExtra("clockMode", true)
             startActivity(intent)
             finish()

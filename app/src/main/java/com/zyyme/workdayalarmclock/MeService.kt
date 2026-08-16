@@ -101,6 +101,7 @@ class MeService : Service() {
     // 用于展示的电池信息 有变化才有值，固定电量不显示
     var batInfo = ""
     var batLevel = -1
+    @Volatile var lastEcho = ""
 
     val isBonjour = Build.MANUFACTURER + Build.MODEL == "AllwinnerQUAD-CORE A64 ococci"
 
@@ -186,7 +187,7 @@ class MeService : Service() {
             notificationManager?.createNotificationChannel(notificationChannel)
         }
 
-        val mainIntent: Intent = Intent(applicationContext, ClockActivity::class.java)
+        val mainIntent = MeSettings.createClockIntent(applicationContext)
         // 清除任务栈并创建新任务
         mainIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         val pendingIntent = PendingIntent.getActivity(
@@ -381,7 +382,7 @@ class MeService : Service() {
                     Thread.sleep(500)
                 }
             }
-            val intent = Intent(this, ClockActivity::class.java)
+            val intent = MeSettings.createClockIntent(this)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             intent.putExtra("clockMode", true)
             startActivity(intent)
@@ -473,6 +474,7 @@ class MeService : Service() {
         shellThread?.interrupt()
         MainActivity.me?.finish()
         ClockActivity.me?.finish()
+        DeskActivity.me?.finish()
         udpServerSocket?.close()
         wakeLock?.release()
         wakeLockPlay?.release()
@@ -682,7 +684,9 @@ class MeService : Service() {
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
             } else if (s.startsWith("ECHO ")) {
                 val msg = s.substring(5)
+                lastEcho = msg
                 updateNotificationTitle(msg)
+                DeskActivity.me?.showEcho(msg)
                 if (ClockActivity.me != null) {
                     if ("工作咩闹钟" == msg) {
                         ClockActivity.me?.showMsg("停止播放")
@@ -780,11 +784,12 @@ class MeService : Service() {
                         } else {
                             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
                         }
-                        val intent = Intent(this, ClockActivity::class.java)
+                        val intent = MeSettings.createClockIntent(this)
                         intent.flags =
                             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                         intent.putExtra("clockMode", true)
                         intent.putExtra("keepOn", true)
+                        intent.putExtra(DeskActivity.EXTRA_ALARM_MODE, true)
                         wakeScreen()
                         startActivity(intent)
                         print2LogView("已亮屏")
@@ -797,7 +802,7 @@ class MeService : Service() {
                     } else {
                         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
                     }
-                    val intent = Intent(this, ClockActivity::class.java)
+                    val intent = MeSettings.createClockIntent(this)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     intent.putExtra("clockMode", true)
                     wakeScreen()
@@ -814,6 +819,10 @@ class MeService : Service() {
                             if (ClockActivity.me?.isKeepScreenOn == true) {
                                 ClockActivity.me?.isKeepScreenOn = false
                                 ClockActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            }
+                            if (DeskActivity.me?.isKeepScreenOn == true) {
+                                DeskActivity.me?.isKeepScreenOn = false
+                                DeskActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                             }
                             devicePolicyManager.lockNow()
                             print2LogView("已锁屏")

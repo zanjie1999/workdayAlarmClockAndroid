@@ -1,6 +1,7 @@
 package com.zyyme.workdayalarmclock
 
 import android.content.Context
+import android.content.Intent
 
 /**
  * 设置
@@ -11,6 +12,7 @@ object MeSettings {
 
     const val KEY_DISABLE = "disable"
     const val KEY_CLOCK = "clock"
+    const val KEY_DESK_CLOCK = "desk_clock"
     const val KEY_TSS = "tss"
     const val KEY_T24 = "t24"
     const val KEY_WHITE = "white"
@@ -23,12 +25,18 @@ object MeSettings {
     const val KEY_NOTIFICATION_FORWARD_URL = "notification_forward_url"
     const val KEY_CAMERA_SERVER = "camera_server"
     const val KEY_CAMERA_PASSWORD = "camera_password"
+    const val KEY_DESK_MASK = "desk_mask"
+    const val KEY_DESK_LIGHT_TEXT = "desk_light_text"
+    const val KEY_DESK_SLOT_TOP_LEFT = "desk_slot_top_left"
+    const val KEY_DESK_SLOT_TOP_RIGHT = "desk_slot_top_right"
+    const val KEY_DESK_SLOT_BOTTOM_LEFT = "desk_slot_bottom_left"
+    const val KEY_DESK_SLOT_BOTTOM_RIGHT = "desk_slot_bottom_right"
 
     private fun preferences(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun isEnabled(context: Context, key: String): Boolean {
-        return preferences(context).getBoolean(key, false)
+    fun isEnabled(context: Context, key: String, defaultValue: Boolean = false): Boolean {
+        return preferences(context).getBoolean(key, defaultValue)
     }
 
     fun getEnabledKeys(context: Context, keys: Iterable<String>): Set<String> {
@@ -43,6 +51,26 @@ object MeSettings {
             .edit()
             .putBoolean(key, enabled)
             .apply()
+    }
+
+    fun getInt(context: Context, key: String, defaultValue: Int): Int {
+        return preferences(context).getInt(key, defaultValue)
+    }
+
+    fun setInt(context: Context, key: String, value: Int) {
+        preferences(context)
+            .edit()
+            .putInt(key, value)
+            .apply()
+    }
+
+    fun createClockIntent(context: Context): Intent {
+        val activityClass = if (isEnabled(context, KEY_DESK_CLOCK)) {
+            DeskActivity::class.java
+        } else {
+            ClockActivity::class.java
+        }
+        return Intent(context, activityClass)
     }
 
     fun getNotificationForwardUrl(context: Context): String {

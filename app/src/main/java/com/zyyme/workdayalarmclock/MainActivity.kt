@@ -89,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     private val settingsMenuItems = listOf(
         SettingMenuItem(MeSettings.KEY_DISABLE, "开机不启动"),
         SettingMenuItem(MeSettings.KEY_CLOCK, "时钟模式"),
+        SettingMenuItem(MeSettings.KEY_DESK_CLOCK, "大屏时钟模式"),
         SettingMenuItem(MeSettings.KEY_AUTO_BACK_CLOCK, "自动回到时钟"),
         SettingMenuItem(MeSettings.KEY_TSS, "时钟不显示秒"),
         SettingMenuItem(MeSettings.KEY_T24, "时钟24小时制"),
@@ -159,7 +160,7 @@ class MainActivity : AppCompatActivity() {
             if (useClockMode) {
                 // 初次启动，切换到时钟模式 有clock文件的也切换      亮色主题（闹钟屏幕出线白色没那么明显）
                 applyClockTheme()
-                val intent = Intent(this, ClockActivity::class.java)
+                val intent = MeSettings.createClockIntent(this)
                 intent.putExtra("clockMode", true)
                 startActivity(intent)
             }
@@ -253,7 +254,7 @@ class MainActivity : AppCompatActivity() {
             if (!isFinishing) getOrCreateSettingsMenu(menuIcon)
         }
         findViewById<Toolbar>(R.id.toolbar).setOnClickListener {
-            val intent: Intent = Intent(this, ClockActivity::class.java)
+            val intent = MeSettings.createClockIntent(this)
             startActivity(intent)
         }
         findViewById<Toolbar>(R.id.toolbar).setOnLongClickListener {
@@ -309,7 +310,7 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this, WebActivity::class.java))
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_CLOCK) {
-                startActivity(Intent(this, ClockActivity::class.java))
+                startActivity(MeSettings.createClockIntent(this))
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_APPLIST) {
                 startActivity(Intent(this, AppListActivity::class.java))
@@ -582,7 +583,7 @@ class MainActivity : AppCompatActivity() {
         // 默认时钟模式的设备 返回退到全屏时钟
         if (useClockMode) {
             applyClockTheme()
-            val intent: Intent = Intent(this, ClockActivity::class.java)
+            val intent = MeSettings.createClockIntent(this)
             intent.putExtra("clockMode", true)
             startActivity(intent)
         } else {
