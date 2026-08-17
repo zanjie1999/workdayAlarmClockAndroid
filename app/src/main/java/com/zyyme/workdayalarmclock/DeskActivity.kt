@@ -12,6 +12,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -46,6 +47,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * 大屏时钟模式
@@ -86,7 +88,12 @@ class DeskActivity : AppCompatActivity() {
     private lateinit var lyricsView: TextView
     private lateinit var timeView: TextView
     private lateinit var dateView: TextView
+    private lateinit var echoRowView: View
     private lateinit var echoView: TextView
+    private lateinit var volumeControlView: View
+    private lateinit var volumeIconView: ImageView
+    private lateinit var volumeProgressView: SeekBar
+    private lateinit var volumePercentView: TextView
     private lateinit var progressView: SeekBar
     private lateinit var positionView: TextView
     private lateinit var durationView: TextView
@@ -97,25 +104,34 @@ class DeskActivity : AppCompatActivity() {
     private var wallpaperBitmap: Bitmap? = null
     private var pendingWallpaperUri: Uri? = null
     private var isUserSeeking = false
+    private var isUserAdjustingVolume = false
     private var alarmMode = false
     var isKeepScreenOn = false
 
     private var timeFormat = SimpleDateFormat("h:mm:ss", Locale.CHINA)
     private val dateFormat = SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA)
+    private val weatherDateFormat = SimpleDateFormat("M月d日 E", Locale.CHINA)
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
             val now = Date()
-            timeView.text = timeFormat.format(now)
-            dateView.text = dateFormat.format(now)
-
             val service = MeService.me
+            service?.requestWeatherIfNeeded()
+            timeView.text = timeFormat.format(now)
+            val weather = service?.weatherText.orEmpty()
+            dateView.text = if (weather.isEmpty()) {
+                dateFormat.format(now)
+            } else {
+                "${weatherDateFormat.format(now)} $weather"
+            }
+
             service?.lastEcho?.let {
                 if (echoView.text.toString() != it) echoView.text = it
             }
             val position = service?.getPlaybackPosition()
             val duration = service?.getPlaybackDuration() ?: 0
             updateProgress(position, duration)
+            updateVolumeControl()
 
             if (MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
                 val lyric = formatLyricForTwoLines(service?.getCurrentLyric(position).orEmpty())
@@ -185,6 +201,7 @@ class DeskActivity : AppCompatActivity() {
             if (alarmMode) showAlarmControls(true)
         }
         MeService.me?.syncLyricsSetting()
+        MeService.me?.requestWeatherIfNeeded()
         applyDefaultKeepScreenOn()
         setFullscreen()
     }
@@ -204,7 +221,12 @@ class DeskActivity : AppCompatActivity() {
         lyricsView = findViewById(R.id.desk_lyrics)
         timeView = findViewById(R.id.desk_time)
         dateView = findViewById(R.id.desk_date)
+        echoRowView = findViewById(R.id.desk_echo_row)
         echoView = findViewById(R.id.desk_echo)
+        volumeControlView = findViewById(R.id.desk_volume_control)
+        volumeIconView = findViewById(R.id.desk_volume_icon)
+        volumeProgressView = findViewById(R.id.desk_volume_progress)
+        volumePercentView = findViewById(R.id.desk_volume_percent)
         progressView = findViewById(R.id.desk_progress)
         positionView = findViewById(R.id.desk_position)
         durationView = findViewById(R.id.desk_duration)
@@ -251,6 +273,26 @@ class DeskActivity : AppCompatActivity() {
         }
         progressView.post { alignProgressTimesToTrack() }
 
+        volumeProgressView.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    volumePercentView.text = "$progress%"
+                    setMediaVolumePercent(progress)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isUserAdjustingVolume = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isUserAdjustingVolume = false
+                updateVolumeControl()
+            }
+        })
+        volumeControlView.setOnTouchListener { _, event -> forwardTouchToVolume(event) }
+        updateVolumeControl()
+
         val longClickListener = View.OnLongClickListener {
             showDeskMenu()
             true
@@ -282,7 +324,7 @@ class DeskActivity : AppCompatActivity() {
             "设置壁纸",
             "深色遮罩：${if (maskEnabled) "开" else "关"}",
             "文字颜色：${if (lightText) "白色" else "黑色"}",
-            "屏幕常亮：${if (keepScreenOn) "开" else "关"}"
+            "屏幕常亮：${if (keepScreenOn) "开" else "关"}",
         )
         slotNames.forEachIndexed { slot, name ->
             items += "$name：${contentNames[slotValues[slot]]}"
@@ -307,8 +349,8 @@ class DeskActivity : AppCompatActivity() {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON, enabled)
                         applyKeepScreenOnState(enabled)
                     }
-                    in 5..8 -> showSlotContentDialog(which - 5, slotNames[which - 5], contentNames)
-                    9 -> returnToMain()
+                    in 6..9 -> showSlotContentDialog(which - 6, slotNames[which - 6], contentNames)
+                    10 -> returnToMain()
                 }
             }
             .create()
@@ -452,7 +494,7 @@ class DeskActivity : AppCompatActivity() {
 
     private fun showAlarmControls(enabled: Boolean) {
         alarmMode = enabled
-        echoView.visibility = if (enabled) View.GONE else View.VISIBLE
+        echoRowView.visibility = if (enabled) View.GONE else View.VISIBLE
         controlsView.visibility = if (enabled) View.GONE else View.VISIBLE
         progressView.visibility = if (enabled) View.GONE else View.VISIBLE
         progressTimesView.visibility = if (enabled) View.GONE else View.VISIBLE
@@ -656,13 +698,25 @@ class DeskActivity : AppCompatActivity() {
         val light = MeSettings.isEnabled(this, MeSettings.KEY_DESK_LIGHT_TEXT, true)
         val color = if (light) Color.WHITE else Color.BLACK
         val shadow = Color.argb(210, 0, 0, 0)
-        listOf(timeView, dateView, lyricsView, echoView, positionView, durationView).forEach {
+        listOf(
+            timeView,
+            dateView,
+            lyricsView,
+            echoView,
+            volumePercentView,
+            positionView,
+            durationView
+        ).forEach {
             it.setTextColor(color)
             if (light) {
                 it.setShadowLayer(4f, 1f, 1f, shadow)
             } else {
                 it.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
             }
+        }
+        volumeIconView.drawable?.mutate()?.let { icon ->
+            DrawableCompat.setTint(icon, color)
+            volumeIconView.setImageDrawable(icon)
         }
         listOf(R.id.desk_prev, R.id.desk_play, R.id.desk_next, R.id.desk_stop).forEach {
             val button = findViewById<ImageButton>(it)
@@ -698,6 +752,45 @@ class DeskActivity : AppCompatActivity() {
 
     private fun formatLyricForTwoLines(lyric: String): String {
         return if (lyric.isNotEmpty() && '\n' !in lyric) "$lyric\n" else lyric
+    }
+
+    private fun updateVolumeControl() {
+        if (!::volumeControlView.isInitialized || volumeControlView.visibility != View.VISIBLE) return
+        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) return
+        val percent = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f / max)
+            .roundToInt()
+            .coerceIn(0, 100)
+        if (!isUserAdjustingVolume && volumeProgressView.progress != percent) {
+            volumeProgressView.progress = percent
+        }
+        volumePercentView.text = "$percent%"
+    }
+
+    private fun setMediaVolumePercent(percent: Int) {
+        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) return
+        val volume = (max * percent.coerceIn(0, 100) / 100f).roundToInt()
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
+    }
+
+    private fun forwardTouchToVolume(event: MotionEvent): Boolean {
+        val forwardedEvent = MotionEvent.obtain(event)
+        val sourceLocation = IntArray(2)
+        val targetLocation = IntArray(2)
+        volumeControlView.getLocationOnScreen(sourceLocation)
+        volumeProgressView.getLocationOnScreen(targetLocation)
+        forwardedEvent.offsetLocation(
+            (sourceLocation[0] - targetLocation[0]).toFloat(),
+            (sourceLocation[1] - targetLocation[1]).toFloat()
+        )
+        return try {
+            volumeProgressView.dispatchTouchEvent(forwardedEvent)
+        } finally {
+            forwardedEvent.recycle()
+        }
     }
 
     private fun lockScreenIfPermitted() {

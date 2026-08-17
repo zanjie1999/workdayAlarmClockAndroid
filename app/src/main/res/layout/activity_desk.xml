@@ -188,28 +188,85 @@
         android:gravity="end|bottom"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/desk_echo"
+        <LinearLayout
+            android:id="@+id/desk_echo_row"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="0.35"
-            android:autoSizeMaxTextSize="18sp"
-            android:autoSizeMinTextSize="7sp"
-            android:autoSizeStepGranularity="1sp"
-            android:autoSizeTextType="uniform"
-            android:ellipsize="end"
-            android:gravity="center_horizontal|bottom"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:shadowColor="#CC000000"
-            android:shadowDx="1"
-            android:shadowDy="1"
-            android:shadowRadius="3"
-            android:textColor="@color/white"
-            app:autoSizeMaxTextSize="18sp"
-            app:autoSizeMinTextSize="7sp"
-            app:autoSizeStepGranularity="1sp"
-            app:autoSizeTextType="uniform" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/desk_echo"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="2"
+                android:autoSizeMaxTextSize="18sp"
+                android:autoSizeMinTextSize="7sp"
+                android:autoSizeStepGranularity="1sp"
+                android:autoSizeTextType="uniform"
+                android:ellipsize="end"
+                android:gravity="center_horizontal|bottom"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:shadowColor="#CC000000"
+                android:shadowDx="1"
+                android:shadowDy="1"
+                android:shadowRadius="3"
+                android:textColor="@color/white"
+                app:autoSizeMaxTextSize="18sp"
+                app:autoSizeMinTextSize="7sp"
+                app:autoSizeStepGranularity="1sp"
+                app:autoSizeTextType="uniform" />
+
+            <FrameLayout
+                android:id="@+id/desk_volume_control"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:paddingRight="0dp">
+
+                <SeekBar
+                    android:id="@+id/desk_volume_progress"
+                    android:layout_width="match_parent"
+                    android:layout_height="3px"
+                    android:layout_gravity="center_vertical"
+                    android:max="100"
+                    android:paddingLeft="0dp"
+                    android:paddingRight="0dp"
+                    android:progressDrawable="@drawable/desk_seek_progress"
+                    android:thumb="@drawable/clock_seek_thumb_hidden"
+                    android:thumbOffset="0dp" />
+
+                <LinearLayout
+                    android:layout_width="28dp"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="start"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:id="@+id/desk_volume_icon"
+                        android:layout_width="18dp"
+                        android:layout_height="14dp"
+                        android:layout_gravity="end"
+                        android:contentDescription="媒体音量"
+                        android:scaleType="fitEnd"
+                        android:src="@android:drawable/ic_lock_silent_mode_off" />
+
+                    <TextView
+                        android:id="@+id/desk_volume_percent"
+                        android:layout_width="28dp"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:singleLine="true"
+                        android:text="0%"
+                        android:textColor="@color/white"
+                        android:textSize="7sp" />
+                </LinearLayout>
+            </FrameLayout>
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/desk_controls"

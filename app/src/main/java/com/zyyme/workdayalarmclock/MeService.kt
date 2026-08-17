@@ -73,6 +73,7 @@ class MeService : Service() {
         private const val PLAYBACK_RETRY_DELAY_MS = 1000L
         private const val PLAYBACK_RESUME_REWIND_MS = 2000
         private const val PLAYBACK_CHECKPOINT_INTERVAL_MS = 1000L
+        private const val WEATHER_UPDATE_INTERVAL_MS = 60L * 60L * 1000L
 
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
@@ -102,6 +103,8 @@ class MeService : Service() {
     var batInfo = ""
     var batLevel = -1
     @Volatile var lastEcho = ""
+    @Volatile var weatherText = ""
+    @Volatile private var lastWeatherRequestAt = 0L
 
     val isBonjour = Build.MANUFACTURER + Build.MODEL == "AllwinnerQUAD-CORE A64 ococci"
 
@@ -682,6 +685,8 @@ class MeService : Service() {
                 lastSetVol = set
                 print2LogView("音量最高" + max + "对应" + per + "%设置为" + set)
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
+            } else if (s.startsWith("WEATHER ")) {
+                weatherText = s.substring(8).trim()
             } else if (s.startsWith("ECHO ")) {
                 val msg = s.substring(5)
                 lastEcho = msg
@@ -1974,6 +1979,18 @@ class MeService : Service() {
 //                print2LogView(e.toString())
 //            }
 //        }).start()
+    }
+
+    @Synchronized
+    fun requestWeatherIfNeeded() {
+        val now = System.currentTimeMillis()
+        if (writer == null || (now >= lastWeatherRequestAt &&
+                    now - lastWeatherRequestAt < WEATHER_UPDATE_INTERVAL_MS)
+        ) {
+            return
+        }
+        lastWeatherRequestAt = now
+        toGo("weather")
     }
 
     /**
