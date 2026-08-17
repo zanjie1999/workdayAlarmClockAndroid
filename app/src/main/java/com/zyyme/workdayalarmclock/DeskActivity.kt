@@ -2,13 +2,14 @@ package com.zyyme.workdayalarmclock
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.net.Uri
@@ -17,11 +18,13 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.TouchDelegate
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
@@ -115,7 +118,7 @@ class DeskActivity : AppCompatActivity() {
             updateProgress(position, duration)
 
             if (MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
-                val lyric = service?.getCurrentLyric(position).orEmpty()
+                val lyric = formatLyricForTwoLines(service?.getCurrentLyric(position).orEmpty())
                 if (lyricsView.text.toString() != lyric) lyricsView.text = lyric
             } else if (lyricsView.text.isNotEmpty()) {
                 lyricsView.text = ""
@@ -182,6 +185,7 @@ class DeskActivity : AppCompatActivity() {
             if (alarmMode) showAlarmControls(true)
         }
         MeService.me?.syncLyricsSetting()
+        applyDefaultKeepScreenOn()
         setFullscreen()
     }
 
@@ -241,27 +245,44 @@ class DeskActivity : AppCompatActivity() {
                 isUserSeeking = false
             }
         })
-        progressView.post { expandProgressTouchTarget() }
+        progressTimesView.setOnTouchListener { _, event -> forwardTouchToProgress(event) }
+        progressView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            progressView.post { alignProgressTimesToTrack() }
+        }
+        progressView.post { alignProgressTimesToTrack() }
 
         val longClickListener = View.OnLongClickListener {
             showDeskMenu()
             true
         }
-        findViewById<View>(R.id.desk_root).setOnLongClickListener(longClickListener)
-        grid.setOnLongClickListener(longClickListener)
-        slotFrames().forEach { it.setOnLongClickListener(longClickListener) }
+        val menuTrigger = findViewById<View>(R.id.desk_menu_trigger)
+        val menuGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                lockScreenIfPermitted()
+                return true
+            }
+        })
+        menuTrigger.setOnLongClickListener(longClickListener)
+        menuTrigger.setOnTouchListener { _, event ->
+            menuGestureDetector.onTouchEvent(event)
+            false
+        }
     }
 
     private fun showDeskMenu() {
-        val slotNames = arrayOf("左上角", "右上角", "左下角", "右下角")
+        val slotNames = arrayOf("↖左上角", "↗右上角", "↙左下角", "↘右下角")
         val contentNames = arrayOf("不显示", "时间日期", "播放控制", "歌词")
         val maskEnabled = MeSettings.isEnabled(this, MeSettings.KEY_DESK_MASK)
         val lightText = MeSettings.isEnabled(this, MeSettings.KEY_DESK_LIGHT_TEXT, true)
+        val keepScreenOn = MeSettings.isEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON)
         val items = mutableListOf(
             "应用列表",
             "设置壁纸",
             "深色遮罩：${if (maskEnabled) "开" else "关"}",
-            "文字颜色：${if (lightText) "白色" else "黑色"}"
+            "文字颜色：${if (lightText) "白色" else "黑色"}",
+            "屏幕常亮：${if (keepScreenOn) "开" else "关"}"
         )
         slotNames.forEachIndexed { slot, name ->
             items += "$name：${contentNames[slotValues[slot]]}"
@@ -281,13 +302,18 @@ class DeskActivity : AppCompatActivity() {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_LIGHT_TEXT, !lightText)
                         applyTextStyle()
                     }
-                    in 4..7 -> showSlotContentDialog(which - 4, slotNames[which - 4], contentNames)
-                    8 -> returnToMain()
+                    4 -> {
+                        val enabled = !keepScreenOn
+                        MeSettings.setEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON, enabled)
+                        applyKeepScreenOnState(enabled)
+                    }
+                    in 5..8 -> showSlotContentDialog(which - 5, slotNames[which - 5], contentNames)
+                    9 -> returnToMain()
                 }
             }
             .create()
         dialog.setCanceledOnTouchOutside(true)
-        dialog.show()
+        showImmersiveDialog(dialog)
     }
 
     private fun showSlotContentDialog(slot: Int, slotName: String, contentNames: Array<String>) {
@@ -299,7 +325,7 @@ class DeskActivity : AppCompatActivity() {
             }
             .create()
         dialog.setCanceledOnTouchOutside(true)
-        dialog.show()
+        showImmersiveDialog(dialog)
     }
 
     private fun returnToMain() {
@@ -368,8 +394,14 @@ class DeskActivity : AppCompatActivity() {
         val width = (resources.displayMetrics.widthPixels * 0.4f).toInt()
         val heightFraction = if (player) 0.24f else 0.30f
         val height = (resources.displayMetrics.heightPixels * heightFraction).toInt()
-        val gravity = (if (slot % 2 == 0) Gravity.START else Gravity.END) or
+        val horizontalGravity = if (slot % 2 == 0) Gravity.START else Gravity.END
+        val gravity = horizontalGravity or
             (if (slot < 2) Gravity.TOP else Gravity.BOTTOM)
+        if (!player) {
+            timePanel.gravity = horizontalGravity or Gravity.BOTTOM
+            timeView.gravity = horizontalGravity or Gravity.BOTTOM
+            dateView.gravity = horizontalGravity or Gravity.TOP
+        }
         panel.setPadding(0, 0, 0, 0)
         slotFrames()[slot].addView(panel, FrameLayout.LayoutParams(width, height, gravity))
     }
@@ -442,11 +474,25 @@ class DeskActivity : AppCompatActivity() {
 
     private fun handleIntent(source: Intent) {
         if (source.getBooleanExtra("keepOn", false)) {
-            isKeepScreenOn = true
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            applyKeepScreenOnState(true)
         }
         if (source.getBooleanExtra(EXTRA_ALARM_MODE, false)) {
             showAlarmControls(true)
+        }
+    }
+
+    private fun applyDefaultKeepScreenOn() {
+        if (MeSettings.isEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON)) {
+            applyKeepScreenOnState(true)
+        }
+    }
+
+    private fun applyKeepScreenOnState(enabled: Boolean) {
+        isKeepScreenOn = enabled
+        if (enabled) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
@@ -650,14 +696,46 @@ class DeskActivity : AppCompatActivity() {
         timeFormat = SimpleDateFormat(if (showSeconds) "$hour:ss" else hour, Locale.CHINA)
     }
 
-    private fun expandProgressTouchTarget() {
-        val parent = progressView.parent as? View ?: return
-        val bounds = Rect()
-        progressView.getHitRect(bounds)
-        val extra = (resources.displayMetrics.density * 12f).toInt()
-        bounds.top -= extra
-        bounds.bottom += extra
-        parent.touchDelegate = TouchDelegate(bounds, progressView)
+    private fun formatLyricForTwoLines(lyric: String): String {
+        return if (lyric.isNotEmpty() && '\n' !in lyric) "$lyric\n" else lyric
+    }
+
+    private fun lockScreenIfPermitted() {
+        val devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val adminComponent = ComponentName(this, MeDeviceAdminReceiver::class.java)
+        if (!devicePolicyManager.isAdminActive(adminComponent)) return
+        try {
+            devicePolicyManager.lockNow()
+        } catch (_: Exception) {
+            // Double-tap lock is intentionally silent when the device rejects the request.
+        }
+    }
+
+    private fun forwardTouchToProgress(event: MotionEvent): Boolean {
+        if (!progressView.isEnabled || progressView.max <= 0) return false
+
+        val forwardedEvent = MotionEvent.obtain(event)
+        forwardedEvent.offsetLocation(
+            (progressTimesView.left - progressView.left).toFloat(),
+            (progressTimesView.top - progressView.top).toFloat()
+        )
+        return try {
+            progressView.dispatchTouchEvent(forwardedEvent)
+        } finally {
+            forwardedEvent.recycle()
+        }
+    }
+
+    private fun alignProgressTimesToTrack() {
+        val trackBounds = progressView.progressDrawable?.bounds ?: return
+        val trackStart = progressView.left + progressView.paddingLeft + trackBounds.left
+        val trackEnd = progressView.left + progressView.paddingLeft + trackBounds.right
+        progressTimesView.setPadding(
+            (trackStart - progressTimesView.left).coerceAtLeast(0),
+            progressTimesView.paddingTop,
+            (progressTimesView.right - trackEnd).coerceAtLeast(0),
+            progressTimesView.paddingBottom
+        )
     }
 
     private fun updateProgress(position: Int?, duration: Int) {
@@ -702,24 +780,46 @@ class DeskActivity : AppCompatActivity() {
         }
     }
 
-    private fun setFullscreen() {
-        window.decorView.systemUiVisibility = if (Build.MODEL == "HPN_XH") {
-            View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        } else {
-            View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).let { controller ->
+    private fun fullscreenSystemUiVisibility(): Int = if (Build.MODEL == "HPN_XH") {
+        View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+    } else {
+        View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+    }
+
+    private fun hideSystemBars(targetWindow: Window) {
+        targetWindow.decorView.systemUiVisibility = fullscreenSystemUiVisibility()
+        WindowCompat.setDecorFitsSystemWindows(targetWindow, false)
+        WindowInsetsControllerCompat(targetWindow, targetWindow.decorView).let { controller ->
             controller.hide(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+
+    private fun showImmersiveDialog(dialog: AlertDialog) {
+        dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        dialog.setOnDismissListener { setFullscreen() }
+        dialog.show()
+        dialog.window?.let { dialogWindow ->
+            hideSystemBars(dialogWindow)
+            dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            dialogWindow.decorView.post { hideSystemBars(dialogWindow) }
+        }
+    }
+
+    private fun setFullscreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        hideSystemBars(window)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) setFullscreen()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent?): Boolean {

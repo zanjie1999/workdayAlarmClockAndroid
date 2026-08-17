@@ -2,16 +2,16 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@android:id/background">
         <shape android:shape="rectangle">
-            <corners android:radius="1dp" />
-            <size android:height="2dp" />
+            <corners android:radius="1px" />
+            <size android:height="3px" />
             <solid android:color="@color/clockProgressTrack" />
         </shape>
     </item>
     <item android:id="@android:id/progress">
         <clip>
             <shape android:shape="rectangle">
-                <corners android:radius="1dp" />
-                <size android:height="2dp" />
+                <corners android:radius="1px" />
+                <size android:height="3px" />
                 <solid android:color="@color/clockProgressFill" />
             </shape>
         </clip>

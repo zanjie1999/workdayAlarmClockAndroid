@@ -91,6 +91,18 @@
         </FrameLayout>
     </LinearLayout>
 
+    <View
+        android:id="@+id/desk_menu_trigger"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@android:color/transparent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHeight_percent="0.30"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintWidth_percent="0.70" />
+
     <LinearLayout
         android:id="@+id/desk_time_panel"
         android:layout_width="wrap_content"
@@ -264,11 +276,8 @@
         <SeekBar
             android:id="@+id/desk_progress"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="0.16"
+            android:layout_height="3px"
             android:max="0"
-            android:maxHeight="6dp"
-            android:minHeight="6dp"
             android:paddingLeft="0dp"
             android:paddingRight="0dp"
             android:progress="0"

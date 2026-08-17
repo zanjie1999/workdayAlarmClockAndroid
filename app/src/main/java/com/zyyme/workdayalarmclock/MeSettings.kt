@@ -27,6 +27,7 @@ object MeSettings {
     const val KEY_CAMERA_PASSWORD = "camera_password"
     const val KEY_DESK_MASK = "desk_mask"
     const val KEY_DESK_LIGHT_TEXT = "desk_light_text"
+    const val KEY_DESK_KEEP_SCREEN_ON = "desk_keep_screen_on"
     const val KEY_DESK_SLOT_TOP_LEFT = "desk_slot_top_left"
     const val KEY_DESK_SLOT_TOP_RIGHT = "desk_slot_top_right"
     const val KEY_DESK_SLOT_BOTTOM_LEFT = "desk_slot_bottom_left"

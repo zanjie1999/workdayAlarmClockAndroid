@@ -89,7 +89,7 @@ class MainActivity : AppCompatActivity() {
     private val settingsMenuItems = listOf(
         SettingMenuItem(MeSettings.KEY_DISABLE, "开机不启动"),
         SettingMenuItem(MeSettings.KEY_CLOCK, "时钟模式"),
-        SettingMenuItem(MeSettings.KEY_DESK_CLOCK, "大屏时钟模式"),
+        SettingMenuItem(MeSettings.KEY_DESK_CLOCK, "使用大屏时钟"),
         SettingMenuItem(MeSettings.KEY_AUTO_BACK_CLOCK, "自动回到时钟"),
         SettingMenuItem(MeSettings.KEY_TSS, "时钟不显示秒"),
         SettingMenuItem(MeSettings.KEY_T24, "时钟24小时制"),
