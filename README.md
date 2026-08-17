@@ -89,7 +89,7 @@ http://设备IP:8880/abc/1/1
 
 
 ## 时钟模式 （智能手表）
-点击控制台顶栏任意非右侧按钮的位置，或者点击常驻的通知，即可开启，或是作为双击电源键打开的相机来打开  
+点击控制台顶栏任意非右侧按钮的位置，或者点击常驻的通知，即可开启，或是作为双击电源键打开的相机来打开，勾选 时钟模式 可以默认启动到时钟模式  
 
 <img width="430" height="206" src="https://github.com/user-attachments/assets/e5f55a3a-3f34-4804-bb00-512225d70d67" />
 
@@ -113,6 +113,11 @@ http://设备IP:8880/abc/1/1
 <img width="902" height="1105" alt="image" src="https://github.com/user-attachments/assets/149a5c37-e329-4cc1-adc0-51aef222fa3d" />
 
 
+## 大屏时钟模式
+在右上角菜单中勾选 使用大屏时钟 即可开启，再点击顶部空白区域即可进入，勾选 时钟模式 可以默认启动到时钟模式  
+<img width="1280" height="960" src="https://github.com/user-attachments/assets/5f6f3bff-3eab-46f4-a736-f4f8a0722dfb" />
+长按中间的空白区域，可以进入设置，调节各个组件的位置和设置壁纸  
+界面为横屏设计，但是不限制屏幕方向，你看可以自行旋转屏幕  
 
 ## 应用列表
 <img width="430" height="268" src="https://github.com/user-attachments/assets/48efb0ac-5c74-49f8-9de2-e72fe386a3ee" />
