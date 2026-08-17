@@ -239,7 +239,7 @@
                     android:thumbOffset="0dp" />
 
                 <LinearLayout
-                    android:layout_width="28dp"
+                    android:layout_width="19dp"
                     android:layout_height="match_parent"
                     android:layout_gravity="start"
                     android:gravity="center_vertical"
@@ -247,7 +247,7 @@
 
                     <ImageView
                         android:id="@+id/desk_volume_icon"
-                        android:layout_width="18dp"
+                        android:layout_width="19dp"
                         android:layout_height="14dp"
                         android:layout_gravity="end"
                         android:contentDescription="媒体音量"
@@ -256,7 +256,7 @@
 
                     <TextView
                         android:id="@+id/desk_volume_percent"
-                        android:layout_width="28dp"
+                        android:layout_width="19dp"
                         android:layout_height="wrap_content"
                         android:gravity="center"
                         android:includeFontPadding="false"
