@@ -736,11 +736,22 @@ class DeskActivity : AppCompatActivity() {
                 button.setImageDrawable(foreground)
             }
         }
+        applyProgressFillColor(color)
         alarmStopButton.setTextColor(color)
         if (light) {
             alarmStopButton.setShadowLayer(4f, 1f, 1f, shadow)
         } else {
             alarmStopButton.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
+        }
+    }
+
+    private fun applyProgressFillColor(color: Int) {
+        listOf(progressView, volumeProgressView).forEach { seekBar ->
+            val drawable = (seekBar.progressDrawable?.mutate() as? LayerDrawable) ?: return@forEach
+            drawable.findDrawableByLayerId(android.R.id.progress)?.let { progressLayer ->
+                DrawableCompat.setTint(progressLayer, color)
+            }
+            seekBar.progressDrawable = drawable
         }
     }
 
