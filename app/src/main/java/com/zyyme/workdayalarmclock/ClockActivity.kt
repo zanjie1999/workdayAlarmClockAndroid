@@ -394,6 +394,7 @@ class ClockActivity : AppCompatActivity() {
         showLyrics = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
         MeService.me?.syncLyricsSetting()
         setFullscreen()
+        AmbientBrightnessController.applyLatestTo(window)
     }
 
     override fun onBackPressed() {

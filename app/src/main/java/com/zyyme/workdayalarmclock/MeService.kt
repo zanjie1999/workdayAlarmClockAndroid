@@ -117,6 +117,7 @@ class MeService : Service() {
     private var wakePendingIntent: PendingIntent? = null
     private var udpServerSocket: DatagramSocket? = null
     private var cameraHttpServer: CameraHttpServer? = null
+    private lateinit var ambientBrightness: AmbientBrightnessController
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
     private var autoBackClockRunnable: Runnable? = null
     private val playbackHandler = Handler(Looper.getMainLooper())
@@ -168,6 +169,13 @@ class MeService : Service() {
     private var longPressDownTime = 0L
     private var longPressRunnable: Runnable? = null
     private var clickWindowRunnable: Runnable? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        ambientBrightness = AmbientBrightnessController(this) { message ->
+            print2LogView(message)
+        }
+    }
 
 
     override fun onBind(intent: Intent): IBinder {
@@ -263,9 +271,8 @@ class MeService : Service() {
             notificationBuilder?.setStyle(mediaStyle)
         }
 
-        updateForegroundServiceType(
-            MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) && hasCameraPermission()
-        )
+        syncAmbientBrightnessSetting()
+        updateForegroundServiceType(cameraFeaturesEnabled())
         syncCameraServerSetting()
 
         // 如果不需要启动Go服务，这个服务将只有播放音频url的功能
@@ -432,17 +439,43 @@ class MeService : Service() {
             print2LogView("摄像头权限未授权，摄像头服务未启动")
         }
 
-        updateForegroundServiceType(enabled)
+        updateForegroundServiceType(cameraFeaturesEnabled())
         if (!enabled) {
             cameraHttpServer?.stop()
             cameraHttpServer = null
             return
         }
 
-        val server = cameraHttpServer ?: CameraHttpServer(this) { message ->
+        val server = cameraHttpServer ?: CameraHttpServer(this, ambientBrightness) { message ->
             print2LogView(message)
         }.also { cameraHttpServer = it }
         server.start(MeSettings.getCameraPassword(this))
+    }
+
+    fun syncAmbientBrightnessSetting() {
+        if (MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS) && !hasCameraPermission()) {
+            MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS, false)
+            print2LogView("摄像头权限未授权，自动亮度未启动")
+        }
+        ambientBrightness.syncSettings()
+        updateForegroundServiceType(cameraFeaturesEnabled())
+    }
+
+    fun ambientBrightnessLevel(): Int = ambientBrightness.level
+
+    fun ambientBrightnessValue(): Int = ambientBrightness.currentSystemBrightness()
+
+    fun startAmbientBrightnessPreview() {
+        ambientBrightness.beginLivePreview()
+    }
+
+    fun stopAmbientBrightnessPreview() {
+        ambientBrightness.endLivePreview()
+    }
+
+    private fun cameraFeaturesEnabled(): Boolean {
+        return (MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) ||
+            MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)) && hasCameraPermission()
     }
 
     fun updateCameraPassword() {
@@ -475,6 +508,9 @@ class MeService : Service() {
     override fun onDestroy() {
         cameraHttpServer?.stop()
         cameraHttpServer = null
+        if (::ambientBrightness.isInitialized) {
+            ambientBrightness.shutdown()
+        }
         cancelAutoBackToClock()
         playbackGeneration++
         playbackHandler.removeCallbacksAndMessages(null)
@@ -1280,6 +1316,21 @@ class MeService : Service() {
 
     private fun isPlaybackPlaying(): Boolean {
         return playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING
+    }
+
+    fun wakeScreenForAmbient() {
+        Handler(Looper.getMainLooper()).post {
+            wakeScreen()
+            val intent = MeSettings.createClockIntent(this).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("clockMode", true)
+            }
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                print2LogView("自动亮屏失败: ${e.message}")
+            }
+        }
     }
 
     fun shouldShowPauseIcon(): Boolean = playWhenReady

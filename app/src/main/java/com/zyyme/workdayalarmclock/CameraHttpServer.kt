@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Suppress("DEPRECATION")
 internal class CameraHttpServer(
     context: Context,
+    private val brightness: AmbientBrightnessController,
     private val log: (String) -> Unit
 ) {
     companion object {
@@ -123,6 +124,10 @@ internal class CameraHttpServer(
                 writeAvcCapability(socket)
                 return
             }
+            if (path?.let { isBrightnessRoute(it) } == true) {
+                writeBrightness(socket)
+                return
+            }
             val route = path?.let { parseRoute(it) }
             if (route == null || !cameraExists(route)) {
                 writeEmptyResponse(socket, 404, "Not Found")
@@ -199,6 +204,24 @@ internal class CameraHttpServer(
     private fun isAvcCapabilityRoute(path: String): Boolean {
         val prefix = if (password.isEmpty()) "" else "/$password"
         return path == "$prefix/avc/capability"
+    }
+
+    private fun isBrightnessRoute(path: String): Boolean {
+        val prefix = if (password.isEmpty()) "" else "/$password"
+        return path == "$prefix/brightness"
+    }
+
+    private fun writeBrightness(socket: Socket) {
+        val body = brightness.level.toString().toByteArray(HTTP_CHARSET)
+        val header = "HTTP/1.0 200 OK\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-cache, no-store\r\n" +
+            "Content-Type: text/plain; charset=us-ascii\r\n" +
+            "Content-Length: ${body.size}\r\n\r\n"
+        val output = socket.getOutputStream()
+        output.write(header.toByteArray(HTTP_CHARSET))
+        output.write(body)
+        output.flush()
     }
 
     private fun writeAvcCapability(socket: Socket) {
@@ -331,10 +354,12 @@ internal class CameraHttpServer(
             }
 
             closeActiveSessionLocked()
+            brightness.onIpCameraStarting()
             if (!running.get()) return null
             val newPipeline = createPipeline(key)
             if (!newPipeline.start()) {
                 newPipeline.stop()
+                brightness.onIpCameraStopped()
                 return null
             }
             if (!running.get()) {
@@ -352,7 +377,10 @@ internal class CameraHttpServer(
 
     private fun createPipeline(key: CameraStreamKey): CameraStreamPipeline {
         return when (key.format) {
-            CameraStreamFormat.MJPEG -> MjpegCameraPipeline(key, log)
+            CameraStreamFormat.MJPEG -> {
+                brightness.beginCameraWarmup()
+                MjpegCameraPipeline(key, log, brightness::updateLuma)
+            }
             CameraStreamFormat.AVC -> AvcCameraPipeline(appContext, key, log)
         }
     }
@@ -371,6 +399,7 @@ internal class CameraHttpServer(
             if (shouldStop) {
                 pipeline.stop()
                 releaseStreamLocks()
+                brightness.onIpCameraStopped()
             }
         }
     }
@@ -395,7 +424,11 @@ internal class CameraHttpServer(
             } catch (_: Exception) {
             }
         }
-        session.first?.stop()
+        val pipeline = session.first
+        if (pipeline != null) {
+            pipeline.stop()
+            brightness.onIpCameraStopped()
+        }
         releaseStreamLocks()
     }
 

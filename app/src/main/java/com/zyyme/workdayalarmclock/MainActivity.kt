@@ -17,7 +17,10 @@ import android.view.Menu
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -45,8 +48,10 @@ class MainActivity : AppCompatActivity() {
         private const val TOGGLE_CAMERA_SERVER = 8
         private const val EDIT_CAMERA_PASSWORD = 9
         private const val OPEN_DEVELOPER_OPTIONS = 10
+        private const val CONFIG_CAMERA_AUTO_BRIGHTNESS = 11
         private const val MENU_SETTING_START = 100
         private const val REQUEST_CAMERA_PERMISSION = 102
+        private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
         private const val LOG_REFRESH_DELAY_MILLIS = 250L
     }
 
@@ -60,6 +65,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var logScrollView: ScrollView
     private lateinit var playButton: ImageView
     private var settingsPopupMenu: PopupMenu? = null
+    private var enableAmbientAfterPermission = false
 
     private val scrollLogToBottom = Runnable {
         if (isActivityVisible && ::logScrollView.isInitialized) {
@@ -104,6 +110,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        AmbientBrightnessController.applyLatestTo(window)
         isActivityVisible = true
         updatePlaybackButton(MeService.me?.shouldShowPauseIcon() == true)
         show2LogView()
@@ -280,6 +287,8 @@ class MainActivity : AppCompatActivity() {
         }
         popupMenu.menu.findItem(TOGGLE_CAMERA_SERVER)?.isChecked =
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
+        popupMenu.menu.findItem(CONFIG_CAMERA_AUTO_BRIGHTNESS)?.isChecked =
+            MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
         popupMenu.show()
     }
 
@@ -303,7 +312,10 @@ class MainActivity : AppCompatActivity() {
             isCheckable = true
         }
         popupMenu.menu.add(Menu.NONE, EDIT_CAMERA_PASSWORD, MENU_SETTING_START + settingsMenuItems.size + 4, "摄像头密码")
-        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 5, "开发者选项")
+        popupMenu.menu.add(Menu.NONE, CONFIG_CAMERA_AUTO_BRIGHTNESS, MENU_SETTING_START + settingsMenuItems.size + 5, "摄像头自动亮度").apply {
+            isCheckable = true
+        }
+        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 6, "开发者选项")
 
         popupMenu.setOnMenuItemClickListener { menuItem ->
             if (menuItem.itemId == MENU_EXIT) {
@@ -332,6 +344,9 @@ class MainActivity : AppCompatActivity() {
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == EDIT_CAMERA_PASSWORD) {
                 showCameraPasswordDialog()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == CONFIG_CAMERA_AUTO_BRIGHTNESS) {
+                showCameraAutoBrightnessDialog()
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_DEVELOPER_OPTIONS) {
                 openDeveloperOptions()
@@ -449,6 +464,173 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    @Suppress("DEPRECATION")
+    private fun showCameraAutoBrightnessDialog() {
+        fun numberInput(value: String, decimal: Boolean = false): EditText {
+            return EditText(this).apply {
+                hint = value
+                inputType = InputType.TYPE_CLASS_NUMBER or if (decimal) {
+                    InputType.TYPE_NUMBER_FLAG_DECIMAL
+                } else {
+                    0
+                }
+                setSingleLine(true)
+            }
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (20 * resources.displayMetrics.density).toInt()
+            setPadding(padding, padding / 2, padding, 0)
+        }
+        fun addNumberField(label: String, input: EditText) {
+            container.addView(TextView(this).apply {
+                text = label
+                textSize = 14f
+                setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
+            })
+            container.addView(input)
+        }
+        fun applyManualSystemBrightness(value: Int) {
+            val brightness = value.coerceIn(0, 255)
+            try {
+                Settings.System.putInt(
+                    contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                )
+                Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
+            } catch (_: Exception) {
+            }
+            fun applyWindow(window: android.view.Window) {
+                val attributes = window.attributes
+                attributes.screenBrightness = brightness / 255f
+                window.attributes = attributes
+            }
+            applyWindow(window)
+            ClockActivity.me?.let { applyWindow(it.window) }
+            DeskActivity.me?.let { applyWindow(it.window) }
+        }
+        fun addBrightnessField(label: String, seekBar: SeekBar) {
+            val labelView = TextView(this).apply {
+                textSize = 14f
+                setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
+            }
+            fun updateLabel() {
+                labelView.text = "$label：${seekBar.progress}"
+            }
+            seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    updateLabel()
+                    if (fromUser) applyManualSystemBrightness(progress)
+                }
+
+                override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+                override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+            })
+            updateLabel()
+            container.addView(labelView)
+            container.addView(seekBar)
+        }
+
+        val enabledSwitch = Switch(this).apply {
+            text = "启用摄像头自动亮度"
+            isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
+        }
+        container.addView(enabledSwitch)
+        fun brightnessSeekBar(value: Int): SeekBar {
+            return SeekBar(this).apply {
+                max = 255
+                progress = value.coerceIn(0, 255)
+            }
+        }
+        val level1 = brightnessSeekBar(MeSettings.getInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_1, 8))
+        val level2 = brightnessSeekBar(MeSettings.getInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_2, 32))
+        val level3 = brightnessSeekBar(MeSettings.getInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_3, 96))
+        val level4 = brightnessSeekBar(MeSettings.getInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_4, 255))
+        addBrightnessField("档位1系统亮度 (0-255)", level1)
+        addBrightnessField("档位2系统亮度 (0-255)", level2)
+        addBrightnessField("档位3系统亮度 (0-255)", level3)
+        addBrightnessField("档位4系统亮度 (0-255)", level4)
+        val closeScreenSwitch = Switch(this).apply {
+            text = "档位0关闭屏幕（关闭时仅设亮度0）"
+            isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_CLOSE_SCREEN)
+        }
+        container.addView(closeScreenSwitch)
+        val wakeLevel = numberInput(MeSettings.getInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).toString())
+        addNumberField("自动亮屏档位 (0-4，0不开)", wakeLevel)
+        val interval = numberInput(
+            MeSettings.getString(this, MeSettings.KEY_CAMERA_BRIGHTNESS_INTERVAL, "0"),
+            true
+        )
+        addNumberField("检测间隔（分钟，可小数，0连续）", interval)
+        val scroll = ScrollView(this).apply { addView(container) }
+        val currentBrightnessLevel = MeService.me?.ambientBrightnessLevel() ?: 4
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("摄像头自动亮度（当前等级 $currentBrightnessLevel，系统亮度 ${MeService.me?.ambientBrightnessValue() ?: 255}）")
+            .setView(scroll)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("保存", null)
+            .create()
+        dialog.setOnShowListener {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            ) {
+                MeService.me?.startAmbientBrightnessPreview()
+            }
+            val titleUpdater = object : Runnable {
+                override fun run() {
+                    if (!dialog.isShowing) return
+                    val level = MeService.me?.ambientBrightnessLevel() ?: 4
+                    val value = MeService.me?.ambientBrightnessValue() ?: 255
+                    dialog.setTitle("摄像头自动亮度（当前等级 $level，系统亮度 $value）")
+                    mainHandler.postDelayed(this, 500L)
+                }
+            }
+            mainHandler.post(titleUpdater)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val levels = listOf(level1, level2, level3, level4).map { it.progress }
+                val wake = wakeLevel.text.toString().toIntOrNull()
+                    ?: wakeLevel.hint.toString().toIntOrNull()
+                if (wake == null || wake !in 0..4) {
+                    wakeLevel.error = "请输入0到4"
+                    return@setOnClickListener
+                }
+                val intervalValue = interval.text.toString().ifEmpty { interval.hint.toString() }
+                val intervalMinutes = intervalValue.toDoubleOrNull()
+                if (intervalMinutes == null || intervalMinutes < 0.0) {
+                    interval.error = "请输入大于等于0的分钟数"
+                    return@setOnClickListener
+                }
+
+                MeSettings.setInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_1, levels[0])
+                MeSettings.setInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_2, levels[1])
+                MeSettings.setInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_3, levels[2])
+                MeSettings.setInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_4, levels[3])
+                MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_CLOSE_SCREEN, closeScreenSwitch.isChecked)
+                MeSettings.setInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, wake)
+                MeSettings.setString(this, MeSettings.KEY_CAMERA_BRIGHTNESS_INTERVAL, intervalValue.trim())
+
+                val shouldEnable = enabledSwitch.isChecked
+                if (shouldEnable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                    ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    enableAmbientAfterPermission = true
+                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQUEST_AMBIENT_CAMERA_PERMISSION)
+                } else {
+                    MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS, shouldEnable)
+                    MeService.me?.syncAmbientBrightnessSetting()
+                }
+                dialog.dismiss()
+            }
+            dialog.setOnDismissListener {
+                mainHandler.removeCallbacks(titleUpdater)
+                MeService.me?.stopAmbientBrightnessPreview()
+            }
+        }
+        dialog.show()
+    }
+
     private fun openDeveloperOptions() {
         try {
             startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
@@ -467,6 +649,16 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_AMBIENT_CAMERA_PERMISSION) {
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS, granted && enableAmbientAfterPermission)
+            settingsPopupMenu?.menu?.findItem(CONFIG_CAMERA_AUTO_BRIGHTNESS)?.isChecked =
+                granted && enableAmbientAfterPermission
+            enableAmbientAfterPermission = false
+            MeService.me?.syncAmbientBrightnessSetting()
+            if (!granted) Toast.makeText(this, "摄像头权限未授权", Toast.LENGTH_LONG).show()
+            return
+        }
         if (requestCode != REQUEST_CAMERA_PERMISSION) return
 
         if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {

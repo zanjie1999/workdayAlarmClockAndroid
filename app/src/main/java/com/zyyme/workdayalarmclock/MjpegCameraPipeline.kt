@@ -18,7 +18,8 @@ import kotlin.math.min
 @Suppress("DEPRECATION")
 internal class MjpegCameraPipeline(
     override val key: CameraStreamKey,
-    private val log: (String) -> Unit
+    private val log: (String) -> Unit,
+    private val onLuma: ((Int) -> Unit)? = null
 ) : CameraStreamPipeline {
     companion object {
         private const val TARGET_FPS = 30_000
@@ -38,6 +39,7 @@ internal class MjpegCameraPipeline(
     private var frameWidth = 0
     private var frameHeight = 0
     private var selectedFps = 0
+    private var lastLumaAt = 0L
 
     override val description: String
         get() = "MJPEG ${frameWidth}x${frameHeight} ${selectedFps}fps"
@@ -78,6 +80,11 @@ internal class MjpegCameraPipeline(
                 previewTexture = texture
                 openedCamera.setPreviewTexture(texture)
                 openedCamera.setPreviewCallbackWithBuffer { data, sourceCamera ->
+                    val now = SystemClock.elapsedRealtime()
+                    if (onLuma != null && now - lastLumaAt >= 500L) {
+                        lastLumaAt = now
+                        onLuma.invoke(highlightLuma(data))
+                    }
                     if (!running.get() || !frameQueue.offer(data)) {
                         if (running.get()) sourceCamera.addCallbackBuffer(data)
                     }
@@ -222,6 +229,27 @@ internal class MjpegCameraPipeline(
             compareByDescending<Camera.Size> { it.width.toLong() * it.height }
                 .thenByDescending { it.width }
         )
+    }
+
+    private fun highlightLuma(data: ByteArray): Int {
+        val pixelCount = frameWidth * frameHeight
+        if (pixelCount <= 0 || data.isEmpty()) return 0
+        val histogram = IntArray(256)
+        var count = 0
+        var index = 0
+        while (index < pixelCount && index < data.size) {
+            histogram[data[index].toInt() and 0xff]++
+            count++
+            index += 32
+        }
+        if (count == 0) return 0
+        val target = ((count * 98) / 100).coerceAtLeast(1)
+        var accumulated = 0
+        for (value in histogram.indices) {
+            accumulated += histogram[value]
+            if (accumulated >= target) return value
+        }
+        return 255
     }
 
     override fun awaitPacket(afterSequence: Long): CameraStreamPacket? {

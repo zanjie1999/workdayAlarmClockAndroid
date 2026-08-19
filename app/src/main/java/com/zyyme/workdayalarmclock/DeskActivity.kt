@@ -217,6 +217,7 @@ class DeskActivity : AppCompatActivity() {
         }
         applyDefaultKeepScreenOn()
         setFullscreen()
+        AmbientBrightnessController.applyLatestTo(window)
     }
 
     fun showEcho(message: String) {

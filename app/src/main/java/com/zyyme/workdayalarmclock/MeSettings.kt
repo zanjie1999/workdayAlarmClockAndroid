@@ -25,6 +25,15 @@ object MeSettings {
     const val KEY_NOTIFICATION_FORWARD_URL = "notification_forward_url"
     const val KEY_CAMERA_SERVER = "camera_server"
     const val KEY_CAMERA_PASSWORD = "camera_password"
+    const val KEY_CAMERA_AUTO_BRIGHTNESS = "camera_auto_brightness"
+    const val KEY_CAMERA_BRIGHTNESS_0 = "camera_brightness_0"
+    const val KEY_CAMERA_BRIGHTNESS_1 = "camera_brightness_1"
+    const val KEY_CAMERA_BRIGHTNESS_2 = "camera_brightness_2"
+    const val KEY_CAMERA_BRIGHTNESS_3 = "camera_brightness_3"
+    const val KEY_CAMERA_BRIGHTNESS_4 = "camera_brightness_4"
+    const val KEY_CAMERA_CLOSE_SCREEN = "camera_close_screen"
+    const val KEY_CAMERA_AUTO_WAKE_LEVEL = "camera_auto_wake_level"
+    const val KEY_CAMERA_BRIGHTNESS_INTERVAL = "camera_brightness_interval"
     const val KEY_DESK_MASK = "desk_mask"
     const val KEY_DESK_LIGHT_TEXT = "desk_light_text"
     const val KEY_DESK_KEEP_SCREEN_ON = "desk_keep_screen_on"
@@ -63,6 +72,14 @@ object MeSettings {
             .edit()
             .putInt(key, value)
             .apply()
+    }
+
+    fun getString(context: Context, key: String, defaultValue: String): String {
+        return preferences(context).getString(key, defaultValue).orEmpty()
+    }
+
+    fun setString(context: Context, key: String, value: String) {
+        preferences(context).edit().putString(key, value).apply()
     }
 
     fun createClockIntent(context: Context): Intent {
