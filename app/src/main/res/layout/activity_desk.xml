@@ -288,7 +288,7 @@
                 android:paddingTop="0dp"
                 android:paddingBottom="20dp"
                 android:scaleType="centerInside"
-                android:src="@android:drawable/ic_media_previous" />
+                android:src="@drawable/icon_previous" />
 
             <ImageButton
                 android:id="@+id/desk_play"
@@ -301,7 +301,7 @@
                 android:paddingTop="0dp"
                 android:paddingBottom="20dp"
                 android:scaleType="centerInside"
-                android:src="@android:drawable/ic_media_play" />
+                android:src="@drawable/icon_play_pause" />
 
             <ImageButton
                 android:id="@+id/desk_next"
@@ -314,7 +314,7 @@
                 android:paddingTop="0dp"
                 android:paddingBottom="20dp"
                 android:scaleType="centerInside"
-                android:src="@android:drawable/ic_media_next" />
+                android:src="@drawable/icon_next" />
 
             <ImageButton
                 android:id="@+id/desk_stop"

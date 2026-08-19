@@ -122,6 +122,12 @@ class MeService : Service() {
     private val playbackHandler = Handler(Looper.getMainLooper())
     private var playerState = PlayerState.IDLE
     private var playWhenReady = false
+        set(value) {
+            if (field == value) return
+            field = value
+            MainActivity.me?.updatePlaybackButton(value)
+            DeskActivity.me?.updatePlaybackButton(value)
+        }
     private var resumeAfterAudioFocusGain = false
     private var playbackGeneration = 0
     private var retryCount = 0
@@ -1275,6 +1281,8 @@ class MeService : Service() {
     private fun isPlaybackPlaying(): Boolean {
         return playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING
     }
+
+    fun shouldShowPauseIcon(): Boolean = playWhenReady
 
     private fun requestPausePlayback(resumeAfterFocusGain: Boolean = false) {
         toGo("pause1")

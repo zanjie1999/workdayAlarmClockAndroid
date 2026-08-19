@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
     private val logRefreshPending = AtomicBoolean(false)
     private lateinit var logView: TextView
     private lateinit var logScrollView: ScrollView
+    private lateinit var playButton: ImageView
     private var settingsPopupMenu: PopupMenu? = null
 
     private val scrollLogToBottom = Runnable {
@@ -104,6 +105,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         isActivityVisible = true
+        updatePlaybackButton(MeService.me?.shouldShowPauseIcon() == true)
         show2LogView()
     }
     override fun onPause() {
@@ -233,7 +235,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.iconPrev).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
         }
-        findViewById<ImageView>(R.id.iconPlay).setOnClickListener {
+        playButton = findViewById(R.id.iconPlay)
+        playButton.setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
         }
         findViewById<ImageView>(R.id.iconNext).setOnClickListener {
@@ -625,6 +628,15 @@ class MainActivity : AppCompatActivity() {
     fun show2LogView() {
         if (isActivityVisible && logRefreshPending.compareAndSet(false, true)) {
             mainHandler.postDelayed(refreshLogView, LOG_REFRESH_DELAY_MILLIS)
+        }
+    }
+
+    fun updatePlaybackButton(showPause: Boolean) {
+        runOnUiThread {
+            if (::playButton.isInitialized) {
+                playButton.isSelected = showPause
+                playButton.contentDescription = if (showPause) "暂停" else "播放"
+            }
         }
     }
 

@@ -67,7 +67,7 @@
             android:layout_height="match_parent"
             android:layout_gravity="end"
             android:contentDescription="下一首"
-            android:src="@android:drawable/ic_media_next" />
+            android:src="@drawable/icon_next" />
 
         <ImageView
             android:id="@+id/iconPlay"
@@ -75,7 +75,7 @@
             android:layout_height="match_parent"
             android:layout_gravity="end"
             android:contentDescription="播放暂停"
-            android:src="@android:drawable/ic_media_play" />
+            android:src="@drawable/icon_play_pause" />
 
         <ImageView
             android:id="@+id/iconPrev"
@@ -83,7 +83,7 @@
             android:layout_height="match_parent"
             android:layout_gravity="end"
             android:contentDescription="上一首"
-            android:src="@android:drawable/ic_media_previous" />
+            android:src="@drawable/icon_previous" />
 
         <ImageView
             android:id="@+id/iconStop"

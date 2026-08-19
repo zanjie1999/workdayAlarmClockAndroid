@@ -99,6 +99,7 @@ class DeskActivity : AppCompatActivity() {
     private lateinit var durationView: TextView
     private lateinit var controlsView: View
     private lateinit var progressTimesView: View
+    private lateinit var playButton: ImageButton
     private lateinit var alarmStopButton: Button
 
     private var wallpaperBitmap: Bitmap? = null
@@ -139,6 +140,7 @@ class DeskActivity : AppCompatActivity() {
             val position = service?.getPlaybackPosition()
             val duration = service?.getPlaybackDuration() ?: 0
             updateProgress(position, duration)
+            updatePlaybackButton(service?.shouldShowPauseIcon() == true)
             updateVolumeControl()
 
             if (MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
@@ -203,6 +205,7 @@ class DeskActivity : AppCompatActivity() {
         loadSlotSettings()
         applyMask()
         applyTextStyle()
+        updatePlaybackButton(MeService.me?.shouldShowPauseIcon() == true)
         grid.post {
             sizePanels()
             applyConfiguredLayout()
@@ -242,6 +245,7 @@ class DeskActivity : AppCompatActivity() {
         durationView = findViewById(R.id.desk_duration)
         controlsView = findViewById(R.id.desk_controls)
         progressTimesView = findViewById(R.id.desk_progress_times)
+        playButton = findViewById(R.id.desk_play)
         alarmStopButton = findViewById(R.id.desk_alarm_stop)
     }
 
@@ -249,7 +253,7 @@ class DeskActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.desk_prev).setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
         }
-        findViewById<ImageButton>(R.id.desk_play).setOnClickListener {
+        playButton.setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
         }
         findViewById<ImageButton>(R.id.desk_next).setOnClickListener {
@@ -359,8 +363,8 @@ class DeskActivity : AppCompatActivity() {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON, enabled)
                         applyKeepScreenOnState(enabled)
                     }
-                    in 6..9 -> showSlotContentDialog(which - 6, slotNames[which - 6], contentNames)
-                    10 -> returnToMain()
+                    in 5..8 -> showSlotContentDialog(which - 5, slotNames[which - 5], contentNames)
+                    9 -> returnToMain()
                 }
             }
             .create()
@@ -447,8 +451,7 @@ class DeskActivity : AppCompatActivity() {
         val heightFraction = if (player) 0.24f else 0.30f
         val height = (resources.displayMetrics.heightPixels * heightFraction).toInt()
         val horizontalGravity = if (slot % 2 == 0) Gravity.START else Gravity.END
-        val gravity = horizontalGravity or
-                (if (slot < 2) Gravity.TOP else Gravity.BOTTOM)
+        val gravity = panelGravity(slot)
         if (!player) {
             timePanel.gravity = horizontalGravity or Gravity.BOTTOM
             timeView.gravity = horizontalGravity or Gravity.BOTTOM
@@ -456,6 +459,11 @@ class DeskActivity : AppCompatActivity() {
         }
         panel.setPadding(0, 0, 0, 0)
         slotFrames()[slot].addView(panel, FrameLayout.LayoutParams(width, height, gravity))
+    }
+
+    private fun panelGravity(slot: Int): Int {
+        val horizontalGravity = if (slot % 2 == 0) Gravity.START else Gravity.END
+        return horizontalGravity or (if (slot < 2) Gravity.TOP else Gravity.BOTTOM)
     }
 
     private fun addLyricsToRow(row: Int) {
@@ -514,10 +522,12 @@ class DeskActivity : AppCompatActivity() {
         if (enabled) {
             val width = (resources.displayMetrics.widthPixels * 0.4f).toInt()
             val height = (resources.displayMetrics.heightPixels * 0.32f).toInt()
+            val configuredPlayerSlot = slotValues.indexOf(CONTENT_PLAYER)
+            val alarmSlot = if (configuredPlayerSlot >= 0) configuredPlayerSlot else 3
             playerPanel.setPadding(0, 0, 0, 0)
-            findViewById<FrameLayout>(R.id.desk_bottom_row).addView(
+            slotFrames()[alarmSlot].addView(
                 playerPanel,
-                FrameLayout.LayoutParams(width, height, Gravity.END or Gravity.BOTTOM)
+                FrameLayout.LayoutParams(width, height, panelGravity(alarmSlot))
             )
         } else {
             applyConfiguredLayout()
@@ -549,6 +559,7 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private fun chooseWallpaper() {
+        Toast.makeText(this, "将图片放到内置存储的zyymeWallpaper中可每小时随机轮换", Toast.LENGTH_LONG).show()
         val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             Intent.ACTION_OPEN_DOCUMENT
         } else {
@@ -855,6 +866,15 @@ class DeskActivity : AppCompatActivity() {
             alarmStopButton.setShadowLayer(4f, 1f, 1f, shadow)
         } else {
             alarmStopButton.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
+        }
+    }
+
+    fun updatePlaybackButton(showPause: Boolean) {
+        runOnUiThread {
+            if (::playButton.isInitialized) {
+                playButton.isSelected = showPause
+                playButton.contentDescription = if (showPause) "暂停" else "播放"
+            }
         }
     }
 
