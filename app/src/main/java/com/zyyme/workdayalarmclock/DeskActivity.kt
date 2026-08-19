@@ -103,6 +103,11 @@ class DeskActivity : AppCompatActivity() {
 
     private var wallpaperBitmap: Bitmap? = null
     private var pendingWallpaperUri: Uri? = null
+    private val autoWallpaperDirectory = File("/sdcard/zyymeWallpaper")
+    private var autoWallpaperFiles = emptyList<File>()
+    private var autoWallpaperIndex = -1
+    private var currentAutoWallpaper: File? = null
+    private var wallpaperTimerStarted = false
     private var isUserSeeking = false
     private var isUserAdjustingVolume = false
     private var alarmMode = false
@@ -116,7 +121,9 @@ class DeskActivity : AppCompatActivity() {
         override fun run() {
             val now = Date()
             val service = MeService.me
-            service?.requestWeatherIfNeeded()
+            if (service?.requestWeatherIfNeeded() == true) {
+                handleWallpaperTimerTick()
+            }
             timeView.text = timeFormat.format(now)
             val weather = service?.weatherText.orEmpty()
             dateView.text = if (weather.isEmpty()) {
@@ -201,7 +208,9 @@ class DeskActivity : AppCompatActivity() {
             if (alarmMode) showAlarmControls(true)
         }
         MeService.me?.syncLyricsSetting()
-        MeService.me?.requestWeatherIfNeeded()
+        if (MeService.me?.requestWeatherIfNeeded() == true) {
+            handleWallpaperTimerTick()
+        }
         applyDefaultKeepScreenOn()
         setFullscreen()
     }
@@ -639,16 +648,107 @@ class DeskActivity : AppCompatActivity() {
         Toast.makeText(this, "壁纸已设置", Toast.LENGTH_SHORT).show()
     }
 
+    private fun handleWallpaperTimerTick() {
+        if (!wallpaperTimerStarted) {
+            wallpaperTimerStarted = true
+            return
+        }
+        advanceAutoWallpaper()
+    }
+
+    private fun listAutoWallpaperFiles(): List<File> {
+        return try {
+            if (!autoWallpaperDirectory.exists()) {
+                autoWallpaperDirectory.mkdirs()
+            }
+            if (!autoWallpaperDirectory.isDirectory) {
+                emptyList()
+            } else {
+                autoWallpaperDirectory.listFiles()
+                    ?.filter { it.isFile && isAutoWallpaperFile(it) }
+                    ?.sortedBy { it.name.lowercase(Locale.ROOT) }
+                    .orEmpty()
+            }
+        } catch (_: SecurityException) {
+            emptyList()
+        }
+    }
+
+    private fun isAutoWallpaperFile(file: File): Boolean {
+        return when (file.extension.lowercase(Locale.ROOT)) {
+            "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif" -> true
+            else -> false
+        }
+    }
+
+    private fun hasSameAutoWallpaperFiles(files: List<File>): Boolean {
+        return files.map { it.absolutePath }.toSet() ==
+            autoWallpaperFiles.map { it.absolutePath }.toSet()
+    }
+
+    private fun shuffleAutoWallpaperFiles(files: List<File>, avoid: File? = null): List<File> {
+        val shuffled = files.shuffled().toMutableList()
+        if (avoid != null && shuffled.size > 1 && shuffled.first().absolutePath == avoid.absolutePath) {
+            shuffled[0] = shuffled[1].also { shuffled[1] = shuffled[0] }
+        }
+        return shuffled
+    }
+
+    private fun advanceAutoWallpaper() {
+        val files = listAutoWallpaperFiles()
+        if (files.isEmpty()) {
+            autoWallpaperFiles = emptyList()
+            autoWallpaperIndex = -1
+            currentAutoWallpaper = null
+            loadWallpaper()
+            return
+        }
+
+        val previous = currentAutoWallpaper
+        if (!hasSameAutoWallpaperFiles(files) || autoWallpaperIndex !in autoWallpaperFiles.indices) {
+            autoWallpaperFiles = shuffleAutoWallpaperFiles(files, previous)
+            autoWallpaperIndex = 0
+        } else if (autoWallpaperIndex == autoWallpaperFiles.lastIndex) {
+            autoWallpaperFiles = shuffleAutoWallpaperFiles(files, previous)
+            autoWallpaperIndex = 0
+        } else {
+            autoWallpaperIndex++
+        }
+        currentAutoWallpaper = autoWallpaperFiles[autoWallpaperIndex]
+        loadWallpaper()
+    }
+
+    private fun selectAutoWallpaper(): File? {
+        val files = listAutoWallpaperFiles()
+        if (files.isEmpty()) {
+            autoWallpaperFiles = emptyList()
+            autoWallpaperIndex = -1
+            currentAutoWallpaper = null
+            return null
+        }
+        if (!hasSameAutoWallpaperFiles(files) ||
+            currentAutoWallpaper == null || !currentAutoWallpaper!!.isFile
+        ) {
+            autoWallpaperFiles = shuffleAutoWallpaperFiles(files)
+            autoWallpaperIndex = 0
+            currentAutoWallpaper = autoWallpaperFiles[autoWallpaperIndex]
+        }
+        return currentAutoWallpaper
+    }
+
     private fun loadWallpaper() {
         val width = wallpaperView.width.coerceAtLeast(resources.displayMetrics.widthPixels)
         val height = wallpaperView.height.coerceAtLeast(resources.displayMetrics.heightPixels)
-        val custom = File(filesDir, "desk.jpg")
+        val auto = selectAutoWallpaper()
+        val custom = auto ?: File(filesDir, "desk.jpg")
         try {
-            val bitmap = if (custom.exists() && custom.length() > 0L) {
-                decodeSampledFile(custom, width, height)
-            } else {
-                decodeSampledResource(R.drawable.desk, width, height)
-            }
+            val bitmap = decodeSampledFileSafely(custom, width, height)
+                ?: if (auto != null) {
+                    decodeSampledFileSafely(File(filesDir, "desk.jpg"), width, height)
+                } else {
+                    null
+                }
+                ?: decodeSampledResource(R.drawable.desk, width, height)
             if (bitmap != null) {
                 val old = wallpaperBitmap
                 wallpaperBitmap = bitmap
@@ -657,6 +757,18 @@ class DeskActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Toast.makeText(this, "壁纸读取失败：${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun decodeSampledFileSafely(file: File, width: Int, height: Int): Bitmap? {
+        return if (file.exists() && file.length() > 0L) {
+            try {
+                decodeSampledFile(file, width, height)
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
         }
     }
 

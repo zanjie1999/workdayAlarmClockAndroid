@@ -1982,15 +1982,16 @@ class MeService : Service() {
     }
 
     @Synchronized
-    fun requestWeatherIfNeeded() {
+    fun requestWeatherIfNeeded(): Boolean {
         val now = System.currentTimeMillis()
         if (writer == null || (now >= lastWeatherRequestAt &&
                     now - lastWeatherRequestAt < WEATHER_UPDATE_INTERVAL_MS)
         ) {
-            return
+            return false
         }
         lastWeatherRequestAt = now
         toGo("weather")
+        return true
     }
 
     /**
