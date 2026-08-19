@@ -18,7 +18,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.GestureDetector
 import android.view.Gravity
@@ -68,9 +67,6 @@ class DeskActivity : AppCompatActivity() {
         private const val CONTENT_PLAYER = 2
         private const val CONTENT_LYRICS = 3
 
-        private const val LYRIC_REFRESH_INTERVAL_MS = 250L
-        private const val UI_REFRESH_INTERVAL_MS = 500L
-
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -115,7 +111,6 @@ class DeskActivity : AppCompatActivity() {
     private var isUserSeeking = false
     private var isUserAdjustingVolume = false
     private var alarmMode = false
-    private var lastUiRefreshAt = 0L
     var isKeepScreenOn = false
 
     private var timeFormat = SimpleDateFormat("h:mm:ss", Locale.CHINA)
@@ -124,8 +119,27 @@ class DeskActivity : AppCompatActivity() {
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
+            val now = Date()
             val service = MeService.me
+            if (service?.requestWeatherIfNeeded() == true) {
+                handleWallpaperTimerTick()
+            }
+            timeView.text = timeFormat.format(now)
+            val weather = service?.weatherText.orEmpty()
+            dateView.text = if (weather.isEmpty()) {
+                dateFormat.format(now)
+            } else {
+                "${weatherDateFormat.format(now)} $weather"
+            }
+
+            service?.lastEcho?.let {
+                if (echoView.text.toString() != it) echoView.text = it
+            }
             val position = service?.getPlaybackPosition()
+            val duration = service?.getPlaybackDuration() ?: 0
+            updateProgress(position, duration)
+            updateVolumeControl()
+
             if (MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
                 val lyric = formatLyricForTwoLines(service?.getCurrentLyric(position).orEmpty())
                 if (lyricsView.text.toString() != lyric) lyricsView.text = lyric
@@ -133,37 +147,13 @@ class DeskActivity : AppCompatActivity() {
                 lyricsView.text = ""
             }
 
-            val elapsedRealtime = SystemClock.elapsedRealtime()
-            if (elapsedRealtime - lastUiRefreshAt >= UI_REFRESH_INTERVAL_MS) {
-                lastUiRefreshAt = elapsedRealtime
-                refreshUi(service, position)
+            val delay = if (position != null && MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
+                250L
+            } else {
+                1000L - System.currentTimeMillis() % 1000L
             }
-            handler.postDelayed(this, LYRIC_REFRESH_INTERVAL_MS)
+            handler.postDelayed(this, delay)
         }
-    }
-
-    private fun refreshUi(service: MeService?, position: Int?) {
-        val now = Date()
-        if (service?.requestWeatherIfNeeded() == true) {
-            handleWallpaperTimerTick()
-        }
-
-        val time = timeFormat.format(now)
-        if (timeView.text.toString() != time) timeView.text = time
-
-        val weather = service?.weatherText.orEmpty()
-        val date = if (weather.isEmpty()) {
-            dateFormat.format(now)
-        } else {
-            "${weatherDateFormat.format(now)} $weather"
-        }
-        if (dateView.text.toString() != date) dateView.text = date
-
-        service?.lastEcho?.let {
-            if (echoView.text.toString() != it) echoView.text = it
-        }
-        updateProgress(position, service?.getPlaybackDuration() ?: 0)
-        updateVolumeControl()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -368,8 +358,8 @@ class DeskActivity : AppCompatActivity() {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON, enabled)
                         applyKeepScreenOnState(enabled)
                     }
-                    in 5..8 -> showSlotContentDialog(which - 5, slotNames[which - 5], contentNames)
-                    9 -> returnToMain()
+                    in 6..9 -> showSlotContentDialog(which - 6, slotNames[which - 6], contentNames)
+                    10 -> returnToMain()
                 }
             }
             .create()
@@ -457,7 +447,7 @@ class DeskActivity : AppCompatActivity() {
         val height = (resources.displayMetrics.heightPixels * heightFraction).toInt()
         val horizontalGravity = if (slot % 2 == 0) Gravity.START else Gravity.END
         val gravity = horizontalGravity or
-            (if (slot < 2) Gravity.TOP else Gravity.BOTTOM)
+                (if (slot < 2) Gravity.TOP else Gravity.BOTTOM)
         if (!player) {
             timePanel.gravity = horizontalGravity or Gravity.BOTTOM
             timeView.gravity = horizontalGravity or Gravity.BOTTOM
@@ -693,7 +683,7 @@ class DeskActivity : AppCompatActivity() {
 
     private fun hasSameAutoWallpaperFiles(files: List<File>): Boolean {
         return files.map { it.absolutePath }.toSet() ==
-            autoWallpaperFiles.map { it.absolutePath }.toSet()
+                autoWallpaperFiles.map { it.absolutePath }.toSet()
     }
 
     private fun shuffleAutoWallpaperFiles(files: List<File>, avoid: File? = null): List<File> {
@@ -898,10 +888,7 @@ class DeskActivity : AppCompatActivity() {
         if (!isUserAdjustingVolume && volumeProgressView.progress != percent) {
             volumeProgressView.progress = percent
         }
-        val percentText = "$percent%"
-        if (volumePercentView.text.toString() != percentText) {
-            volumePercentView.text = percentText
-        }
+        volumePercentView.text = "$percent%"
     }
 
     private fun setMediaVolumePercent(percent: Int) {
@@ -969,24 +956,20 @@ class DeskActivity : AppCompatActivity() {
 
     private fun updateProgress(position: Int?, duration: Int) {
         if (position == null || duration <= 0) {
-            if (progressView.max != 0) progressView.max = 0
-            if (progressView.progress != 0) progressView.progress = 0
-            if (progressView.isEnabled) progressView.isEnabled = false
-            val emptyTime = formatMusicTime(0)
-            if (positionView.text.toString() != emptyTime) positionView.text = emptyTime
-            if (durationView.text.toString() != emptyTime) durationView.text = emptyTime
+            progressView.max = 0
+            progressView.progress = 0
+            progressView.isEnabled = false
+            positionView.text = formatMusicTime(0)
+            durationView.text = formatMusicTime(0)
             return
         }
-        if (!progressView.isEnabled) progressView.isEnabled = true
+        progressView.isEnabled = true
         if (progressView.max != duration) progressView.max = duration
         if (!isUserSeeking) {
-            val progress = position.coerceIn(0, duration)
-            if (progressView.progress != progress) progressView.progress = progress
-            val positionText = formatMusicTime(position)
-            if (positionView.text.toString() != positionText) positionView.text = positionText
+            progressView.progress = position.coerceIn(0, duration)
+            positionView.text = formatMusicTime(position)
         }
-        val durationText = formatMusicTime(duration)
-        if (durationView.text.toString() != durationText) durationView.text = durationText
+        durationView.text = formatMusicTime(duration)
     }
 
     private fun formatMusicTime(millis: Int): String {
@@ -1008,7 +991,7 @@ class DeskActivity : AppCompatActivity() {
         } else {
             window.addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
     }
@@ -1017,8 +1000,8 @@ class DeskActivity : AppCompatActivity() {
         View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
     } else {
         View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
     }
 
     private fun hideSystemBars(targetWindow: Window) {
