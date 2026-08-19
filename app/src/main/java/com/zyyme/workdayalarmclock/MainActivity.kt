@@ -466,14 +466,15 @@ class MainActivity : AppCompatActivity() {
 
     @Suppress("DEPRECATION")
     private fun showCameraAutoBrightnessDialog() {
-        fun numberInput(value: String, decimal: Boolean = false): EditText {
+        fun numberInput(defaultValue: String, currentValue: String, decimal: Boolean = false): EditText {
             return EditText(this).apply {
-                hint = value
+                hint = defaultValue
                 inputType = InputType.TYPE_CLASS_NUMBER or if (decimal) {
                     InputType.TYPE_NUMBER_FLAG_DECIMAL
                 } else {
                     0
                 }
+                if (currentValue != defaultValue) setText(currentValue)
                 setSingleLine(true)
             }
         }
@@ -557,9 +558,13 @@ class MainActivity : AppCompatActivity() {
             isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_CLOSE_SCREEN)
         }
         container.addView(closeScreenSwitch)
-        val wakeLevel = numberInput(MeSettings.getInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).toString())
+        val wakeLevel = numberInput(
+            "0",
+            MeSettings.getInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).toString()
+        )
         addNumberField("自动亮屏档位 (0-4，0不开)", wakeLevel)
         val interval = numberInput(
+            "0",
             MeSettings.getString(this, MeSettings.KEY_CAMERA_BRIGHTNESS_INTERVAL, "0"),
             true
         )
@@ -591,12 +596,12 @@ class MainActivity : AppCompatActivity() {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val levels = listOf(level1, level2, level3, level4).map { it.progress }
                 val wake = wakeLevel.text.toString().toIntOrNull()
-                    ?: wakeLevel.hint.toString().toIntOrNull()
+                    ?: 0
                 if (wake == null || wake !in 0..4) {
                     wakeLevel.error = "请输入0到4"
                     return@setOnClickListener
                 }
-                val intervalValue = interval.text.toString().ifEmpty { interval.hint.toString() }
+                val intervalValue = interval.text.toString().ifEmpty { "0" }
                 val intervalMinutes = intervalValue.toDoubleOrNull()
                 if (intervalMinutes == null || intervalMinutes < 0.0) {
                     interval.error = "请输入大于等于0的分钟数"
