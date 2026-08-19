@@ -344,28 +344,34 @@ class DeskActivity : AppCompatActivity() {
         slotNames.forEachIndexed { slot, name ->
             items += "$name：${contentNames[slotValues[slot]]}"
         }
+        val hasNextWallpaper = listAutoWallpaperFiles().size > 1
+        if (hasNextWallpaper) {
+            items += "下一张壁纸"
+        }
         items += "返回"
+        val returnItemIndex = if (hasNextWallpaper) 10 else 9
 
         val dialog = AlertDialog.Builder(this)
             .setItems(items.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> startActivity(Intent(this, AppListActivity::class.java))
-                    1 -> chooseWallpaper()
-                    2 -> {
+                when {
+                    which == 0 -> startActivity(Intent(this, AppListActivity::class.java))
+                    which == 1 -> chooseWallpaper()
+                    which == 2 -> {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_MASK, !maskEnabled)
                         applyMask()
                     }
-                    3 -> {
+                    which == 3 -> {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_LIGHT_TEXT, !lightText)
                         applyTextStyle()
                     }
-                    4 -> {
+                    which == 4 -> {
                         val enabled = !keepScreenOn
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON, enabled)
                         applyKeepScreenOnState(enabled)
                     }
-                    in 5..8 -> showSlotContentDialog(which - 5, slotNames[which - 5], contentNames)
-                    9 -> returnToMain()
+                    which in 5..8 -> showSlotContentDialog(which - 5, slotNames[which - 5], contentNames)
+                    hasNextWallpaper && which == 9 -> advanceAutoWallpaper()
+                    which == returnItemIndex -> returnToMain()
                 }
             }
             .create()
