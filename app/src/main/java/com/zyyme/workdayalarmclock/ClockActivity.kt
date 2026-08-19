@@ -339,7 +339,7 @@ class ClockActivity : AppCompatActivity() {
         runnable = object : Runnable {
             override fun run() {
                 val hmsmde = sdfHmsmde.format(Date()).split(".")
-                tvTime.text = hmsmde[0]
+                setTextIfChanged(tvTime, hmsmde[0])
                 val service = MeService.me
                 val millis = service?.getPlaybackPosition()
                 val duration = service?.getPlaybackDuration() ?: 0
@@ -357,19 +357,25 @@ class ClockActivity : AppCompatActivity() {
                         String.format("%2d:%02d", it / 60000, (it % 60000) / 1000)
                     }
                     if (showLyrics && !clockMode) {
-                        tvDate.text = if (millis != null && lyric != null) lyric else batInfo + hmsmde[1]
+                        setTextIfChanged(
+                            tvDate,
+                            if (millis != null && lyric != null) lyric else batInfo + hmsmde[1]
+                        )
                     } else if (lyricsOnTop) {
                         if (isVerticalLayout) {
                             val secondLine = (batInfo + (playTime?.let { "▷$it" } ?: "")).trimEnd()
-                            tvDate.text = hmsmde[1] + (secondLine.takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: "")
+                            setTextIfChanged(
+                                tvDate,
+                                hmsmde[1] + (secondLine.takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: "")
+                            )
                         } else {
-                            tvDate.text = batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: "")
+                            setTextIfChanged(tvDate, batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: ""))
                         }
                     } else if (enableTop) {
-                        tvTop.text = batInfo + (playTime?.let { "▷$it" } ?: "")
-                        tvDate.text = hmsmde[1]
+                        setTextIfChanged(tvTop, batInfo + (playTime?.let { "▷$it" } ?: ""))
+                        setTextIfChanged(tvDate, hmsmde[1])
                     } else {
-                        tvDate.text = batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: "")
+                        setTextIfChanged(tvDate, batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: ""))
                     }
                 }
                 if (showLyrics && millis != null) {
@@ -492,23 +498,29 @@ class ClockActivity : AppCompatActivity() {
         duration: Int
     ) {
         if (position == null || duration <= 0) {
-            seekBar.max = 0
-            seekBar.progress = 0
-            seekBar.isEnabled = false
-            positionView.text = formatMusicTime(0)
-            durationView.text = formatMusicTime(0)
+            if (seekBar.max != 0) seekBar.max = 0
+            if (seekBar.progress != 0) seekBar.progress = 0
+            if (seekBar.isEnabled) seekBar.isEnabled = false
+            val emptyTime = formatMusicTime(0)
+            setTextIfChanged(positionView, emptyTime)
+            setTextIfChanged(durationView, emptyTime)
             return
         }
 
-        seekBar.isEnabled = true
+        if (!seekBar.isEnabled) seekBar.isEnabled = true
         if (seekBar.max != duration) {
             seekBar.max = duration
         }
         if (!isUserSeeking) {
-            seekBar.progress = position.coerceIn(0, duration)
-            positionView.text = formatMusicTime(position)
+            val progress = position.coerceIn(0, duration)
+            if (seekBar.progress != progress) seekBar.progress = progress
+            setTextIfChanged(positionView, formatMusicTime(position))
         }
-        durationView.text = formatMusicTime(duration)
+        setTextIfChanged(durationView, formatMusicTime(duration))
+    }
+
+    private fun setTextIfChanged(view: TextView, text: String) {
+        if (view.text.toString() != text) view.text = text
     }
 
     private fun seekMusicTo(target: Int) {

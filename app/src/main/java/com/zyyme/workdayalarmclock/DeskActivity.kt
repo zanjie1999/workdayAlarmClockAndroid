@@ -124,13 +124,14 @@ class DeskActivity : AppCompatActivity() {
             if (service?.requestWeatherIfNeeded() == true) {
                 handleWallpaperTimerTick()
             }
-            timeView.text = timeFormat.format(now)
+            setTextIfChanged(timeView, timeFormat.format(now))
             val weather = service?.weatherText.orEmpty()
-            dateView.text = if (weather.isEmpty()) {
+            val date = if (weather.isEmpty()) {
                 dateFormat.format(now)
             } else {
                 "${weatherDateFormat.format(now)} $weather"
             }
+            setTextIfChanged(dateView, date)
 
             service?.lastEcho?.let {
                 if (echoView.text.toString() != it) echoView.text = it
@@ -888,7 +889,7 @@ class DeskActivity : AppCompatActivity() {
         if (!isUserAdjustingVolume && volumeProgressView.progress != percent) {
             volumeProgressView.progress = percent
         }
-        volumePercentView.text = "$percent%"
+        setTextIfChanged(volumePercentView, "$percent%")
     }
 
     private fun setMediaVolumePercent(percent: Int) {
@@ -956,20 +957,26 @@ class DeskActivity : AppCompatActivity() {
 
     private fun updateProgress(position: Int?, duration: Int) {
         if (position == null || duration <= 0) {
-            progressView.max = 0
-            progressView.progress = 0
-            progressView.isEnabled = false
-            positionView.text = formatMusicTime(0)
-            durationView.text = formatMusicTime(0)
+            if (progressView.max != 0) progressView.max = 0
+            if (progressView.progress != 0) progressView.progress = 0
+            if (progressView.isEnabled) progressView.isEnabled = false
+            val emptyTime = formatMusicTime(0)
+            setTextIfChanged(positionView, emptyTime)
+            setTextIfChanged(durationView, emptyTime)
             return
         }
-        progressView.isEnabled = true
+        if (!progressView.isEnabled) progressView.isEnabled = true
         if (progressView.max != duration) progressView.max = duration
         if (!isUserSeeking) {
-            progressView.progress = position.coerceIn(0, duration)
-            positionView.text = formatMusicTime(position)
+            val progress = position.coerceIn(0, duration)
+            if (progressView.progress != progress) progressView.progress = progress
+            setTextIfChanged(positionView, formatMusicTime(position))
         }
-        durationView.text = formatMusicTime(duration)
+        setTextIfChanged(durationView, formatMusicTime(duration))
+    }
+
+    private fun setTextIfChanged(view: TextView, text: String) {
+        if (view.text.toString() != text) view.text = text
     }
 
     private fun formatMusicTime(millis: Int): String {
