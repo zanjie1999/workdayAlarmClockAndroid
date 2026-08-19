@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.GestureDetector
 import android.view.Gravity
@@ -67,6 +68,9 @@ class DeskActivity : AppCompatActivity() {
         private const val CONTENT_PLAYER = 2
         private const val CONTENT_LYRICS = 3
 
+        private const val LYRIC_REFRESH_INTERVAL_MS = 250L
+        private const val UI_REFRESH_INTERVAL_MS = 500L
+
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -111,6 +115,7 @@ class DeskActivity : AppCompatActivity() {
     private var isUserSeeking = false
     private var isUserAdjustingVolume = false
     private var alarmMode = false
+    private var lastUiRefreshAt = 0L
     var isKeepScreenOn = false
 
     private var timeFormat = SimpleDateFormat("h:mm:ss", Locale.CHINA)
@@ -119,27 +124,8 @@ class DeskActivity : AppCompatActivity() {
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
-            val now = Date()
             val service = MeService.me
-            if (service?.requestWeatherIfNeeded() == true) {
-                handleWallpaperTimerTick()
-            }
-            timeView.text = timeFormat.format(now)
-            val weather = service?.weatherText.orEmpty()
-            dateView.text = if (weather.isEmpty()) {
-                dateFormat.format(now)
-            } else {
-                "${weatherDateFormat.format(now)} $weather"
-            }
-
-            service?.lastEcho?.let {
-                if (echoView.text.toString() != it) echoView.text = it
-            }
             val position = service?.getPlaybackPosition()
-            val duration = service?.getPlaybackDuration() ?: 0
-            updateProgress(position, duration)
-            updateVolumeControl()
-
             if (MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
                 val lyric = formatLyricForTwoLines(service?.getCurrentLyric(position).orEmpty())
                 if (lyricsView.text.toString() != lyric) lyricsView.text = lyric
@@ -147,13 +133,37 @@ class DeskActivity : AppCompatActivity() {
                 lyricsView.text = ""
             }
 
-            val delay = if (position != null && MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
-                250L
-            } else {
-                1000L - System.currentTimeMillis() % 1000L
+            val elapsedRealtime = SystemClock.elapsedRealtime()
+            if (elapsedRealtime - lastUiRefreshAt >= UI_REFRESH_INTERVAL_MS) {
+                lastUiRefreshAt = elapsedRealtime
+                refreshUi(service, position)
             }
-            handler.postDelayed(this, delay)
+            handler.postDelayed(this, LYRIC_REFRESH_INTERVAL_MS)
         }
+    }
+
+    private fun refreshUi(service: MeService?, position: Int?) {
+        val now = Date()
+        if (service?.requestWeatherIfNeeded() == true) {
+            handleWallpaperTimerTick()
+        }
+
+        val time = timeFormat.format(now)
+        if (timeView.text.toString() != time) timeView.text = time
+
+        val weather = service?.weatherText.orEmpty()
+        val date = if (weather.isEmpty()) {
+            dateFormat.format(now)
+        } else {
+            "${weatherDateFormat.format(now)} $weather"
+        }
+        if (dateView.text.toString() != date) dateView.text = date
+
+        service?.lastEcho?.let {
+            if (echoView.text.toString() != it) echoView.text = it
+        }
+        updateProgress(position, service?.getPlaybackDuration() ?: 0)
+        updateVolumeControl()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -888,7 +898,10 @@ class DeskActivity : AppCompatActivity() {
         if (!isUserAdjustingVolume && volumeProgressView.progress != percent) {
             volumeProgressView.progress = percent
         }
-        volumePercentView.text = "$percent%"
+        val percentText = "$percent%"
+        if (volumePercentView.text.toString() != percentText) {
+            volumePercentView.text = percentText
+        }
     }
 
     private fun setMediaVolumePercent(percent: Int) {
@@ -956,20 +969,24 @@ class DeskActivity : AppCompatActivity() {
 
     private fun updateProgress(position: Int?, duration: Int) {
         if (position == null || duration <= 0) {
-            progressView.max = 0
-            progressView.progress = 0
-            progressView.isEnabled = false
-            positionView.text = formatMusicTime(0)
-            durationView.text = formatMusicTime(0)
+            if (progressView.max != 0) progressView.max = 0
+            if (progressView.progress != 0) progressView.progress = 0
+            if (progressView.isEnabled) progressView.isEnabled = false
+            val emptyTime = formatMusicTime(0)
+            if (positionView.text.toString() != emptyTime) positionView.text = emptyTime
+            if (durationView.text.toString() != emptyTime) durationView.text = emptyTime
             return
         }
-        progressView.isEnabled = true
+        if (!progressView.isEnabled) progressView.isEnabled = true
         if (progressView.max != duration) progressView.max = duration
         if (!isUserSeeking) {
-            progressView.progress = position.coerceIn(0, duration)
-            positionView.text = formatMusicTime(position)
+            val progress = position.coerceIn(0, duration)
+            if (progressView.progress != progress) progressView.progress = progress
+            val positionText = formatMusicTime(position)
+            if (positionView.text.toString() != positionText) positionView.text = positionText
         }
-        durationView.text = formatMusicTime(duration)
+        val durationText = formatMusicTime(duration)
+        if (durationView.text.toString() != durationText) durationView.text = durationText
     }
 
     private fun formatMusicTime(millis: Int): String {
