@@ -368,8 +368,8 @@ class DeskActivity : AppCompatActivity() {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON, enabled)
                         applyKeepScreenOnState(enabled)
                     }
-                    in 6..9 -> showSlotContentDialog(which - 6, slotNames[which - 6], contentNames)
-                    10 -> returnToMain()
+                    in 5..8 -> showSlotContentDialog(which - 5, slotNames[which - 5], contentNames)
+                    9 -> returnToMain()
                 }
             }
             .create()
