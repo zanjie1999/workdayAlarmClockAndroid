@@ -83,7 +83,7 @@ internal class MjpegCameraPipeline(
                     val now = SystemClock.elapsedRealtime()
                     if (onLuma != null && now - lastLumaAt >= 500L) {
                         lastLumaAt = now
-                        onLuma.invoke(highlightLuma(data))
+                        onLuma.invoke(balancedLuma(data))
                     }
                     if (!running.get() || !frameQueue.offer(data)) {
                         if (running.get()) sourceCamera.addCallbackBuffer(data)
@@ -231,14 +231,17 @@ internal class MjpegCameraPipeline(
         )
     }
 
-    private fun highlightLuma(data: ByteArray): Int {
+    private fun balancedLuma(data: ByteArray): Int {
         val pixelCount = frameWidth * frameHeight
         if (pixelCount <= 0 || data.isEmpty()) return 0
         val histogram = IntArray(256)
+        var sum = 0L
         var count = 0
         var index = 0
         while (index < pixelCount && index < data.size) {
-            histogram[data[index].toInt() and 0xff]++
+            val value = data[index].toInt() and 0xff
+            histogram[value]++
+            sum += value
             count++
             index += 32
         }
@@ -247,7 +250,11 @@ internal class MjpegCameraPipeline(
         var accumulated = 0
         for (value in histogram.indices) {
             accumulated += histogram[value]
-            if (accumulated >= target) return value
+            if (accumulated >= target) {
+                if (value >= 225) return value
+                val average = (sum / count).toInt()
+                return (average * 3 + value * 2) / 5
+            }
         }
         return 255
     }
