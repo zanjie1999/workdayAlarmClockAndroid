@@ -80,7 +80,8 @@
             android:name=".DeskActivity"
             android:exported="false"
             android:label="大屏时钟"
-            android:launchMode="singleTask" />
+            android:launchMode="singleTask"
+            android:hardwareAccelerated="true" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

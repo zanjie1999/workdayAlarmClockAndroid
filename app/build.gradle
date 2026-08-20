@@ -52,9 +52,21 @@ android {
     productFlavors {
         full {
             dimension "version"
+            ndk {
+                abiFilters "armeabi", "arm64-v8a"
+            }
         }
         nolauncher {
             dimension "version"
+            ndk {
+                abiFilters "armeabi", "arm64-v8a"
+            }
+        }
+        x86 {
+            dimension "version"
+            ndk {
+                abiFilters "x86"
+            }
         }
     }
 
