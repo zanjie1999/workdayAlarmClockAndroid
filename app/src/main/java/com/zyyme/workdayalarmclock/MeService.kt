@@ -753,6 +753,10 @@ class MeService : Service() {
             } else if (s == "STOP") {
                 print2LogView("停止播放")
                 stopPlayback()
+                // 给超大的闹钟停止收起来
+                if (DeskActivity.me?.alarmMode == true) {
+                    DeskActivity.me?.showAlarmControls(false)
+                }
             } else if (s == "SEEK") {
                 // 全屋同步播放补偿
                 if (defaultSeek < 0) {

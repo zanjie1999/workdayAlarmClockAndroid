@@ -111,7 +111,7 @@ class DeskActivity : AppCompatActivity() {
     private var wallpaperTimerStarted = false
     private var isUserSeeking = false
     private var isUserAdjustingVolume = false
-    private var alarmMode = false
+    var alarmMode = false
     var isKeepScreenOn = false
 
     private var timeFormat = SimpleDateFormat("h:mm:ss", Locale.CHINA)
@@ -517,7 +517,7 @@ class DeskActivity : AppCompatActivity() {
         )
     }
 
-    private fun showAlarmControls(enabled: Boolean) {
+    fun showAlarmControls(enabled: Boolean) {
         alarmMode = enabled
         echoRowView.visibility = if (enabled) View.GONE else View.VISIBLE
         controlsView.visibility = if (enabled) View.GONE else View.VISIBLE
