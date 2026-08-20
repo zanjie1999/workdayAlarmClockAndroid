@@ -19,3 +19,4 @@ app/libs/arm64-v8a/libWorkdayAlarmClock.so
 app/release
 app/full
 app/nolauncher
+app/x86
