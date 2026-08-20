@@ -99,7 +99,10 @@ class DeskActivity : AppCompatActivity() {
     private lateinit var durationView: TextView
     private lateinit var controlsView: View
     private lateinit var progressTimesView: View
+    private lateinit var prevButton: ImageButton
     private lateinit var playButton: ImageButton
+    private lateinit var nextButton: ImageButton
+    private lateinit var stopButton: ImageButton
     private lateinit var alarmStopButton: Button
 
     private var wallpaperBitmap: Bitmap? = null
@@ -246,21 +249,24 @@ class DeskActivity : AppCompatActivity() {
         durationView = findViewById(R.id.desk_duration)
         controlsView = findViewById(R.id.desk_controls)
         progressTimesView = findViewById(R.id.desk_progress_times)
+        prevButton = findViewById(R.id.desk_prev)
         playButton = findViewById(R.id.desk_play)
+        nextButton = findViewById(R.id.desk_next)
+        stopButton = findViewById(R.id.desk_stop)
         alarmStopButton = findViewById(R.id.desk_alarm_stop)
     }
 
     private fun bindActions() {
-        findViewById<ImageButton>(R.id.desk_prev).setOnClickListener {
+        prevButton.setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
         }
         playButton.setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
         }
-        findViewById<ImageButton>(R.id.desk_next).setOnClickListener {
+        nextButton.setOnClickListener {
             MeService.me?.keyHandle(2147483645, true)
         }
-        findViewById<ImageButton>(R.id.desk_stop).setOnClickListener {
+        stopButton.setOnClickListener {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
         }
         alarmStopButton.setOnClickListener {
@@ -849,9 +855,13 @@ class DeskActivity : AppCompatActivity() {
             DrawableCompat.setTint(icon, color)
             volumeIconView.setImageDrawable(icon)
         }
-        listOf(R.id.desk_prev, R.id.desk_play, R.id.desk_next, R.id.desk_stop).forEach {
-            val button = findViewById<ImageButton>(it)
-            val base = baseIconDrawables.getOrPut(it) {
+        listOf(
+            R.id.desk_prev to prevButton,
+            R.id.desk_play to playButton,
+            R.id.desk_next to nextButton,
+            R.id.desk_stop to stopButton
+        ).forEach { (id, button) ->
+            val base = baseIconDrawables.getOrPut(id) {
                 button.drawable.constantState?.newDrawable()?.mutate() ?: button.drawable.mutate()
             }
             val foreground = base.constantState?.newDrawable()?.mutate() ?: base.mutate()

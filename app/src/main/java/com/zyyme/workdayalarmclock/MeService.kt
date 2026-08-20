@@ -233,21 +233,21 @@ class MeService : Service() {
 
             notificationBuilder?.addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_media_previous,
+                    R.drawable.icon_previous,
                     "上一首",
                     createPendingIntentForAction(ACTION_PREVIOUS)
                 )
             )
             notificationBuilder?.addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_media_play,
+                    R.drawable.icon_play,
                     "播放",
                     createPendingIntentForAction(ACTION_PLAY)
                 )
             )
             notificationBuilder?.addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_media_next,
+                    R.drawable.icon_next,
                     "下一首",
                     createPendingIntentForAction(ACTION_NEXT)
                 )
@@ -259,13 +259,13 @@ class MeService : Service() {
                     createPendingIntentForAction(ACTION_STOP)
                 )
             )
-            notificationBuilder?.addAction(
-                NotificationCompat.Action(
-                    android.R.drawable.ic_media_ff,
-                    "快进",
-                    createPendingIntentForAction(ACTION_FORWARD)
-                )
-            )
+//            notificationBuilder?.addAction(
+//                NotificationCompat.Action(
+//                    android.R.drawable.ic_media_ff,
+//                    "快进",
+//                    createPendingIntentForAction(ACTION_FORWARD)
+//                )
+//            )
             // 设置显示的按钮 缩小的时候
             mediaStyle.setShowActionsInCompactView(0, 1, 2, 3)
             notificationBuilder?.setStyle(mediaStyle)

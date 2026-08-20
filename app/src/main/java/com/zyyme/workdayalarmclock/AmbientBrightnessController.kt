@@ -12,7 +12,9 @@ import android.view.Window
 import android.view.WindowManager
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Owns camera sampling and converts camera luma into five stable screen levels. */
+/**
+ * 实现使用前摄像头估算亮度，控制屏幕亮度
+ */
 internal class AmbientBrightnessController(
     context: Context,
     private val log: (String) -> Unit
@@ -269,14 +271,7 @@ internal class AmbientBrightnessController(
     }
 
     private fun closeScreen() {
-        val keepScreenOn = listOf(
-            ClockActivity.me?.isKeepScreenOn == true,
-            DeskActivity.me?.isKeepScreenOn == true,
-            ClockActivity.me?.window?.attributes?.flags?.and(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0,
-            DeskActivity.me?.window?.attributes?.flags?.and(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0,
-            MainActivity.me?.window?.attributes?.flags?.and(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
-        ).any { it }
-        if (keepScreenOn) {
+        if (ClockActivity.me?.isKeepScreenOn == true || DeskActivity.me?.isKeepScreenOn == true) {
             log("摄像头自动亮度跳过熄屏：当前设置了保持亮屏")
             return
         }
