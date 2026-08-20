@@ -233,21 +233,21 @@ class MeService : Service() {
 
             notificationBuilder?.addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_media_previous,
+                    R.drawable.icon_previous,
                     "上一首",
                     createPendingIntentForAction(ACTION_PREVIOUS)
                 )
             )
             notificationBuilder?.addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_media_play,
+                    R.drawable.icon_play,
                     "播放",
                     createPendingIntentForAction(ACTION_PLAY)
                 )
             )
             notificationBuilder?.addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_media_next,
+                    R.drawable.icon_next,
                     "下一首",
                     createPendingIntentForAction(ACTION_NEXT)
                 )
@@ -259,13 +259,13 @@ class MeService : Service() {
                     createPendingIntentForAction(ACTION_STOP)
                 )
             )
-            notificationBuilder?.addAction(
-                NotificationCompat.Action(
-                    android.R.drawable.ic_media_ff,
-                    "快进",
-                    createPendingIntentForAction(ACTION_FORWARD)
-                )
-            )
+//            notificationBuilder?.addAction(
+//                NotificationCompat.Action(
+//                    android.R.drawable.ic_media_ff,
+//                    "快进",
+//                    createPendingIntentForAction(ACTION_FORWARD)
+//                )
+//            )
             // 设置显示的按钮 缩小的时候
             mediaStyle.setShowActionsInCompactView(0, 1, 2, 3)
             notificationBuilder?.setStyle(mediaStyle)
@@ -848,16 +848,7 @@ class MeService : Service() {
                 }
             } else if (s == "SCREENON") {
                 Handler(Looper.getMainLooper()).post {
-                    if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
-                        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-                    } else {
-                        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-                    }
-                    val intent = MeSettings.createClockIntent(this)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    intent.putExtra("clockMode", true)
                     wakeScreen()
-                    startActivity(intent)
                 }
                 print2LogView("已亮屏")
             } else if (s == "SCREENOFF") {
@@ -1325,15 +1316,6 @@ class MeService : Service() {
     fun wakeScreenForAmbient() {
         Handler(Looper.getMainLooper()).post {
             wakeScreen()
-            val intent = MeSettings.createClockIntent(this).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra("clockMode", true)
-            }
-            try {
-                startActivity(intent)
-            } catch (e: Exception) {
-                print2LogView("自动亮屏失败: ${e.message}")
-            }
         }
     }
 
