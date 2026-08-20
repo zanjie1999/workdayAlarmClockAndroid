@@ -121,6 +121,8 @@ class DeskActivity : AppCompatActivity() {
     private val dateFormat = SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA)
     private val weatherDateFormat = SimpleDateFormat("M月d日 E", Locale.CHINA)
 
+    val isDingdongPlay = Build.MANUFACTURER + Build.MODEL == "Intelcht_mrd"
+
     private val refreshRunnable = object : Runnable {
         override fun run() {
             val now = Date()
@@ -154,7 +156,12 @@ class DeskActivity : AppCompatActivity() {
             }
 
             val delay = if (position != null && MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
-                250L
+                if (isDingdongPlay) {
+                    // 叮咚play刷新的快会导致Intel GPU/EGL/HWUI驱动在持续绘制过程中发生了非法内存访问
+                    500L
+                } else {
+                    250L
+                }
             } else {
                 1000L - System.currentTimeMillis() % 1000L
             }
