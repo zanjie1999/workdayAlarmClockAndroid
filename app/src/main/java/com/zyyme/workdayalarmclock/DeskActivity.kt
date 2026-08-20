@@ -114,6 +114,8 @@ class DeskActivity : AppCompatActivity() {
     private var wallpaperTimerStarted = false
     private var isUserSeeking = false
     private var isUserAdjustingVolume = false
+    private var lyricsRefreshScheduled = false
+    private var lyricsEnabled = false
     var alarmMode = false
     var isKeepScreenOn = false
 
@@ -124,6 +126,38 @@ class DeskActivity : AppCompatActivity() {
     val isDingdongPlay = Build.MANUFACTURER + Build.MODEL == "Intelcht_mrd"
 
     private val refreshRunnable = object : Runnable {
+        override fun run() {
+            val service = MeService.me
+            val position = service?.getPlaybackPosition()
+            if (lyricsEnabled && position != null) {
+                val lyric = formatLyricForTwoLines(service?.getCurrentLyric(position).orEmpty())
+                if (lyricsView.text.toString() != lyric) lyricsView.text = lyric
+                handler.postDelayed(this, if (isDingdongPlay) 500L else 250L)
+            } else {
+                lyricsRefreshScheduled = false
+                if (lyricsView.text.isNotEmpty()) {
+                    lyricsView.text = ""
+                }
+            }
+        }
+    }
+
+    private fun ensureLyricsRefresh(position: Int?) {
+        if (position != null && lyricsEnabled) {
+            if (!lyricsRefreshScheduled) {
+                lyricsRefreshScheduled = true
+                handler.post(refreshRunnable)
+            }
+        } else if (lyricsRefreshScheduled) {
+            lyricsRefreshScheduled = false
+            handler.removeCallbacks(refreshRunnable)
+            if (lyricsView.text.isNotEmpty()) {
+                lyricsView.text = ""
+            }
+        }
+    }
+
+    private val nonLyricsRefreshRunnable = object : Runnable {
         override fun run() {
             val now = Date()
             val service = MeService.me
@@ -138,34 +172,14 @@ class DeskActivity : AppCompatActivity() {
                 "${weatherDateFormat.format(now)} $weather"
             }
             setTextIfChanged(dateView, date)
-
             service?.lastEcho?.let {
-                if (echoView.text.toString() != it) echoView.text = it
+                setTextIfChanged(echoView, it)
             }
             val position = service?.getPlaybackPosition()
-            val duration = service?.getPlaybackDuration() ?: 0
-            updateProgress(position, duration)
-            updatePlaybackButton(service?.shouldShowPauseIcon() == true)
+            ensureLyricsRefresh(position)
+            updateProgress(position, service?.getPlaybackDuration() ?: 0)
             updateVolumeControl()
-
-            if (MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
-                val lyric = formatLyricForTwoLines(service?.getCurrentLyric(position).orEmpty())
-                if (lyricsView.text.toString() != lyric) lyricsView.text = lyric
-            } else if (lyricsView.text.isNotEmpty()) {
-                lyricsView.text = ""
-            }
-
-            val delay = if (position != null && MeSettings.isEnabled(this@DeskActivity, MeSettings.KEY_LYRICS)) {
-                if (isDingdongPlay) {
-                    // 叮咚play刷新的快会导致Intel GPU/EGL/HWUI驱动在持续绘制过程中发生了非法内存访问
-                    500L
-                } else {
-                    250L
-                }
-            } else {
-                1000L - System.currentTimeMillis() % 1000L
-            }
-            handler.postDelayed(this, delay)
+            handler.postDelayed(this, 1000L - System.currentTimeMillis() % 1000L)
         }
     }
 
@@ -191,6 +205,7 @@ class DeskActivity : AppCompatActivity() {
         bindActions()
         applyMask()
         applyTextStyle()
+        lyricsEnabled = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
 
         grid.post {
             sizePanels()
@@ -198,7 +213,7 @@ class DeskActivity : AppCompatActivity() {
             loadWallpaper()
             handleIntent(intent)
         }
-        handler.post(refreshRunnable)
+        handler.post(nonLyricsRefreshRunnable)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -211,6 +226,7 @@ class DeskActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        lyricsEnabled = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
         configureClockFormat()
         loadSlotSettings()
         applyMask()
@@ -896,8 +912,13 @@ class DeskActivity : AppCompatActivity() {
     fun updatePlaybackButton(showPause: Boolean) {
         runOnUiThread {
             if (::playButton.isInitialized) {
-                playButton.isSelected = showPause
-                playButton.contentDescription = if (showPause) "暂停" else "播放"
+                if (playButton.isSelected != showPause) {
+                    playButton.isSelected = showPause
+                }
+                val description = if (showPause) "暂停" else "播放"
+                if (playButton.contentDescription?.toString() != description) {
+                    playButton.contentDescription = description
+                }
             }
         }
     }
@@ -1110,6 +1131,7 @@ class DeskActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacks(refreshRunnable)
+        handler.removeCallbacks(nonLyricsRefreshRunnable)
         wallpaperBitmap?.let { if (!it.isRecycled) it.recycle() }
         wallpaperBitmap = null
         if (me === this) me = null
