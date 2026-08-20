@@ -25,6 +25,8 @@ internal class AmbientCameraSampler(
     private var warmupUntil = 0L
     private var lastSampleAt = 0L
 
+    private var isFrist = true
+
     fun start(): Boolean {
         if (!running.compareAndSet(false, true)) return true
         val started = CountDownLatch(1)
@@ -66,7 +68,11 @@ internal class AmbientCameraSampler(
                 warmupUntil = SystemClock.elapsedRealtime() + 1_200L
                 opened.startPreview()
                 success.set(true)
-                log("环境亮度采样已启动：${width}x$height")
+                if (isFrist) {
+                    // 输出刷屏了
+                    log("环境亮度采样已启动：${width}x$height")
+                    isFrist = false
+                }
             } catch (e: Exception) {
                 log("环境亮度采样启动失败：${e.message}")
                 releaseCamera()

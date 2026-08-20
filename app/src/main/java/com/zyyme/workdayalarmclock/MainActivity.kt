@@ -558,6 +558,11 @@ class MainActivity : AppCompatActivity() {
             isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_CLOSE_SCREEN)
         }
         container.addView(closeScreenSwitch)
+        val closeScreenLevel1Switch = Switch(this).apply {
+            text = "档位1关闭屏幕"
+            isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_CLOSE_SCREEN_LEVEL_1)
+        }
+        container.addView(closeScreenLevel1Switch)
         val wakeLevel = numberInput(
             "0",
             MeSettings.getInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).toString()
@@ -613,6 +618,7 @@ class MainActivity : AppCompatActivity() {
                 MeSettings.setInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_3, levels[2])
                 MeSettings.setInt(this, MeSettings.KEY_CAMERA_BRIGHTNESS_4, levels[3])
                 MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_CLOSE_SCREEN, closeScreenSwitch.isChecked)
+                MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_CLOSE_SCREEN_LEVEL_1, closeScreenLevel1Switch.isChecked)
                 MeSettings.setInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, wake)
                 MeSettings.setString(this, MeSettings.KEY_CAMERA_BRIGHTNESS_INTERVAL, intervalValue.trim())
 

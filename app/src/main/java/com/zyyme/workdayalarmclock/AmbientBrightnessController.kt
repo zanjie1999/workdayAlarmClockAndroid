@@ -251,7 +251,12 @@ internal class AmbientBrightnessController(
             log("设置系统亮度失败：${e.message}")
         }
         applyToVisibleWindows()
-        if (newLevel == 0 && MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN)) {
+        val closeScreenEnabled = when (newLevel) {
+            0 -> MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN)
+            1 -> MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_LEVEL_1)
+            else -> false
+        }
+        if (closeScreenEnabled) {
             closeScreen()
             return
         }
