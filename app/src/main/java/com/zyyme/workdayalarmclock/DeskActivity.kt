@@ -185,14 +185,6 @@ class DeskActivity : AppCompatActivity() {
         me = this
         super.onCreate(savedInstanceState)
 
-        // intel的破烂驱动 关掉叮咚play的硬件加速
-        if (Build.MANUFACTURER + Build.MODEL == "Intelcht_mrd") {
-            window.setFlags(
-                0,
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
-            )
-        }
-
         if (MeService.me == null) {
             startService(Intent(this, MeService::class.java))
         }
