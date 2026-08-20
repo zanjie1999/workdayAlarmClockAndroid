@@ -123,8 +123,6 @@ class DeskActivity : AppCompatActivity() {
     private val dateFormat = SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA)
     private val weatherDateFormat = SimpleDateFormat("M月d日 E", Locale.CHINA)
 
-    val isDingdongPlay = Build.MANUFACTURER + Build.MODEL == "Intelcht_mrd"
-
     private val refreshRunnable = object : Runnable {
         override fun run() {
             val service = MeService.me
@@ -132,7 +130,7 @@ class DeskActivity : AppCompatActivity() {
             if (lyricsEnabled && position != null) {
                 val lyric = formatLyricForTwoLines(service?.getCurrentLyric(position).orEmpty())
                 if (lyricsView.text.toString() != lyric) lyricsView.text = lyric
-                handler.postDelayed(this, if (isDingdongPlay) 500L else 250L)
+                handler.postDelayed(this, 250L)
             } else {
                 lyricsRefreshScheduled = false
                 if (lyricsView.text.isNotEmpty()) {
