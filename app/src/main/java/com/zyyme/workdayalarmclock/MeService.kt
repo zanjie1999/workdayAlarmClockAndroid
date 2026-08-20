@@ -844,16 +844,7 @@ class MeService : Service() {
                 }
             } else if (s == "SCREENON") {
                 Handler(Looper.getMainLooper()).post {
-                    if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
-                        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-                    } else {
-                        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-                    }
-                    val intent = MeSettings.createClockIntent(this)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    intent.putExtra("clockMode", true)
                     wakeScreen()
-                    startActivity(intent)
                 }
                 print2LogView("已亮屏")
             } else if (s == "SCREENOFF") {
@@ -1321,15 +1312,6 @@ class MeService : Service() {
     fun wakeScreenForAmbient() {
         Handler(Looper.getMainLooper()).post {
             wakeScreen()
-            val intent = MeSettings.createClockIntent(this).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra("clockMode", true)
-            }
-            try {
-                startActivity(intent)
-            } catch (e: Exception) {
-                print2LogView("自动亮屏失败: ${e.message}")
-            }
         }
     }
 
