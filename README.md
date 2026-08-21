@@ -13,8 +13,9 @@
 
 如果要编译，请将Go编译输出的linux arm的二进制文件和linux arm64的二进制文件重命名放到
 ```
-项目目录/app/libs/armeabi/libWorkdayAlarmClock.so
+项目目录/app/libs/armeabi-v7a/libWorkdayAlarmClock.so
 项目目录/app/libs/arm64-v8a/libWorkdayAlarmClock.so
+项目目录/app/libs/x86/libWorkdayAlarmClock.so
 ```
 你可以把文件换成你自己的程序，使用本程序作为启动器  
 需要打包release包二进制文件才会被打包进去，然后安装启动  
