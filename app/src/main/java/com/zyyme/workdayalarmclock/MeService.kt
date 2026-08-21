@@ -118,6 +118,7 @@ class MeService : Service() {
     private var udpServerSocket: DatagramSocket? = null
     private var cameraHttpServer: CameraHttpServer? = null
     private lateinit var ambientBrightness: AmbientBrightnessController
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
     private var autoBackClockRunnable: Runnable? = null
     private val playbackHandler = Handler(Looper.getMainLooper())
@@ -686,7 +687,11 @@ class MeService : Service() {
                 }
             }
         }
-        MainActivity.me?.show2LogView()
+        // checkAction() can be called by UDP/shell worker threads. View updates
+        // must always be dispatched to the thread that created the hierarchy.
+        mainHandler.post {
+            MainActivity.me?.show2LogView()
+        }
     }
 
     /**
@@ -733,12 +738,14 @@ class MeService : Service() {
                 val msg = s.substring(5)
                 lastEcho = msg
                 updateNotificationTitle(msg)
-                DeskActivity.me?.showEcho(msg)
-                if (ClockActivity.me != null) {
-                    if ("工作咩闹钟" == msg) {
-                        ClockActivity.me?.showMsg("停止播放")
-                    } else {
-                        ClockActivity.me?.showMsg(msg)
+                mainHandler.post {
+                    DeskActivity.me?.showEcho(msg)
+                    if (ClockActivity.me != null) {
+                        if ("工作咩闹钟" == msg) {
+                            ClockActivity.me?.showMsg("停止播放")
+                        } else {
+                            ClockActivity.me?.showMsg(msg)
+                        }
                     }
                 }
                 meMediaPlaybackManager?.updateMediaMetadata(65535, msg, null, null)
@@ -754,8 +761,10 @@ class MeService : Service() {
                 print2LogView("停止播放")
                 stopPlayback()
                 // 给超大的闹钟停止收起来
-                if (DeskActivity.me?.alarmMode == true) {
-                    DeskActivity.me?.showAlarmControls(false)
+                mainHandler.post {
+                    if (DeskActivity.me?.alarmMode == true) {
+                        DeskActivity.me?.showAlarmControls(false)
+                    }
                 }
             } else if (s == "SEEK") {
                 // 全屋同步播放补偿

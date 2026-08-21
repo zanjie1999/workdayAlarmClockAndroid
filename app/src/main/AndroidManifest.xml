@@ -69,7 +69,8 @@
             android:name=".ClockActivity"
             android:launchMode="singleTask"
             android:exported="true"
-            android:label="工作咩时钟">
+            android:label="工作咩时钟"
+            android:hardwareAccelerated="true">
             <intent-filter>
                 <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -78,10 +79,15 @@
 
         <activity
             android:name=".DeskActivity"
-            android:exported="false"
-            android:label="大屏时钟"
+            android:exported="true"
+            android:label="大屏咩时钟"
             android:launchMode="singleTask"
-            android:hardwareAccelerated="true" />
+            android:hardwareAccelerated="true">
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -96,13 +102,18 @@
         <activity
             android:name=".AppListActivity"
             android:exported="true"
-            android:label="应用列表"
-            android:windowSoftInputMode="stateAlwaysHidden" />
+            android:label="咩应用列表"
+            android:windowSoftInputMode="stateAlwaysHidden">
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".WebActivity"
             android:exported="false"
-            android:label="Web浏览器"
+            android:label="咩Web浏览器"
             android:windowSoftInputMode="stateAlwaysHidden" />
 
         <service

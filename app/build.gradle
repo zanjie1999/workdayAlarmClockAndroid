@@ -11,8 +11,8 @@ android {
         applicationId "com.zyyme.workdayalarmclock"
         minSdk 14
         targetSdk 32
-        versionCode 99
-        versionName "29.1"
+        versionCode 100
+        versionName "29.2"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -59,7 +59,7 @@ android {
         nolauncher {
             dimension "version"
             ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a"
+                abiFilters "armeabi-v7a"
             }
         }
         x86 {
@@ -73,6 +73,29 @@ android {
     lintOptions {
         checkReleaseBuilds false
         abortOnError false
+    }
+}
+
+def targetOutputDir = new File(rootDir, "app/release")
+
+afterEvaluate {
+    android.applicationVariants.all { variant ->
+        def variantName = variant.name
+        // 找到对应的 assemble 任务
+        def assembleTask = variant.assembleProvider.get()
+
+        if (assembleTask != null) {
+            // 在 assemble 任务执行完成后触发复制
+            assembleTask.doLast {
+                copy {
+                    // 从默认输出目录获取生成的文件
+                    from variant.outputs*.outputFile
+                    // 复制到指定的目标文件夹
+                    into targetOutputDir
+                }
+                delete variant.outputs*.outputFile
+            }
+        }
     }
 }
 
