@@ -734,6 +734,11 @@ class MeService : Service() {
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, set, AudioManager.FLAG_SHOW_UI);
             } else if (s.startsWith("WEATHER ")) {
                 weatherText = s.substring(8).trim()
+            } else if (s.startsWith("WEATHERAL ")) {
+                // 这个地方本来是显示歌词的，就随缘显示一下吧
+                mainHandler.post {
+                    DeskActivity.me?.lyricsView?.text = s.substring(10).trim()
+                }
             } else if (s.startsWith("ECHO ")) {
                 val msg = s.substring(5)
                 lastEcho = msg

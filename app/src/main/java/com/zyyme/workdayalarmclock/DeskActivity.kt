@@ -85,7 +85,7 @@ class DeskActivity : AppCompatActivity() {
     private lateinit var grid: LinearLayout
     private lateinit var timePanel: LinearLayout
     private lateinit var playerPanel: LinearLayout
-    private lateinit var lyricsView: TextView
+    lateinit var lyricsView: TextView
     private lateinit var timeView: TextView
     private lateinit var dateView: TextView
     private lateinit var echoRowView: View

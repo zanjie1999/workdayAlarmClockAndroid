@@ -140,6 +140,8 @@ http://设备IP:8880/abc/brightness
 将图片放到内置存储的zyymeWallpaper中可每小时随机轮换  
 界面为横屏设计，但是不限制屏幕方向，你看可以自行旋转屏幕  
 
+小提示，你可以把内容拼在 `http://192.168.1.152:8080/echo?msg=WEATHERAL%20` 后面，让内容显示在顶部歌词的位置，虽然这是为天气预警信息显示设计的，但你可以把任意信息推到上面显示
+
 ## 应用列表
 <img width="430" height="268" src="https://github.com/user-attachments/assets/48efb0ac-5c74-49f8-9de2-e72fe386a3ee" />
 
