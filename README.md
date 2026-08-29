@@ -25,8 +25,9 @@ adb install -r .\app\release\app-release.apk ; adb shell am start -n com.zyyme.w
 ## 使用用法
 在右边Releases下载apk安装：  
 `app-full` 通常用这个就行  
-`app-nolauncher` 部分按键机不能设置默认桌面，用它就不会出现桌面选择  
 `x86` 例如叮咚play，F503A平板等Intel CPU的设备  
+
+需要作为系统桌面时，在应用右上角菜单中勾选“作为桌面”，再按系统提示选择默认桌面。
 
 ### 部分系统比如MIUI或ColorOS需要长按图标到应用详情的电池设置中允许自启动，电池不优化，允许完全后台行为
 然后打开 http://127.0.0.1:8080 进行配置，  

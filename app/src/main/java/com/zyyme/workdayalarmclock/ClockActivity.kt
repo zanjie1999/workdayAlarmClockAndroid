@@ -46,6 +46,7 @@ class ClockActivity : AppCompatActivity() {
 
     var mediaSessionCompat: MediaSessionCompat? = null
     var mediaComponentName: ComponentName? = null
+    var isActivityStarted = false
 
     private var timeHandler: Handler = Handler()
     private var runnable: Runnable? = null
@@ -387,6 +388,16 @@ class ClockActivity : AppCompatActivity() {
         }
         timeHandler.postDelayed(runnable as Runnable, 1000 - System.currentTimeMillis() % 1000)
 
+    }
+
+    override fun onStart() {
+        super.onStart()
+        isActivityStarted = true
+    }
+
+    override fun onStop() {
+        isActivityStarted = false
+        super.onStop()
     }
 
     override fun onResume() {

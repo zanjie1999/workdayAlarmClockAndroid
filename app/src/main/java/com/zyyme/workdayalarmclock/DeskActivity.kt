@@ -70,6 +70,7 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    var isActivityStarted = false
     private val slotKeys = arrayOf(
         MeSettings.KEY_DESK_SLOT_TOP_LEFT,
         MeSettings.KEY_DESK_SLOT_TOP_RIGHT,
@@ -220,6 +221,16 @@ class DeskActivity : AppCompatActivity() {
             setIntent(intent)
             grid.post { handleIntent(intent) }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        isActivityStarted = true
+    }
+
+    override fun onStop() {
+        isActivityStarted = false
+        super.onStop()
     }
 
     override fun onResume() {

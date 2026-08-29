@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.Manifest
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
+import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -49,6 +50,7 @@ class MainActivity : AppCompatActivity() {
         private const val EDIT_CAMERA_PASSWORD = 9
         private const val OPEN_DEVELOPER_OPTIONS = 10
         private const val CONFIG_CAMERA_AUTO_BRIGHTNESS = 11
+        private const val TOGGLE_HOME_LAUNCHER = 12
         private const val MENU_SETTING_START = 100
         private const val REQUEST_CAMERA_PERMISSION = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
@@ -125,21 +127,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        // 当作为桌面并且已启动时，再次按下Home键
-        if (intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
-            val appListIntent = Intent(this, AppListActivity::class.java)
-            startActivity(appListIntent)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 作为启动器启动，也需要运行开机启动app
-        if (StartupAppHelper.tryHandleLauncherBootActivity(this, getIntent())) {
-            val startupAppCount = StartupAppHelper.getStartupAppPackageNames(this).size
-            Thread.sleep(startupAppCount * StartupAppHelper.STARTUP_APP_DELAY_MILLIS)
-        }
         me = this
         useClockMode = MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
 
@@ -289,6 +277,8 @@ class MainActivity : AppCompatActivity() {
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
         popupMenu.menu.findItem(CONFIG_CAMERA_AUTO_BRIGHTNESS)?.isChecked =
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
+        popupMenu.menu.findItem(TOGGLE_HOME_LAUNCHER)?.isChecked =
+            isHomeLauncherEnabled()
         popupMenu.show()
     }
 
@@ -300,8 +290,11 @@ class MainActivity : AppCompatActivity() {
         popupMenu.menu.add(Menu.NONE, OPEN_WEB, 1, "打开Web控制台")
         popupMenu.menu.add(Menu.NONE, OPEN_CLOCK, 3, "打开时钟模式")
         popupMenu.menu.add(Menu.NONE, OPEN_APPLIST, 4, "打开应用列表")
+        popupMenu.menu.add(Menu.NONE, TOGGLE_HOME_LAUNCHER, 5, "作为桌面").apply {
+            isCheckable = true
+        }
         settingsMenuItems.forEachIndexed { index, item ->
-            popupMenu.menu.add(Menu.NONE, MENU_SETTING_START + index, index + 4, item.label).apply {
+            popupMenu.menu.add(Menu.NONE, MENU_SETTING_START + index, index + 6, item.label).apply {
                 isCheckable = true
             }
         }
@@ -329,6 +322,9 @@ class MainActivity : AppCompatActivity() {
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_APPLIST) {
                 startActivity(Intent(this, AppListActivity::class.java))
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == TOGGLE_HOME_LAUNCHER) {
+                toggleHomeLauncher(menuItem.isChecked)
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_DEVICE_ADMIN) {
                 openDeviceAdminSettings()
@@ -369,6 +365,65 @@ class MainActivity : AppCompatActivity() {
         }
         settingsPopupMenu = popupMenu
         return popupMenu
+    }
+
+    private fun homeLauncherComponent() =
+        ComponentName(packageName, "$packageName.HomeLauncherAlias")
+
+    private fun isHomeLauncherEnabled(): Boolean {
+        return packageManager.getComponentEnabledSetting(homeLauncherComponent()) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+    }
+
+    private fun toggleHomeLauncher(currentlyChecked: Boolean) {
+        val enabled = !currentlyChecked
+        try {
+            packageManager.setComponentEnabledSetting(
+                homeLauncherComponent(),
+                if (enabled) {
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                } else {
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                },
+                PackageManager.DONT_KILL_APP
+            )
+            settingsPopupMenu?.menu?.findItem(TOGGLE_HOME_LAUNCHER)?.isChecked = enabled
+        } catch (_: Exception) {
+            settingsPopupMenu?.menu?.findItem(TOGGLE_HOME_LAUNCHER)?.isChecked =
+                isHomeLauncherEnabled()
+            Toast.makeText(this, "桌面设置修改失败", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        if (enabled) {
+            requestDefaultHomeSelection()
+        } else {
+            Toast.makeText(this, "已取消作为桌面", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun requestDefaultHomeSelection() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(RoleManager::class.java)
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                if (roleManager.isRoleHeld(RoleManager.ROLE_HOME)) {
+                    Toast.makeText(this, "当前已是默认桌面", Toast.LENGTH_SHORT).show()
+                } else {
+                    startActivity(roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME))
+                }
+                return
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+                return
+            } catch (_: Exception) {
+            }
+        }
+
+        Toast.makeText(this, "请按Home键并选择${getString(R.string.app_name)}作为桌面", Toast.LENGTH_LONG).show()
     }
 
     private fun openDeviceAdminSettings() {
