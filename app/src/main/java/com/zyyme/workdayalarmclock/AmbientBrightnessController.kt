@@ -276,7 +276,8 @@ internal class AmbientBrightnessController(
     }
 
     private fun closeScreen() {
-        if (ClockActivity.me?.isKeepScreenOn == true || DeskActivity.me?.isKeepScreenOn == true) {
+        val keepScreenOn = ClockActivity.me?.isKeepScreenOn == true || DeskActivity.me?.isKeepScreenOn == true
+        if (keepScreenOn && !MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON)) {
             log("摄像头自动亮度跳过熄屏：当前设置了保持亮屏")
             return
         }

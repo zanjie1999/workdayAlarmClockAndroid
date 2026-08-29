@@ -13,8 +13,9 @@
 
 如果要编译，请将Go编译输出的linux arm的二进制文件和linux arm64的二进制文件重命名放到
 ```
-项目目录/app/libs/armeabi/libWorkdayAlarmClock.so
+项目目录/app/libs/armeabi-v7a/libWorkdayAlarmClock.so
 项目目录/app/libs/arm64-v8a/libWorkdayAlarmClock.so
+项目目录/app/libs/x86/libWorkdayAlarmClock.so
 ```
 你可以把文件换成你自己的程序，使用本程序作为启动器  
 需要打包release包二进制文件才会被打包进去，然后安装启动  
@@ -139,6 +140,8 @@ http://设备IP:8880/abc/brightness
 长按中间的空白区域，可以进入设置，调节各个组件的位置和设置壁纸  
 将图片放到内置存储的zyymeWallpaper中可每小时随机轮换  
 界面为横屏设计，但是不限制屏幕方向，你看可以自行旋转屏幕  
+
+小提示，你可以把内容拼在 `http://192.168.1.152:8080/echo?msg=WEATHERAL%20` 后面，让内容显示在顶部歌词的位置，虽然这是为天气预警信息显示设计的，但你可以把任意信息推到上面显示
 
 ## 应用列表
 <img width="430" height="268" src="https://github.com/user-attachments/assets/48efb0ac-5c74-49f8-9de2-e72fe386a3ee" />
