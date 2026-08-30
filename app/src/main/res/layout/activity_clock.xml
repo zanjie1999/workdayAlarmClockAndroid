@@ -93,6 +93,7 @@
             android:autoSizeMaxTextSize="400sp"
             app:autoSizeMaxTextSize="400sp"
             app:autoSizeStepGranularity="1sp"
+            android:fontFamily="@font/zyymeclock"
             android:maxLines="1"
             android:includeFontPadding="false"
             android:textAlignment="center"
