@@ -43,6 +43,7 @@ object MeSettings {
     const val KEY_DESK_SLOT_TOP_RIGHT = "desk_slot_top_right"
     const val KEY_DESK_SLOT_BOTTOM_LEFT = "desk_slot_bottom_left"
     const val KEY_DESK_SLOT_BOTTOM_RIGHT = "desk_slot_bottom_right"
+    const val KEY_DESK_LYRICS_POSITION = "desk_lyrics_position"
 
     private fun preferences(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

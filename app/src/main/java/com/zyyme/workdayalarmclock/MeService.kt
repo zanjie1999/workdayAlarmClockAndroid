@@ -1482,12 +1482,20 @@ class MeService : Service() {
                     val original = parseLyric(json.optJSONObject("lrc")?.optString("lyric").orEmpty())
                     val translated = parseLyric(json.optJSONObject("tlyric")?.optString("lyric").orEmpty())
                         .associateBy { it.timeMs }
+                    val hasTranslation = translated.values.any { it.text.isNotBlank() }
                     original.map { line ->
-                        val translation = translated[line.timeMs]?.text
-                        if (line.text.isBlank() || translation.isNullOrBlank() || translation == line.text) {
-                            line
-                        } else {
-                            line.copy(text = line.text + "\n" + translation)
+                        val translatedLine = translated[line.timeMs]
+                        val translation = translatedLine?.text
+                        when {
+                            line.text.isBlank() -> line
+                            !translation.isNullOrBlank() && translation != line.text -> {
+                                line.copy(text = line.text + "\n" + translation)
+                            }
+                            translatedLine != null -> line
+                            // 双语歌词可能只有部分原文行能在 tlyric 中找到对应翻译，
+                            // 这些行也保留双语布局所需的末尾换行；单语歌词不补换行。
+                            hasTranslation -> line.copy(text = line.text + "\n")
+                            else -> line
                         }
                     }
                 }

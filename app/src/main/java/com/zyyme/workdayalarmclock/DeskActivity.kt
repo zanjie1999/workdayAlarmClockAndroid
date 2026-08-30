@@ -19,6 +19,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
@@ -46,7 +48,6 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -65,7 +66,11 @@ class DeskActivity : AppCompatActivity() {
         private const val CONTENT_NONE = 0
         private const val CONTENT_TIME = 1
         private const val CONTENT_PLAYER = 2
-        private const val CONTENT_LYRICS = 3
+        private const val LEGACY_CONTENT_LYRICS = 3
+
+        private const val LYRICS_TOP = 0
+        private const val LYRICS_BOTTOM = 1
+        private const val LYRICS_NONE = 2
 
     }
 
@@ -77,7 +82,7 @@ class DeskActivity : AppCompatActivity() {
         MeSettings.KEY_DESK_SLOT_BOTTOM_LEFT,
         MeSettings.KEY_DESK_SLOT_BOTTOM_RIGHT
     )
-    private val defaultSlots = intArrayOf(CONTENT_LYRICS, CONTENT_NONE, CONTENT_TIME, CONTENT_PLAYER)
+    private val defaultSlots = intArrayOf(CONTENT_NONE, CONTENT_NONE, CONTENT_TIME, CONTENT_PLAYER)
     private val slotValues = defaultSlots.copyOf()
     private val baseIconDrawables = mutableMapOf<Int, Drawable>()
 
@@ -129,7 +134,8 @@ class DeskActivity : AppCompatActivity() {
             val service = MeService.me
             val position = service?.getPlaybackPosition()
             if (lyricsEnabled && position != null) {
-                val lyric = formatLyricForTwoLines(service?.getCurrentLyric(position).orEmpty())
+                // 双语歌词在服务解析歌词文本时已经用换行拼接；单语歌词保持原样。
+                val lyric = service?.getCurrentLyric(position).orEmpty()
                 if (lyricsView.text.toString() != lyric) lyricsView.text = lyric
                 handler.postDelayed(this, 250L)
             } else {
@@ -268,6 +274,13 @@ class DeskActivity : AppCompatActivity() {
         timePanel = findViewById(R.id.desk_time_panel)
         playerPanel = findViewById(R.id.desk_player_panel)
         lyricsView = findViewById(R.id.desk_lyrics)
+        lyricsView.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                updateLyricsLayout()
+            }
+        })
         timeView = findViewById(R.id.desk_time)
         dateView = findViewById(R.id.desk_date)
         echoRowView = findViewById(R.id.desk_echo_row)
@@ -368,7 +381,9 @@ class DeskActivity : AppCompatActivity() {
 
     private fun showDeskMenu() {
         val slotNames = arrayOf("↖左上角", "↗右上角", "↙左下角", "↘右下角")
-        val contentNames = arrayOf("不显示", "时间日期", "播放控制", "歌词")
+        val contentNames = arrayOf("不显示", "时间日期", "播放控制")
+        val lyricsPositionNames = arrayOf("顶部", "底部", "不显示")
+        val lyricsPosition = loadLyricsPosition()
         val maskEnabled = MeSettings.isEnabled(this, MeSettings.KEY_DESK_MASK)
         val lightText = MeSettings.isEnabled(this, MeSettings.KEY_DESK_LIGHT_TEXT, true)
         val keepScreenOn = MeSettings.isEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON)
@@ -378,6 +393,7 @@ class DeskActivity : AppCompatActivity() {
             "深色遮罩：${if (maskEnabled) "开" else "关"}",
             "文字颜色：${if (lightText) "白色" else "黑色"}",
             "屏幕常亮：${if (keepScreenOn) "开" else "关"}",
+            "歌词/信息显示：${lyricsPositionNames[lyricsPosition]}",
         )
         slotNames.forEachIndexed { slot, name ->
             items += "$name：${contentNames[slotValues[slot]]}"
@@ -387,7 +403,7 @@ class DeskActivity : AppCompatActivity() {
             items += "下一张壁纸"
         }
         items += "返回"
-        val returnItemIndex = if (hasNextWallpaper) 10 else 9
+        val returnItemIndex = if (hasNextWallpaper) 11 else 10
 
         val dialog = AlertDialog.Builder(this)
             .setItems(items.toTypedArray()) { _, which ->
@@ -407,10 +423,24 @@ class DeskActivity : AppCompatActivity() {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_KEEP_SCREEN_ON, enabled)
                         applyKeepScreenOnState(enabled)
                     }
-                    which in 5..8 -> showSlotContentDialog(which - 5, slotNames[which - 5], contentNames)
-                    hasNextWallpaper && which == 9 -> advanceAutoWallpaper()
+                    which == 5 -> showLyricsPositionDialog(lyricsPositionNames, lyricsPosition)
+                    which in 6..9 -> showSlotContentDialog(which - 6, slotNames[which - 6], contentNames)
+                    hasNextWallpaper && which == 10 -> advanceAutoWallpaper()
                     which == returnItemIndex -> returnToMain()
                 }
+            }
+            .create()
+        dialog.setCanceledOnTouchOutside(true)
+        showImmersiveDialog(dialog)
+    }
+
+    private fun showLyricsPositionDialog(positionNames: Array<String>, position: Int) {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("歌词/信息显示")
+            .setSingleChoiceItems(positionNames, position) { choiceDialog, selected ->
+                MeSettings.setInt(this, MeSettings.KEY_DESK_LYRICS_POSITION, selected)
+                applyConfiguredLayout()
+                choiceDialog.dismiss()
             }
             .create()
         dialog.setCanceledOnTouchOutside(true)
@@ -437,39 +467,36 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private fun setSlotContent(slot: Int, content: Int) {
-        if (slot !in slotValues.indices || content !in CONTENT_NONE..CONTENT_LYRICS) return
+        if (slot !in slotValues.indices || content !in CONTENT_NONE..CONTENT_PLAYER) return
 
         if (content != CONTENT_NONE) {
             slotValues.indices.filter { it != slot && slotValues[it] == content }
                 .forEach { slotValues[it] = CONTENT_NONE }
-        }
-        if (content == CONTENT_LYRICS) {
-            slotValues[pairedSlot(slot)] = CONTENT_NONE
-        } else if (content != CONTENT_NONE && slotValues[pairedSlot(slot)] == CONTENT_LYRICS) {
-            slotValues[pairedSlot(slot)] = CONTENT_NONE
         }
         slotValues[slot] = content
         saveSlotSettings()
         applyConfiguredLayout()
     }
 
-    private fun pairedSlot(slot: Int): Int = if (slot % 2 == 0) slot + 1 else slot - 1
-
     private fun loadSlotSettings() {
         slotKeys.indices.forEach { index ->
-            slotValues[index] = MeSettings.getInt(this, slotKeys[index], defaultSlots[index])
-                .coerceIn(CONTENT_NONE, CONTENT_LYRICS)
+            val stored = MeSettings.getInt(this, slotKeys[index], defaultSlots[index])
+            // 3 was the old four-corner "歌词" value; it is now represented by the
+            // independent desk lyrics position setting.
+            slotValues[index] = if (stored == LEGACY_CONTENT_LYRICS) {
+                CONTENT_NONE
+            } else {
+                stored.coerceIn(CONTENT_NONE, CONTENT_PLAYER)
+            }
         }
         normalizeSlots()
     }
 
     private fun normalizeSlots() {
-        for (content in CONTENT_TIME..CONTENT_LYRICS) {
+        for (content in CONTENT_TIME..CONTENT_PLAYER) {
             val matches = slotValues.indices.filter { slotValues[it] == content }
             matches.drop(1).forEach { slotValues[it] = CONTENT_NONE }
         }
-        val lyricSlot = slotValues.indexOf(CONTENT_LYRICS)
-        if (lyricSlot >= 0) slotValues[pairedSlot(lyricSlot)] = CONTENT_NONE
     }
 
     private fun saveSlotSettings() {
@@ -482,11 +509,12 @@ class DeskActivity : AppCompatActivity() {
         removeFromParent(playerPanel)
         removeFromParent(lyricsView)
 
+        applyLyricsLayout()
+
         slotValues.forEachIndexed { slot, content ->
             when (content) {
                 CONTENT_TIME -> addPanelToSlot(timePanel, slot, false)
                 CONTENT_PLAYER -> addPanelToSlot(playerPanel, slot, true)
-                CONTENT_LYRICS -> addLyricsToRow(slot / 2)
             }
         }
     }
@@ -511,25 +539,49 @@ class DeskActivity : AppCompatActivity() {
         return horizontalGravity or (if (slot < 2) Gravity.TOP else Gravity.BOTTOM)
     }
 
-    private fun addLyricsToRow(row: Int) {
-        val rowView = if (row == 0) {
-            findViewById<FrameLayout>(R.id.desk_top_row)
-        } else {
-            findViewById<FrameLayout>(R.id.desk_bottom_row)
+    private fun loadLyricsPosition(): Int {
+        return MeSettings.getInt(this, MeSettings.KEY_DESK_LYRICS_POSITION, LYRICS_TOP)
+            .coerceIn(LYRICS_TOP, LYRICS_NONE)
+    }
+
+    private fun applyLyricsLayout() {
+        val position = loadLyricsPosition()
+        if (position == LYRICS_NONE) {
+            lyricsView.visibility = View.GONE
+            return
         }
-        val height = min(
-            (resources.displayMetrics.heightPixels * 0.1875f).toInt(),
-            rowView.height.takeIf { it > 0 } ?: Int.MAX_VALUE
-        )
-        val gravity = if (row == 0) Gravity.TOP else Gravity.BOTTOM
-        rowView.addView(
-            lyricsView,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height, gravity)
-        )
-        lyricsView.visibility = if (MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)) {
-            View.VISIBLE
+
+        val height = if (lyricsView.text.isEmpty()) {
+            0
         } else {
-            View.GONE
+            (resources.displayMetrics.heightPixels * 0.1875f).toInt()
+        }
+        lyricsView.visibility = if (height > 0) View.VISIBLE else View.GONE
+        val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
+        val index = if (position == LYRICS_TOP) 0 else grid.childCount
+        grid.addView(lyricsView, index, params)
+    }
+
+    private fun updateLyricsLayout() {
+        if (!::grid.isInitialized || !::lyricsView.isInitialized) return
+        val parent = lyricsView.parent
+        if (parent == null) {
+            if (loadLyricsPosition() != LYRICS_NONE && lyricsView.text.isNotEmpty()) {
+                applyConfiguredLayout()
+            }
+            return
+        }
+        val hasText = lyricsView.text.isNotEmpty()
+        lyricsView.visibility = if (hasText) View.VISIBLE else View.GONE
+        val params = lyricsView.layoutParams as? LinearLayout.LayoutParams ?: return
+        val desiredHeight = if (hasText) {
+            (resources.displayMetrics.heightPixels * 0.1875f).toInt()
+        } else {
+            0
+        }
+        if (params.height != desiredHeight) {
+            params.height = desiredHeight
+            lyricsView.layoutParams = params
         }
     }
 
@@ -946,10 +998,6 @@ class DeskActivity : AppCompatActivity() {
         val showSeconds = !MeSettings.isEnabled(this, MeSettings.KEY_TSS)
         val hour = if (MeSettings.isEnabled(this, MeSettings.KEY_T24)) "H:mm" else "h:mm"
         timeFormat = SimpleDateFormat(if (showSeconds) "$hour:ss" else hour, Locale.CHINA)
-    }
-
-    private fun formatLyricForTwoLines(lyric: String): String {
-        return if (lyric.isNotEmpty() && '\n' !in lyric) "$lyric\n" else lyric
     }
 
     private fun updateVolumeControl() {
