@@ -23,6 +23,7 @@ object MeSettings {
     const val KEY_AP = "ap"
     const val KEY_AUTO_BACK_CLOCK = "auto_back_clock"
     const val KEY_NOTIFICATION_FORWARD_URL = "notification_forward_url"
+    const val KEY_TODO_URL = "todo_url"
     const val KEY_CAMERA_SERVER = "camera_server"
     const val KEY_CAMERA_PASSWORD = "camera_password"
     const val KEY_CAMERA_AUTO_BRIGHTNESS = "camera_auto_brightness"
@@ -107,6 +108,21 @@ object MeSettings {
             editor.remove(KEY_NOTIFICATION_FORWARD_URL)
         } else {
             editor.putString(KEY_NOTIFICATION_FORWARD_URL, cleanUrl)
+        }
+        editor.apply()
+    }
+
+    fun getTodoUrl(context: Context): String {
+        return preferences(context).getString(KEY_TODO_URL, "").orEmpty()
+    }
+
+    fun setTodoUrl(context: Context, url: String) {
+        val cleanUrl = url.trim()
+        val editor = preferences(context).edit()
+        if (cleanUrl.isEmpty()) {
+            editor.remove(KEY_TODO_URL)
+        } else {
+            editor.putString(KEY_TODO_URL, cleanUrl)
         }
         editor.apply()
     }

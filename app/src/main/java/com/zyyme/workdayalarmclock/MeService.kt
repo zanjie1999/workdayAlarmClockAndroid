@@ -25,6 +25,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.IOException
@@ -104,7 +105,10 @@ class MeService : Service() {
     var batLevel = -1
     @Volatile var lastEcho = ""
     @Volatile var weatherText = ""
+    @Volatile var todoText = ""
     @Volatile private var lastWeatherRequestAt = 0L
+    @Volatile private var lastTodoRequestAt = 0L
+    @Volatile private var todoRequestInFlight = false
 
     val isBonjour = Build.MANUFACTURER + Build.MODEL == "AllwinnerQUAD-CORE A64 ococci"
 
@@ -2059,6 +2063,98 @@ class MeService : Service() {
         lastWeatherRequestAt = now
         toGo("weather")
         return true
+    }
+
+    @Synchronized
+    fun requestTodoIfNeeded(): Boolean {
+        val url = MeSettings.getTodoUrl(this)
+        if (url.isEmpty()) {
+            if (todoText.isNotEmpty()) publishTodoText("")
+            lastTodoRequestAt = 0L
+            return false
+        }
+        val now = System.currentTimeMillis()
+        if (todoRequestInFlight || now - lastTodoRequestAt < WEATHER_UPDATE_INTERVAL_MS ||
+            !isDeskScreenInteractive()
+        ) {
+            return false
+        }
+        lastTodoRequestAt = now
+        todoRequestInFlight = true
+        Thread {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = URL(url).openConnection() as HttpURLConnection
+                connection.connectTimeout = 8000
+                connection.readTimeout = 8000
+                connection.requestMethod = "GET"
+                val responseCode = connection.responseCode
+                val stream = if (responseCode in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val result = if (responseCode in 200..299) {
+                    formatTodoResponse(body)
+                } else {
+                    if (body.isBlank()) "HTTP $responseCode" else body
+                }
+                if (MeSettings.getTodoUrl(this) == url) {
+                    publishTodoText(result)
+                }
+            } catch (e: Exception) {
+                if (MeSettings.getTodoUrl(this) == url) {
+                    publishTodoText(e.message ?: e.toString())
+                }
+            } finally {
+                connection?.disconnect()
+                todoRequestInFlight = false
+            }
+        }.start()
+        return true
+    }
+
+    fun refreshTodoNow() {
+        synchronized(this) {
+            lastTodoRequestAt = 0L
+        }
+        requestTodoIfNeeded()
+    }
+
+    private fun formatTodoResponse(body: String): String {
+        return try {
+            val array = JSONArray(body)
+            buildString {
+                for (index in 0 until array.length()) {
+                    if (index > 0) append('\n')
+                    append(index + 1).append(". ").append(array.opt(index)?.toString().orEmpty())
+                }
+            }
+        } catch (_: Exception) {
+            body
+        }
+    }
+
+    private fun publishTodoText(value: String) {
+        todoText = value
+        mainHandler.post {
+            if (isDeskScreenInteractive()) {
+                DeskActivity.me?.updateTodoText(value)
+            }
+        }
+    }
+
+    private fun isDeskScreenInteractive(): Boolean {
+        val desk = DeskActivity.me ?: return false
+        if (!desk.isActivityStarted) return false
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        @Suppress("DEPRECATION")
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            powerManager.isInteractive
+        } else {
+            powerManager.isScreenOn
+        }
     }
 
     /**

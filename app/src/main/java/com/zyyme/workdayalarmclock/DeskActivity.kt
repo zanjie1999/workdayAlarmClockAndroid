@@ -18,9 +18,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
+import android.text.method.ScrollingMovementMethod
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
@@ -67,10 +69,12 @@ class DeskActivity : AppCompatActivity() {
         private const val CONTENT_TIME = 1
         private const val CONTENT_PLAYER = 2
         private const val LEGACY_CONTENT_LYRICS = 3
+        private const val CONTENT_TODO = 4
 
         private const val LYRICS_TOP = 0
         private const val LYRICS_BOTTOM = 1
         private const val LYRICS_NONE = 2
+        private const val HOUR_MILLIS = 60L * 60L * 1000L
 
     }
 
@@ -92,6 +96,7 @@ class DeskActivity : AppCompatActivity() {
     private lateinit var timePanel: LinearLayout
     private lateinit var playerPanel: LinearLayout
     lateinit var lyricsView: TextView
+    private lateinit var todoView: TextView
     private lateinit var timeView: TextView
     private lateinit var dateView: TextView
     private lateinit var echoRowView: View
@@ -117,7 +122,6 @@ class DeskActivity : AppCompatActivity() {
     private var autoWallpaperFiles = emptyList<File>()
     private var autoWallpaperIndex = -1
     private var currentAutoWallpaper: File? = null
-    private var wallpaperTimerStarted = false
     private var isUserSeeking = false
     private var isUserAdjustingVolume = false
     private var lyricsRefreshScheduled = false
@@ -166,9 +170,9 @@ class DeskActivity : AppCompatActivity() {
         override fun run() {
             val now = Date()
             val service = MeService.me
-            if (service?.requestWeatherIfNeeded() == true) {
-                handleWallpaperTimerTick()
-            }
+            // 保留天气请求对服务启动时 writer 尚未就绪的重试；壁纸轮换由整点任务单独调度。
+            service?.requestWeatherIfNeeded()
+            service?.requestTodoIfNeeded()
             setTextIfChanged(timeView, timeFormat.format(now))
             val weather = service?.weatherText.orEmpty()
             val date = if (weather.isEmpty()) {
@@ -185,6 +189,17 @@ class DeskActivity : AppCompatActivity() {
             updateProgress(position, service?.getPlaybackDuration() ?: 0)
             updateVolumeControl()
             handler.postDelayed(this, 1000L - System.currentTimeMillis() % 1000L)
+        }
+    }
+
+    private val hourlyUpdateRunnable = object : Runnable {
+        override fun run() {
+            if (isActivityStarted && isScreenInteractive()) {
+                MeService.me?.requestWeatherIfNeeded()
+                MeService.me?.requestTodoIfNeeded()
+                advanceAutoWallpaper()
+            }
+            scheduleHourlyUpdates()
         }
     }
 
@@ -219,6 +234,7 @@ class DeskActivity : AppCompatActivity() {
             handleIntent(intent)
         }
         handler.post(nonLyricsRefreshRunnable)
+        scheduleHourlyUpdates()
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -242,6 +258,7 @@ class DeskActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         lyricsEnabled = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
+        todoView.text = MeService.me?.todoText.orEmpty()
         configureClockFormat()
         loadSlotSettings()
         applyMask()
@@ -253,9 +270,9 @@ class DeskActivity : AppCompatActivity() {
             if (alarmMode) showAlarmControls(true)
         }
         MeService.me?.syncLyricsSetting()
-        if (MeService.me?.requestWeatherIfNeeded() == true) {
-            handleWallpaperTimerTick()
-        }
+        MeService.me?.requestWeatherIfNeeded()
+        MeService.me?.requestTodoIfNeeded()
+        scheduleHourlyUpdates()
         applyDefaultKeepScreenOn()
         setFullscreen()
         AmbientBrightnessController.applyLatestTo(window)
@@ -267,6 +284,15 @@ class DeskActivity : AppCompatActivity() {
         }
     }
 
+    fun updateTodoText(message: String) {
+        runOnUiThread {
+            if (::todoView.isInitialized && todoView.text.toString() != message) {
+                todoView.text = message
+                todoView.scrollTo(0, 0)
+            }
+        }
+    }
+
     private fun bindViews() {
         wallpaperView = findViewById(R.id.desk_wallpaper)
         maskView = findViewById(R.id.desk_mask)
@@ -274,6 +300,8 @@ class DeskActivity : AppCompatActivity() {
         timePanel = findViewById(R.id.desk_time_panel)
         playerPanel = findViewById(R.id.desk_player_panel)
         lyricsView = findViewById(R.id.desk_lyrics)
+        todoView = findViewById(R.id.desk_todo)
+        todoView.movementMethod = ScrollingMovementMethod()
         lyricsView.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -381,7 +409,7 @@ class DeskActivity : AppCompatActivity() {
 
     private fun showDeskMenu() {
         val slotNames = arrayOf("↖左上角", "↗右上角", "↙左下角", "↘右下角")
-        val contentNames = arrayOf("不显示", "时间日期", "播放控制")
+        val slotContentNames = arrayOf("不显示", "时间日期", "播放控制", "待办事项")
         val lyricsPositionNames = arrayOf("顶部", "底部", "不显示")
         val lyricsPosition = loadLyricsPosition()
         val maskEnabled = MeSettings.isEnabled(this, MeSettings.KEY_DESK_MASK)
@@ -396,7 +424,7 @@ class DeskActivity : AppCompatActivity() {
             "歌词/信息显示：${lyricsPositionNames[lyricsPosition]}",
         )
         slotNames.forEachIndexed { slot, name ->
-            items += "$name：${contentNames[slotValues[slot]]}"
+            items += "$name：${slotContentName(slotValues[slot], slotContentNames)}"
         }
         val hasNextWallpaper = listAutoWallpaperFiles().size > 1
         if (hasNextWallpaper) {
@@ -424,7 +452,7 @@ class DeskActivity : AppCompatActivity() {
                         applyKeepScreenOnState(enabled)
                     }
                     which == 5 -> showLyricsPositionDialog(lyricsPositionNames, lyricsPosition)
-                    which in 6..9 -> showSlotContentDialog(which - 6, slotNames[which - 6], contentNames)
+                    which in 6..9 -> showSlotContentDialog(which - 6, slotNames[which - 6], slotContentNames)
                     hasNextWallpaper && which == 10 -> advanceAutoWallpaper()
                     which == returnItemIndex -> returnToMain()
                 }
@@ -450,8 +478,8 @@ class DeskActivity : AppCompatActivity() {
     private fun showSlotContentDialog(slot: Int, slotName: String, contentNames: Array<String>) {
         val dialog = AlertDialog.Builder(this)
             .setTitle(slotName)
-            .setSingleChoiceItems(contentNames, slotValues[slot]) { choiceDialog, content ->
-                setSlotContent(slot, content)
+            .setSingleChoiceItems(contentNames, slotContentChoice(slotValues[slot])) { choiceDialog, content ->
+                setSlotContent(slot, slotContentValue(content))
                 choiceDialog.dismiss()
             }
             .create()
@@ -467,7 +495,7 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private fun setSlotContent(slot: Int, content: Int) {
-        if (slot !in slotValues.indices || content !in CONTENT_NONE..CONTENT_PLAYER) return
+        if (slot !in slotValues.indices || content !in setOf(CONTENT_NONE, CONTENT_TIME, CONTENT_PLAYER, CONTENT_TODO)) return
 
         if (content != CONTENT_NONE) {
             slotValues.indices.filter { it != slot && slotValues[it] == content }
@@ -486,14 +514,14 @@ class DeskActivity : AppCompatActivity() {
             slotValues[index] = if (stored == LEGACY_CONTENT_LYRICS) {
                 CONTENT_NONE
             } else {
-                stored.coerceIn(CONTENT_NONE, CONTENT_PLAYER)
+                stored.coerceIn(CONTENT_NONE, CONTENT_TODO)
             }
         }
         normalizeSlots()
     }
 
     private fun normalizeSlots() {
-        for (content in CONTENT_TIME..CONTENT_PLAYER) {
+        for (content in listOf(CONTENT_TIME, CONTENT_PLAYER, CONTENT_TODO)) {
             val matches = slotValues.indices.filter { slotValues[it] == content }
             matches.drop(1).forEach { slotValues[it] = CONTENT_NONE }
         }
@@ -508,27 +536,53 @@ class DeskActivity : AppCompatActivity() {
         removeFromParent(timePanel)
         removeFromParent(playerPanel)
         removeFromParent(lyricsView)
+        removeFromParent(todoView)
 
         applyLyricsLayout()
 
         slotValues.forEachIndexed { slot, content ->
             when (content) {
-                CONTENT_TIME -> addPanelToSlot(timePanel, slot, false)
+                CONTENT_TIME -> addPanelToSlot(timePanel, slot, false, true)
                 CONTENT_PLAYER -> addPanelToSlot(playerPanel, slot, true)
+                CONTENT_TODO -> addPanelToSlot(todoView, slot, false)
             }
         }
     }
 
-    private fun addPanelToSlot(panel: View, slot: Int, player: Boolean) {
+    private fun slotContentName(content: Int, names: Array<String>): String {
+        return names.getOrElse(slotContentChoice(content)) { names[0] }
+    }
+
+    private fun slotContentChoice(content: Int): Int {
+        return when (content) {
+            CONTENT_TIME -> 1
+            CONTENT_PLAYER -> 2
+            CONTENT_TODO -> 3
+            else -> 0
+        }
+    }
+
+    private fun slotContentValue(choice: Int): Int {
+        return when (choice) {
+            1 -> CONTENT_TIME
+            2 -> CONTENT_PLAYER
+            3 -> CONTENT_TODO
+            else -> CONTENT_NONE
+        }
+    }
+
+    private fun addPanelToSlot(panel: View, slot: Int, player: Boolean, alignTime: Boolean = false) {
         val width = (resources.displayMetrics.widthPixels * 0.4f).toInt()
         val heightFraction = if (player) 0.24f else 0.30f
         val height = (resources.displayMetrics.heightPixels * heightFraction).toInt()
         val horizontalGravity = if (slot % 2 == 0) Gravity.START else Gravity.END
         val gravity = panelGravity(slot)
-        if (!player) {
+        if (alignTime) {
             timePanel.gravity = horizontalGravity or Gravity.BOTTOM
             timeView.gravity = horizontalGravity or Gravity.BOTTOM
             dateView.gravity = horizontalGravity or Gravity.TOP
+        } else if (panel === todoView) {
+            todoView.gravity = horizontalGravity or (if (slot < 2) Gravity.TOP else Gravity.BOTTOM)
         }
         panel.setPadding(0, 0, 0, 0)
         slotFrames()[slot].addView(panel, FrameLayout.LayoutParams(width, height, gravity))
@@ -757,12 +811,21 @@ class DeskActivity : AppCompatActivity() {
         Toast.makeText(this, "壁纸已设置", Toast.LENGTH_SHORT).show()
     }
 
-    private fun handleWallpaperTimerTick() {
-        if (!wallpaperTimerStarted) {
-            wallpaperTimerStarted = true
-            return
+    private fun scheduleHourlyUpdates() {
+        handler.removeCallbacks(hourlyUpdateRunnable)
+        val remainder = System.currentTimeMillis() % HOUR_MILLIS
+        val delay = (HOUR_MILLIS - remainder).coerceAtLeast(1000L)
+        handler.postDelayed(hourlyUpdateRunnable, delay)
+    }
+
+    private fun isScreenInteractive(): Boolean {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        @Suppress("DEPRECATION")
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            powerManager.isInteractive
+        } else {
+            powerManager.isScreenOn
         }
-        advanceAutoWallpaper()
     }
 
     private fun listAutoWallpaperFiles(): List<File> {
@@ -923,6 +986,7 @@ class DeskActivity : AppCompatActivity() {
             timeView,
             dateView,
             lyricsView,
+            todoView,
             echoView,
             volumePercentView,
             positionView,
@@ -1189,6 +1253,7 @@ class DeskActivity : AppCompatActivity() {
     override fun onDestroy() {
         handler.removeCallbacks(refreshRunnable)
         handler.removeCallbacks(nonLyricsRefreshRunnable)
+        handler.removeCallbacks(hourlyUpdateRunnable)
         wallpaperBitmap?.let { if (!it.isRecycled) it.recycle() }
         wallpaperBitmap = null
         if (me === this) me = null

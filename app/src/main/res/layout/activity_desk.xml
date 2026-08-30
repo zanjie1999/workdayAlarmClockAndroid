@@ -181,6 +181,29 @@
         app:autoSizeStepGranularity="1sp"
         app:autoSizeTextType="uniform" />
 
+    <TextView
+        android:id="@+id/desk_todo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:autoSizeMaxTextSize="36sp"
+        android:autoSizeMinTextSize="12sp"
+        android:autoSizeStepGranularity="1sp"
+        android:autoSizeTextType="uniform"
+        android:gravity="start|top"
+        android:includeFontPadding="false"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp"
+        android:scrollbars="vertical"
+        android:shadowColor="#CC000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+        android:textColor="@color/white"
+        app:autoSizeMaxTextSize="36sp"
+        app:autoSizeMinTextSize="12sp"
+        app:autoSizeStepGranularity="1sp"
+        app:autoSizeTextType="uniform" />
+
     <LinearLayout
         android:id="@+id/desk_player_panel"
         android:layout_width="wrap_content"

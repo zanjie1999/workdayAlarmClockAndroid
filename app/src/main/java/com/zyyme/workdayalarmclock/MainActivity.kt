@@ -7,6 +7,7 @@ import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.media.AudioManager
 import android.os.*
 import android.provider.Settings
@@ -46,6 +47,7 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_DEVICE_ADMIN = 5
         private const val OPEN_ACCESSIBILITY_SETTINGS = 6
         private const val OPEN_NOTIFICATION_FORWARD_URL = 7
+        private const val OPEN_TODO_URL = 13
         private const val TOGGLE_CAMERA_SERVER = 8
         private const val EDIT_CAMERA_PASSWORD = 9
         private const val OPEN_DEVELOPER_OPTIONS = 10
@@ -301,14 +303,15 @@ class MainActivity : AppCompatActivity() {
         popupMenu.menu.add(Menu.NONE, OPEN_DEVICE_ADMIN, MENU_SETTING_START + settingsMenuItems.size, "授权熄屏权限")
         popupMenu.menu.add(Menu.NONE, OPEN_ACCESSIBILITY_SETTINGS, MENU_SETTING_START + settingsMenuItems.size + 1, "辅助功能设置")
         popupMenu.menu.add(Menu.NONE, OPEN_NOTIFICATION_FORWARD_URL, MENU_SETTING_START + settingsMenuItems.size + 2, "通知转发URL")
-        popupMenu.menu.add(Menu.NONE, TOGGLE_CAMERA_SERVER, MENU_SETTING_START + settingsMenuItems.size + 3, "IP摄像头").apply {
+        popupMenu.menu.add(Menu.NONE, OPEN_TODO_URL, MENU_SETTING_START + settingsMenuItems.size + 3, "待办接口URL")
+        popupMenu.menu.add(Menu.NONE, TOGGLE_CAMERA_SERVER, MENU_SETTING_START + settingsMenuItems.size + 4, "IP摄像头").apply {
             isCheckable = true
         }
-        popupMenu.menu.add(Menu.NONE, EDIT_CAMERA_PASSWORD, MENU_SETTING_START + settingsMenuItems.size + 4, "摄像头密码")
-        popupMenu.menu.add(Menu.NONE, CONFIG_CAMERA_AUTO_BRIGHTNESS, MENU_SETTING_START + settingsMenuItems.size + 5, "摄像头自动亮度").apply {
+        popupMenu.menu.add(Menu.NONE, EDIT_CAMERA_PASSWORD, MENU_SETTING_START + settingsMenuItems.size + 5, "摄像头密码")
+        popupMenu.menu.add(Menu.NONE, CONFIG_CAMERA_AUTO_BRIGHTNESS, MENU_SETTING_START + settingsMenuItems.size + 6, "摄像头自动亮度").apply {
             isCheckable = true
         }
-        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 6, "开发者选项")
+        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 7, "开发者选项")
 
         popupMenu.setOnMenuItemClickListener { menuItem ->
             if (menuItem.itemId == MENU_EXIT) {
@@ -334,6 +337,9 @@ class MainActivity : AppCompatActivity() {
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_NOTIFICATION_FORWARD_URL) {
                 showNotificationForwardUrlDialog()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_TODO_URL) {
+                showTodoUrlDialog()
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == TOGGLE_CAMERA_SERVER) {
                 toggleCameraServer(menuItem.isChecked)
@@ -769,6 +775,29 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     requestNotificationListenerPermissionIfNeeded()
                 }
+            }
+            .show()
+    }
+
+    private fun showTodoUrlDialog() {
+        val input = EditText(this).apply {
+            hint = "需要返回[\"待办1\",\"待办2\"]的jsonArray或纯文本"
+            setHintTextColor(Color.GRAY)
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_VARIATION_URI or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setSingleLine(true)
+            setText(MeSettings.getTodoUrl(this@MainActivity))
+            setSelection(text.length)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("待办接口URL")
+            .setView(input)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("保存") { _, _ ->
+                MeSettings.setTodoUrl(this, input.text.toString())
+                MeService.me?.refreshTodoNow()
             }
             .show()
     }
