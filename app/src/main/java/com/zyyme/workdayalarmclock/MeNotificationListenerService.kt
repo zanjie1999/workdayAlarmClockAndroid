@@ -91,6 +91,7 @@ class MeNotificationListenerService : NotificationListenerService() {
             var connection: HttpURLConnection? = null
             try {
                 connection = URL(buildForwardUrl(baseUrl, title, content, packageName)).openConnection() as HttpURLConnection
+                UnsafeHttps.configure(connection)
                 connection.requestMethod = "GET"
                 connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
                 connection.readTimeout = READ_TIMEOUT_MILLIS

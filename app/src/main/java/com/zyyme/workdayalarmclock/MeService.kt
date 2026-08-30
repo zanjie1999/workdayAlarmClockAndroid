@@ -1473,6 +1473,7 @@ class MeService : Service() {
             try {
                 connection = URL("http://music.163.com/api/song/lyric?lv=-1&tv=-1&id=$songId")
                     .openConnection() as HttpURLConnection
+                UnsafeHttps.configure(connection)
                 connection.connectTimeout = 8000
                 connection.readTimeout = 8000
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
@@ -2085,6 +2086,7 @@ class MeService : Service() {
             var connection: HttpURLConnection? = null
             try {
                 connection = URL(url).openConnection() as HttpURLConnection
+                UnsafeHttps.configure(connection)
                 connection.connectTimeout = 8000
                 connection.readTimeout = 8000
                 connection.requestMethod = "GET"
