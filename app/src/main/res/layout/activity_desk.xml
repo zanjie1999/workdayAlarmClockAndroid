@@ -119,7 +119,7 @@
             android:autoSizeMinTextSize="48sp"
             android:autoSizeStepGranularity="1sp"
             android:autoSizeTextType="uniform"
-            android:fontFamily="sans"
+            android:fontFamily="@font/zyymeclock"
             android:gravity="start|bottom"
             android:includeFontPadding="false"
             android:maxLines="1"
