@@ -32,6 +32,10 @@ import java.util.concurrent.Executors
  */
 class AppListActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_OPENED_FROM_HOME = "openedFromHomeLauncher"
+    }
+
     private lateinit var adapter: AppAdapter
     private lateinit var etSearch: EditText
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -56,7 +60,7 @@ class AppListActivity : AppCompatActivity() {
         rootView.requestFocus()
 
         btnBack.setOnClickListener {
-            finish()
+            handleBackNavigation()
         }
 
         adapter = AppAdapter(mutableListOf(), { appInfo ->
@@ -235,8 +239,15 @@ class AppListActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        // 默认时钟模式的设备 返回退到全屏时钟
-        if (MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)) {
+        handleBackNavigation()
+    }
+
+    private fun handleBackNavigation() {
+        // 作为桌面打开，或处于默认时钟模式时，返回全屏时钟。
+        if (intent.getBooleanExtra(EXTRA_OPENED_FROM_HOME, false) ||
+            MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) ||
+            MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
+        ) {
             if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             } else {

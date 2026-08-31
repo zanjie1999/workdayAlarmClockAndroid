@@ -28,12 +28,15 @@ class HomeLauncherActivity : Activity() {
         }
 
         val destination = if (clockIsVisible) {
-            Intent(this, AppListActivity::class.java)
+            Intent(this, AppListActivity::class.java).apply {
+                putExtra(AppListActivity.EXTRA_OPENED_FROM_HOME, true)
+            }
         } else {
             MeSettings.createClockIntent(this).apply {
                 putExtra("clockMode", true)
             }
         }
         startActivity(destination)
+        finish()
     }
 }

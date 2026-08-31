@@ -79,6 +79,9 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private val fullscreenRestoreRunnable = Runnable {
+        if (!isFinishing && !isDestroyed) setFullscreen()
+    }
     var isActivityStarted = false
     private val slotKeys = arrayOf(
         MeSettings.KEY_DESK_SLOT_TOP_LEFT,
@@ -243,7 +246,7 @@ class DeskActivity : AppCompatActivity() {
             setIntent(intent)
             grid.post { handleIntent(intent) }
         }
-        restoreFullscreen()
+        restoreFullscreenAfterTransition()
     }
 
     override fun onStart() {
@@ -275,7 +278,7 @@ class DeskActivity : AppCompatActivity() {
         MeService.me?.requestTodoIfNeeded()
         scheduleHourlyUpdates()
         applyDefaultKeepScreenOn()
-        restoreFullscreen()
+        restoreFullscreenAfterTransition()
         AmbientBrightnessController.applyLatestTo(window)
     }
 
@@ -1227,16 +1230,15 @@ class DeskActivity : AppCompatActivity() {
         hideSystemBars(window)
     }
 
-    private fun restoreFullscreen() {
+    private fun restoreFullscreenAfterTransition() {
         setFullscreen()
-        window.decorView.post {
-            if (!isFinishing && !isDestroyed) setFullscreen()
-        }
+        window.decorView.removeCallbacks(fullscreenRestoreRunnable)
+        window.decorView.post(fullscreenRestoreRunnable)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) restoreFullscreen()
+        if (hasFocus) setFullscreen()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent?): Boolean {
@@ -1259,6 +1261,7 @@ class DeskActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        window.decorView.removeCallbacks(fullscreenRestoreRunnable)
         handler.removeCallbacks(refreshRunnable)
         handler.removeCallbacks(nonLyricsRefreshRunnable)
         handler.removeCallbacks(hourlyUpdateRunnable)
