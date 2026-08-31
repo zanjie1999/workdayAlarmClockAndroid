@@ -243,6 +243,7 @@ class DeskActivity : AppCompatActivity() {
             setIntent(intent)
             grid.post { handleIntent(intent) }
         }
+        restoreFullscreen()
     }
 
     override fun onStart() {
@@ -274,7 +275,7 @@ class DeskActivity : AppCompatActivity() {
         MeService.me?.requestTodoIfNeeded()
         scheduleHourlyUpdates()
         applyDefaultKeepScreenOn()
-        setFullscreen()
+        restoreFullscreen()
         AmbientBrightnessController.applyLatestTo(window)
     }
 
@@ -1226,9 +1227,16 @@ class DeskActivity : AppCompatActivity() {
         hideSystemBars(window)
     }
 
+    private fun restoreFullscreen() {
+        setFullscreen()
+        window.decorView.post {
+            if (!isFinishing && !isDestroyed) setFullscreen()
+        }
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) setFullscreen()
+        if (hasFocus) restoreFullscreen()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent?): Boolean {

@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.os.Build
+import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -12,6 +13,12 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.ArrayDeque
+import java.util.HashMap
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 @SuppressLint("OverrideAbstract")
 @RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
@@ -20,10 +27,22 @@ class MeNotificationListenerService : NotificationListenerService() {
         private const val TAG = "MeNotificationForward"
         private const val CONNECT_TIMEOUT_MILLIS = 5000
         private const val READ_TIMEOUT_MILLIS = 5000
+        private const val DEDUP_WINDOW_MILLIS = 1000L
+        private const val FORWARD_INTERVAL_MILLIS = 3000L
         private val URL_PLACEHOLDERS = listOf("{title}", "{msg}", "{pkg}", "{app}")
     }
 
-    private val forwardedOngoingNotificationIds = mutableSetOf<String>()
+    private data class PendingForward(
+        val baseUrl: String,
+        val title: String,
+        val content: String,
+        val packageName: String
+    )
+
+    private val forwardingExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+    private val pendingForwards = ArrayDeque<PendingForward>()
+    private val recentForwardKeys = HashMap<String, Long>()
+    private var scheduledForward: ScheduledFuture<*>? = null
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null || sbn.packageName == packageName) {
@@ -41,38 +60,69 @@ class MeNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        if (isOngoingNotification(notification)) {
-            if (shouldForwardOngoingNotification(sbn)) {
-                sendForwardRequest(forwardUrl, title, content, sbn.packageName)
+        enqueueForward(PendingForward(forwardUrl, title, content, sbn.packageName))
+    }
+
+    override fun onDestroy() {
+        synchronized(pendingForwards) {
+            scheduledForward?.cancel(false)
+            scheduledForward = null
+        }
+        forwardingExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
+    private fun enqueueForward(forward: PendingForward) {
+        val now = SystemClock.elapsedRealtime()
+        synchronized(pendingForwards) {
+            val iterator = recentForwardKeys.entries.iterator()
+            while (iterator.hasNext()) {
+                if (now - iterator.next().value >= DEDUP_WINDOW_MILLIS) {
+                    iterator.remove()
+                }
             }
-            return
-        }
-
-        sendForwardRequest(forwardUrl, title, content, sbn.packageName)
-    }
-
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        if (sbn == null || sbn.packageName == packageName) {
-            return
-        }
-
-        synchronized(forwardedOngoingNotificationIds) {
-            forwardedOngoingNotificationIds.remove(getNotificationId(sbn))
-        }
-    }
-
-    private fun shouldForwardOngoingNotification(sbn: StatusBarNotification): Boolean {
-        return synchronized(forwardedOngoingNotificationIds) {
-            forwardedOngoingNotificationIds.add(getNotificationId(sbn))
+            val dedupKey = "${forward.packageName}\u0000${forward.title}\u0000${forward.content}"
+            val lastForwardAt = recentForwardKeys[dedupKey]
+            if (lastForwardAt != null && now - lastForwardAt < DEDUP_WINDOW_MILLIS) {
+                return
+            }
+            recentForwardKeys[dedupKey] = now
+            pendingForwards.addLast(forward)
+            if (scheduledForward == null) {
+                scheduledForward = forwardingExecutor.schedule(
+                    { flushPendingForwards() },
+                    FORWARD_INTERVAL_MILLIS,
+                    TimeUnit.MILLISECONDS
+                )
+            }
         }
     }
 
-    private fun isOngoingNotification(notification: Notification): Boolean {
-        return notification.flags and Notification.FLAG_ONGOING_EVENT != 0
-    }
+    private fun flushPendingForwards() {
+        val forwards = synchronized(pendingForwards) {
+            scheduledForward = null
+            if (pendingForwards.isEmpty()) {
+                emptyList()
+            } else {
+                val result = pendingForwards.toList()
+                pendingForwards.clear()
+                result
+            }
+        }
 
-    private fun getNotificationId(sbn: StatusBarNotification): String {
-        return "${sbn.packageName}:${sbn.id}"
+        if (forwards.isNotEmpty()) {
+            sendForwardRequest(forwards)
+        }
+
+        synchronized(pendingForwards) {
+            if (pendingForwards.isNotEmpty() && scheduledForward == null && !forwardingExecutor.isShutdown) {
+                scheduledForward = forwardingExecutor.schedule(
+                    { flushPendingForwards() },
+                    FORWARD_INTERVAL_MILLIS,
+                    TimeUnit.MILLISECONDS
+                )
+            }
+        }
     }
 
     private fun getNotificationTitleAndContent(notification: Notification): Pair<String, String> {
@@ -86,42 +136,44 @@ class MeNotificationListenerService : NotificationListenerService() {
         return Pair("", notification.tickerText?.toString().orEmpty())
     }
 
-    private fun sendForwardRequest(baseUrl: String, title: String, content: String, packageName: String) {
-        Thread(Runnable {
-            var connection: HttpURLConnection? = null
-            try {
-                connection = URL(buildForwardUrl(baseUrl, title, content, packageName)).openConnection() as HttpURLConnection
-                UnsafeHttps.configure(connection)
-                connection.requestMethod = "GET"
-                connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
-                connection.readTimeout = READ_TIMEOUT_MILLIS
+    private fun sendForwardRequest(forwards: List<PendingForward>) {
+        val first = forwards.first()
+        var connection: HttpURLConnection? = null
+        try {
+            connection = URL(buildForwardUrl(first.baseUrl, forwards)).openConnection() as HttpURLConnection
+            UnsafeHttps.configure(connection)
+            connection.requestMethod = "GET"
+            connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
+            connection.readTimeout = READ_TIMEOUT_MILLIS
 
-                val responseCode = connection.responseCode
-                val responseStream = if (responseCode >= HttpURLConnection.HTTP_BAD_REQUEST) {
-                    connection.errorStream
-                } else {
-                    connection.inputStream
-                }
-                responseStream?.use { inputStream ->
-                    BufferedReader(InputStreamReader(inputStream)).use { reader ->
-                        while (reader.readLine() != null) {
-                            // Consume the response so the connection can finish cleanly.
-                        }
+            val responseCode = connection.responseCode
+            val responseStream = if (responseCode >= HttpURLConnection.HTTP_BAD_REQUEST) {
+                connection.errorStream
+            } else {
+                connection.inputStream
+            }
+            responseStream?.use { inputStream ->
+                BufferedReader(InputStreamReader(inputStream)).use { reader ->
+                    while (reader.readLine() != null) {
+                        // Consume the response so the connection can finish cleanly.
                     }
                 }
-                log("通知转发完成 HTTP $responseCode")
-            } catch (e: Exception) {
-                Log.e(TAG, "通知转发失败", e)
-                log("通知转发失败 ${e.message ?: e.toString()}")
-            } finally {
-                connection?.disconnect()
             }
-        }).start()
+            log("通知转发完成 HTTP $responseCode")
+        } catch (e: Exception) {
+            Log.e(TAG, "通知转发失败", e)
+            log("通知转发失败 ${e.message ?: e.toString()}")
+        } finally {
+            connection?.disconnect()
+        }
     }
 
-    private fun buildForwardUrl(baseUrl: String, title: String, content: String, packageName: String): String {
+    private fun buildForwardUrl(baseUrl: String, forwards: List<PendingForward>): String {
+        val title = forwards.joinToString("\n") { it.title }
+        val content = forwards.joinToString("\n") { it.content }
+        val packageName = forwards.joinToString("\n") { it.packageName }
         if (!hasUrlPlaceholder(baseUrl)) {
-            return baseUrl + urlEncode("$title：$content")
+            return baseUrl + urlEncode(forwards.joinToString("\n") { "${it.title}：${it.content}" })
         }
 
         var forwardUrl = baseUrl
@@ -130,7 +182,10 @@ class MeNotificationListenerService : NotificationListenerService() {
             .replace("{pkg}", urlEncode(packageName))
 
         if (forwardUrl.contains("{app}")) {
-            forwardUrl = forwardUrl.replace("{app}", urlEncode(getAppName(packageName)))
+            forwardUrl = forwardUrl.replace(
+                "{app}",
+                urlEncode(forwards.joinToString("\n") { getAppName(it.packageName) })
+            )
         }
 
         return forwardUrl
