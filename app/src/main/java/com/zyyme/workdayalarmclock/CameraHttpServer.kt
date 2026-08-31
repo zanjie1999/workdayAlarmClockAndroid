@@ -703,7 +703,7 @@ internal class CameraHttpServer(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>咩咩IP摄像头</title>
+<title>咩IP摄像头</title>
 <style>
 *{box-sizing:border-box}body{font-family:sans-serif;max-width:960px;margin:0 auto;padding:16px;background:#000;color:#eee}
 #controls{display:flex;flex-wrap:wrap;gap:8px;align-items:end}.field{display:flex;flex:1 1 180px;min-width:0;flex-direction:column;gap:4px;font-size:14px;color:#bbb}
