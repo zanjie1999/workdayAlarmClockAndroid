@@ -391,6 +391,12 @@ class DeskActivity : AppCompatActivity() {
         volumeControlView.setOnTouchListener { _, event -> forwardTouchToVolume(event) }
         updateVolumeControl()
 
+        todoView.setOnClickListener {
+            todoView.text = "正在刷新..."
+            todoView.scrollTo(0, 0)
+            MeService.me?.refreshTodoNow()
+        }
+
         val longClickListener = View.OnLongClickListener {
             showDeskMenu()
             true
