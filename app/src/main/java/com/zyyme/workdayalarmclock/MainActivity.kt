@@ -53,7 +53,7 @@ class MainActivity : AppCompatActivity() {
         private const val CONFIG_CAMERA_AUTO_BRIGHTNESS = 11
         private const val TOGGLE_HOME_LAUNCHER = 12
         private const val MENU_SETTING_START = 100
-        private const val REQUEST_CAMERA_PERMISSION = 102
+        private const val REQUEST_MEDIA_SERVER_PERMISSIONS = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
         private const val LOG_REFRESH_DELAY_MILLIS = 250L
     }
@@ -473,13 +473,21 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val missingPermissions = listOf(
+                Manifest.permission.CAMERA,
+                Manifest.permission.RECORD_AUDIO
+            ).filter {
+                ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (missingPermissions.isEmpty()) {
+                enableCameraServer()
+                return
+            }
             ActivityCompat.requestPermissions(
                 this,
-                arrayOf(Manifest.permission.CAMERA),
-                REQUEST_CAMERA_PERMISSION
+                missingPermissions.toTypedArray(),
+                REQUEST_MEDIA_SERVER_PERMISSIONS
             )
             return
         }
@@ -494,7 +502,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showCameraPasswordDialog() {
         val input = EditText(this).apply {
-            hint = "这样打开ip:8880/密码/1"
+            hint = "视频：ip:8880/密码/1，声音：ip:8880/密码/aac"
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_VARIATION_URI or
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
@@ -740,14 +748,22 @@ class MainActivity : AppCompatActivity() {
             if (!granted) Toast.makeText(this, "摄像头权限未授权", Toast.LENGTH_LONG).show()
             return
         }
-        if (requestCode != REQUEST_CAMERA_PERMISSION) return
+        if (requestCode != REQUEST_MEDIA_SERVER_PERMISSIONS) return
 
-        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        val hasCamera = ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasMicrophone = ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasCamera || hasMicrophone) {
             enableCameraServer()
         } else {
             MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_SERVER, false)
             settingsPopupMenu?.menu?.findItem(TOGGLE_CAMERA_SERVER)?.isChecked = false
-            Toast.makeText(this, "摄像头权限未授权", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "摄像头和麦克风权限都未授权", Toast.LENGTH_LONG).show()
         }
     }
 

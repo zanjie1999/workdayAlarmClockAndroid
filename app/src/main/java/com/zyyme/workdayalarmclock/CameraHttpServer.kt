@@ -1,7 +1,9 @@
 package com.zyyme.workdayalarmclock
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Camera
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
@@ -37,13 +39,18 @@ internal class CameraHttpServer(
     private val running = AtomicBoolean(false)
     private val stateLock = Any()
     private val sessionChangeLock = Any()
+    private val audioSessionChangeLock = Any()
+    private val streamLockState = Any()
     private val clients = LinkedHashMap<Socket, CameraStreamPipeline>()
+    private val audioClients = LinkedHashSet<Socket>()
     @Volatile private var password = ""
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
     private var activePipeline: CameraStreamPipeline? = null
+    private var activeAudioPipeline: AacAudioPipeline? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var streamLockUsers = 0
 
     fun start(cameraPassword: String): Boolean {
         val cleanPassword = normalizePassword(cameraPassword)
@@ -76,7 +83,8 @@ internal class CameraHttpServer(
         if (password == cleanPassword) return
         password = cleanPassword
         closeActiveSession()
-        log("摄像头密码已更新，现有视频流已断开")
+        closeActiveAudioSession()
+        log("摄像头密码已更新，现有媒体流已断开")
     }
 
     fun stop() {
@@ -87,6 +95,7 @@ internal class CameraHttpServer(
         }
         serverSocket = null
         closeActiveSession()
+        closeActiveAudioSession()
         acceptThread?.interrupt()
         acceptThread = null
         log("摄像头HTTP服务已停止")
@@ -114,6 +123,7 @@ internal class CameraHttpServer(
 
     private fun handleClient(socket: Socket) {
         var pipeline: CameraStreamPipeline? = null
+        var audioPipeline: AacAudioPipeline? = null
         try {
             val path = readRequestPath(socket)
             if (path == "/") {
@@ -126,6 +136,20 @@ internal class CameraHttpServer(
             }
             if (path?.let { isBrightnessRoute(it) } == true) {
                 writeBrightness(socket)
+                return
+            }
+            if (path?.let { isAacRoute(it) } == true) {
+                if (!canStreamMicrophone()) {
+                    writeEmptyResponse(socket, 204, "No Content")
+                    return
+                }
+                audioPipeline = acquireAudioPipeline(socket)
+                if (audioPipeline == null) {
+                    writeEmptyResponse(socket, 503, "Service Unavailable")
+                    return
+                }
+                socket.soTimeout = 0
+                streamAac(socket, audioPipeline)
                 return
             }
             val route = path?.let { parseRoute(it) }
@@ -155,6 +179,7 @@ internal class CameraHttpServer(
             // Client disconnects are expected while streams switch or viewers close.
         } finally {
             releaseClient(socket, pipeline)
+            releaseAudioClient(socket, audioPipeline)
             try {
                 socket.close()
             } catch (_: Exception) {
@@ -209,6 +234,18 @@ internal class CameraHttpServer(
     private fun isBrightnessRoute(path: String): Boolean {
         val prefix = if (password.isEmpty()) "" else "/$password"
         return path == "$prefix/brightness"
+    }
+
+    private fun isAacRoute(path: String): Boolean {
+        val prefix = if (password.isEmpty()) "" else "/$password"
+        return path == "$prefix/aac"
+    }
+
+    private fun canStreamMicrophone(): Boolean {
+        if (!AacAudioPipeline.isPlatformSupported()) return false
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            appContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
     }
 
     private fun writeBrightness(socket: Socket) {
@@ -385,6 +422,74 @@ internal class CameraHttpServer(
         }
     }
 
+    private fun acquireAudioPipeline(socket: Socket): AacAudioPipeline? {
+        synchronized(audioSessionChangeLock) {
+            if (!running.get() || !canStreamMicrophone()) return null
+            synchronized(stateLock) {
+                activeAudioPipeline?.let { pipeline ->
+                    audioClients.add(socket)
+                    return pipeline
+                }
+            }
+
+            val pipeline = AacAudioPipeline(log)
+            if (!pipeline.start()) {
+                pipeline.stop()
+                return null
+            }
+            if (!running.get()) {
+                pipeline.stop()
+                return null
+            }
+            synchronized(stateLock) {
+                activeAudioPipeline = pipeline
+                audioClients.add(socket)
+            }
+            acquireStreamLocks()
+            return pipeline
+        }
+    }
+
+    private fun releaseAudioClient(socket: Socket, pipeline: AacAudioPipeline?) {
+        if (pipeline == null) return
+        synchronized(audioSessionChangeLock) {
+            var shouldStop = false
+            synchronized(stateLock) {
+                audioClients.remove(socket)
+                if (activeAudioPipeline === pipeline && audioClients.isEmpty()) {
+                    activeAudioPipeline = null
+                    shouldStop = true
+                }
+            }
+            if (shouldStop) {
+                pipeline.stop()
+                releaseStreamLocks()
+            }
+        }
+    }
+
+    private fun closeActiveAudioSession() {
+        synchronized(audioSessionChangeLock) {
+            val session = synchronized(stateLock) {
+                val pipeline = activeAudioPipeline
+                activeAudioPipeline = null
+                val sockets = audioClients.toList()
+                audioClients.clear()
+                Pair(pipeline, sockets)
+            }
+            session.second.forEach { socket ->
+                try {
+                    socket.close()
+                } catch (_: Exception) {
+                }
+            }
+            session.first?.let { pipeline ->
+                pipeline.stop()
+                releaseStreamLocks()
+            }
+        }
+    }
+
     private fun releaseClient(socket: Socket, pipeline: CameraStreamPipeline?) {
         if (pipeline == null) return
         synchronized(sessionChangeLock) {
@@ -428,8 +533,8 @@ internal class CameraHttpServer(
         if (pipeline != null) {
             pipeline.stop()
             brightness.onIpCameraStopped()
+            releaseStreamLocks()
         }
-        releaseStreamLocks()
     }
 
     private fun streamMjpeg(socket: Socket, pipeline: CameraStreamPipeline) {
@@ -492,6 +597,31 @@ internal class CameraHttpServer(
         }
     }
 
+    private fun streamAac(socket: Socket, pipeline: AacAudioPipeline) {
+        val config = pipeline.config
+        val muxer = FragmentedAacMp4Muxer(config)
+        val output = socket.getOutputStream()
+        output.write(
+            ("HTTP/1.0 200 OK\r\n" +
+                "Connection: close\r\n" +
+                "Cache-Control: no-cache, no-store\r\n" +
+                "Pragma: no-cache\r\n" +
+                "Content-Type: audio/mp4\r\n" +
+                "X-Audio-Codec: ${config.codecString}\r\n\r\n")
+                .toByteArray(HTTP_CHARSET)
+        )
+        output.write(muxer.initializationSegment())
+        output.flush()
+
+        var sequence = 0L
+        while (running.get() && !socket.isClosed) {
+            val packet = pipeline.awaitPacket(sequence) ?: break
+            sequence = packet.sequence
+            output.write(muxer.mediaFragment(packet))
+            output.flush()
+        }
+    }
+
     private fun writePlayerPage(socket: Socket) {
         val body = PLAYER_PAGE.toByteArray(HTML_CHARSET)
         val header = "HTTP/1.0 200 OK\r\n" +
@@ -515,47 +645,56 @@ internal class CameraHttpServer(
 
     @SuppressLint("WakelockTimeout")
     private fun acquireStreamLocks() {
-        if (wakeLock == null) {
-            try {
-                wakeLock = (appContext.getSystemService(Context.POWER_SERVICE) as PowerManager)
-                    .newWakeLock(
-                        PowerManager.PARTIAL_WAKE_LOCK,
-                        "workDayAlarmClock:CameraStream"
-                    ).apply {
-                        setReferenceCounted(false)
-                        acquire()
-                    }
-            } catch (e: Exception) {
-                log("摄像头CPU唤醒锁获取失败：${e.message}")
+        synchronized(streamLockState) {
+            streamLockUsers++
+            if (streamLockUsers > 1) return
+            if (wakeLock == null) {
+                try {
+                    wakeLock = (appContext.getSystemService(Context.POWER_SERVICE) as PowerManager)
+                        .newWakeLock(
+                            PowerManager.PARTIAL_WAKE_LOCK,
+                            "workDayAlarmClock:CameraStream"
+                        ).apply {
+                            setReferenceCounted(false)
+                            acquire()
+                        }
+                } catch (e: Exception) {
+                    log("摄像头CPU唤醒锁获取失败：${e.message}")
+                }
             }
-        }
-        if (wifiLock == null) {
-            try {
-                wifiLock = (appContext.getSystemService(Context.WIFI_SERVICE) as WifiManager)
-                    .createWifiLock(
-                        WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                        "workDayAlarmClock:CameraStream"
-                    ).apply {
-                        setReferenceCounted(false)
-                        acquire()
-                    }
-            } catch (e: Exception) {
-                log("摄像头Wi-Fi锁获取失败：${e.message}")
+            if (wifiLock == null) {
+                try {
+                    wifiLock = (appContext.getSystemService(Context.WIFI_SERVICE) as WifiManager)
+                        .createWifiLock(
+                            WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                            "workDayAlarmClock:CameraStream"
+                        ).apply {
+                            setReferenceCounted(false)
+                            acquire()
+                        }
+                } catch (e: Exception) {
+                    log("摄像头Wi-Fi锁获取失败：${e.message}")
+                }
             }
         }
     }
 
     private fun releaseStreamLocks() {
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-        } catch (_: Exception) {
+        synchronized(streamLockState) {
+            if (streamLockUsers == 0) return
+            streamLockUsers--
+            if (streamLockUsers > 0) return
+            try {
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+            } catch (_: Exception) {
+            }
+            wakeLock = null
+            try {
+                if (wifiLock?.isHeld == true) wifiLock?.release()
+            } catch (_: Exception) {
+            }
+            wifiLock = null
         }
-        wakeLock = null
-        try {
-            if (wifiLock?.isHeld == true) wifiLock?.release()
-        } catch (_: Exception) {
-        }
-        wifiLock = null
     }
 
     private val PLAYER_PAGE = """
@@ -564,188 +703,171 @@ internal class CameraHttpServer(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>咩咩摄像头</title>
+<title>咩咩IP摄像头</title>
 <style>
 *{box-sizing:border-box}body{font-family:sans-serif;max-width:960px;margin:0 auto;padding:16px;background:#000;color:#eee}
-#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:end}label{display:flex;flex:1 1 180px;min-width:0;flex-direction:column;gap:4px;font-size:14px;color:#bbb}
+#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:end}.field{display:flex;flex:1 1 180px;min-width:0;flex-direction:column;gap:4px;font-size:14px;color:#bbb}
 input,button{width:100%;min-height:42px;font:inherit;font-size:16px;padding:8px 10px;border:1px solid #555;border-radius:4px}input{background:#222;color:#eee}
 button{flex:0 1 110px;cursor:pointer;background:#333;color:#eee}button[type=submit]{background:#1769aa;border-color:#278bd2}
+#modes{display:flex;gap:14px;align-items:center;min-height:42px;padding:0 8px}.mode{display:flex;gap:7px;align-items:center;color:#eee;font-size:16px}.mode input{width:20px;min-height:20px;margin:0;padding:0}
 #videoFrame{width:100%;max-width:100vw;max-height:100vh;aspect-ratio:16/9;margin:16px auto 0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
-video,#mjpeg{display:block;width:100%;height:100%;object-fit:contain;transform-origin:center center}
-#status{color:#aaa;margin-top:8px;min-height:1.4em}
-@media (max-width:520px){body{padding:10px}#controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{grid-column:span 2}button{flex:auto;width:auto}#videoFrame{margin-top:10px}}
+video,#mjpeg{display:block;width:100%;height:100%;object-fit:contain;transform-origin:center center}audio{display:block;width:100%;margin-top:12px}
+.status{color:#aaa;margin-top:8px;min-height:1.4em}[hidden]{display:none!important}
+@media (max-width:520px){body{padding:10px}#controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field,#modes{grid-column:span 2}button{flex:auto;width:auto}#videoFrame{margin-top:10px}}
 </style>
 </head>
 <body>
 <form id="controls">
-<label>密码 <input id="password" type="text" autocomplete="off"></label>
-<label>摄像头 <input id="camera" type="number" min="1" value="1"></label>
-<label>分辨率档位 <input id="resolution" type="number" min="1" placeholder="自动"></label>
+<label class="field">密码 <input id="password" type="text" autocomplete="off"></label>
+<label class="field">摄像头 <input id="camera" type="number" min="1" value="1"></label>
+<label class="field">分辨率档位 <input id="resolution" type="number" min="1" placeholder="自动"></label>
+<div id="modes">
+<label class="mode"><input id="playVideo" type="checkbox" checked>视频</label>
+<label class="mode"><input id="playAudio" type="checkbox" checked>声音</label>
+</div>
 <button id="playStop" type="submit">播放</button>
 <button id="rotate" type="button" aria-label="旋转画面">旋转 0°</button>
 </form>
 <div id="videoFrame"><video id="video" controls autoplay muted playsinline></video></div>
-<div id="status"></div>
+<div id="videoStatus" class="status"></div>
+<audio id="audio" controls autoplay></audio>
+<div id="audioStatus" class="status"></div>
 <script>
-const video=document.getElementById('video');
-const videoFrame=document.getElementById('videoFrame');
-const form=document.getElementById('controls');
-const playStopButton=document.getElementById('playStop');
-const rotateButton=document.getElementById('rotate');
-const statusView=document.getElementById('status');
-let runId=0,abortController=null,retryTimer=null,objectUrl=null,rotation=0,playbackActive=false,mjpegImage=null;
-function setStatus(value){statusView.textContent=value;}
-function showMjpegFallback(password,camera,resolution){
-  setPlaybackState(true);
-  if(mjpegImage)mjpegImage.remove();
-  video.onerror=null;
-  video.removeAttribute('src');video.load();
-  video.style.display='none';
-  const prefix=password?encodeURIComponent(password)+'/':'';
-  const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
-  const path='/'+prefix+encodeURIComponent(camera)+resolutionPath;
-  mjpegImage=document.createElement('img');
-  mjpegImage.id='mjpeg';
-  mjpegImage.alt='MJPEG摄像头画面';
-  mjpegImage.src=path;
-  mjpegImage.onload=()=>setStatus('正在使用MJPEG播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution));
-  mjpegImage.onerror=()=>setStatus('MJPEG连接失败');
-  videoFrame.appendChild(mjpegImage);
-  setStatus('正在切换到MJPEG ...');
-}
-function setPlaybackState(active){
-  playbackActive=active;
-  playStopButton.textContent=active?'停止':'播放';
-}
-function updateVideoShape(){
-  const width=video.videoWidth||16,height=video.videoHeight||9;
-  const rotated=rotation%180!==0;
-  const ratio=rotated?height/width:width/height;
-  videoFrame.style.aspectRatio=ratio+' / 1';
-  video.style.width=rotated?(width/height*100)+'%':'100%';
-  video.style.height=rotated?(height/width*100)+'%':'100%';
-  video.style.transform='rotate('+rotation+'deg)';
-  rotateButton.textContent='旋转 '+rotation+'°';
-}
+const video=document.getElementById('video'),audio=document.getElementById('audio');
+const videoFrame=document.getElementById('videoFrame'),form=document.getElementById('controls');
+const playStopButton=document.getElementById('playStop'),rotateButton=document.getElementById('rotate');
+const videoStatus=document.getElementById('videoStatus'),audioStatus=document.getElementById('audioStatus');
+const playVideo=document.getElementById('playVideo'),playAudio=document.getElementById('playAudio');
+let runId=0,rotation=0,playbackActive=false,mjpegImage=null;
+let videoAbort=null,videoRetry=null,videoUrl=null,audioAbort=null,audioRetry=null,audioUrl=null;
+function setVideoStatus(value){videoStatus.textContent=value;}
+function setAudioStatus(value){audioStatus.textContent=value;}
+function setPlaybackState(active){playbackActive=active;playStopButton.textContent=active?'停止':'播放';}
 function waitEvent(target,event){return new Promise(resolve=>target.addEventListener(event,resolve,{once:true}));}
-async function appendChunk(sourceBuffer,data){
+async function appendChunk(media,sourceBuffer,data){
   if(!data||!data.byteLength)return;
   while(sourceBuffer.updating)await waitEvent(sourceBuffer,'updateend');
   sourceBuffer.appendBuffer(data);
   await waitEvent(sourceBuffer,'updateend');
-  if(video.buffered.length&&video.currentTime>10&&!sourceBuffer.updating){
-    const removeEnd=video.currentTime-10;
-    if(removeEnd>video.buffered.start(0)){sourceBuffer.remove(0,removeEnd);await waitEvent(sourceBuffer,'updateend');}
+  if(media.buffered.length&&media.currentTime>10&&!sourceBuffer.updating){
+    const removeEnd=media.currentTime-10;
+    if(removeEnd>media.buffered.start(0)){sourceBuffer.remove(0,removeEnd);await waitEvent(sourceBuffer,'updateend');}
   }
 }
-function stopPlayback(showStatus){
-  runId++;
-  setPlaybackState(false);
-  if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}
-  if(abortController){abortController.abort();abortController=null;}
-  if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}
+function clearVideo(){
+  if(videoRetry){clearTimeout(videoRetry);videoRetry=null;}
+  if(videoAbort){videoAbort.abort();videoAbort=null;}
   if(mjpegImage){mjpegImage.remove();mjpegImage=null;}
-  video.onerror=null;
-  video.removeAttribute('src');video.load();
-  video.style.display='block';
-  if(showStatus)setStatus('已停止');
+  video.onerror=null;video.removeAttribute('src');video.load();video.style.display='block';
+  if(videoUrl){URL.revokeObjectURL(videoUrl);videoUrl=null;}
+}
+function clearAudio(){
+  if(audioRetry){clearTimeout(audioRetry);audioRetry=null;}
+  if(audioAbort){audioAbort.abort();audioAbort=null;}
+  audio.onerror=null;audio.removeAttribute('src');audio.load();
+  if(audioUrl){URL.revokeObjectURL(audioUrl);audioUrl=null;}
+}
+function stopPlayback(showStatus){
+  runId++;setPlaybackState(false);clearVideo();clearAudio();
+  if(showStatus){setVideoStatus(playVideo.checked?'已停止':'');setAudioStatus(playAudio.checked?'已停止':'');}
+}
+function updateVideoShape(){
+  const width=video.videoWidth||16,height=video.videoHeight||9,rotated=rotation%180!==0;
+  videoFrame.style.aspectRatio=(rotated?height/width:width/height)+' / 1';
+  video.style.width=rotated?(width/height*100)+'%':'100%';
+  video.style.height=rotated?(height/width*100)+'%':'100%';
+  video.style.transform='rotate('+rotation+'deg)';rotateButton.textContent='旋转 '+rotation+'°';
+}
+function showMjpegFallback(id,password,camera,resolution){
+  if(id!==runId)return;clearVideo();video.style.display='none';
+  const prefix=password?encodeURIComponent(password)+'/':'',resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
+  mjpegImage=document.createElement('img');mjpegImage.id='mjpeg';mjpegImage.alt='MJPEG摄像头画面';
+  mjpegImage.src='/'+prefix+encodeURIComponent(camera)+resolutionPath;
+  mjpegImage.onload=()=>setVideoStatus('正在使用MJPEG播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution));
+  mjpegImage.onerror=()=>setVideoStatus('MJPEG连接失败');videoFrame.appendChild(mjpegImage);
+  setVideoStatus('正在切换到MJPEG ...');
 }
 async function getAvcCapability(password){
   const prefix=password?encodeURIComponent(password)+'/':'';
   try{
     const response=await fetch('/'+prefix+'avc/capability',{cache:'no-store'});
-    if(response.status===404)return 'password-error';
-    if(!response.ok)return 'unsupported';
-    const result=await response.json();
-    return result&&result.supported===true?'supported':'unsupported';
+    if(response.status===404)return 'password-error';if(!response.ok)return 'unsupported';
+    const result=await response.json();return result&&result.supported===true?'supported':'unsupported';
   }catch(error){return 'unsupported';}
 }
-async function connect(id,password,camera,resolution){
+async function connectVideo(id,password,camera,resolution){
   if(id!==runId)return;
-  const capability=await getAvcCapability(password);
-  if(id!==runId)return;
-  if(capability==='password-error'){
-    stopPlayback(false);setStatus('密码错误');
-    return;
-  }
-  if(capability!=='supported'){
-    showMjpegFallback(password,camera,resolution);
-    return;
-  }
-  if(mjpegImage){mjpegImage.remove();mjpegImage=null;}
-  video.style.display='block';
-  const prefix=password?encodeURIComponent(password)+'/':'';
-  const resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
-  const avcPath='/'+prefix+'avc/'+encodeURIComponent(camera)+resolutionPath;
+  const capability=await getAvcCapability(password);if(id!==runId)return;
+  if(capability==='password-error'){setVideoStatus('密码错误');return;}
+  if(capability!=='supported'){showMjpegFallback(id,password,camera,resolution);return;}
+  const prefix=password?encodeURIComponent(password)+'/':'',resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
+  const path='/'+prefix+'avc/'+encodeURIComponent(camera)+resolutionPath;
   if(!window.MediaSource){
-    video.onerror=()=>{
-      if(id!==runId)return;
-      video.onerror=null;
-      stopPlayback(false);showMjpegFallback(password,camera,resolution);
-    };
-    video.src=avcPath;
-    video.load();
-    setStatus('正在播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution)+' ...');
-    video.play().catch(()=>{});
-    return;
+    video.onerror=()=>showMjpegFallback(id,password,camera,resolution);video.src=path;video.load();
+    setVideoStatus('正在播放摄像头 '+camera+' ...');video.play().catch(()=>{});return;
   }
-  const mediaSource=new MediaSource();
-  if(objectUrl)URL.revokeObjectURL(objectUrl);
-  objectUrl=URL.createObjectURL(mediaSource);video.src=objectUrl;
+  clearVideo();const mediaSource=new MediaSource();videoUrl=URL.createObjectURL(mediaSource);video.src=videoUrl;video.play().catch(()=>{});
   try{
-    await waitEvent(mediaSource,'sourceopen');
-    if(id!==runId)return;
-    abortController=new AbortController();
-    const response=await fetch(avcPath,{cache:'no-store',signal:abortController.signal});
+    await waitEvent(mediaSource,'sourceopen');if(id!==runId)return;
+    videoAbort=new AbortController();const response=await fetch(path,{cache:'no-store',signal:videoAbort.signal});
     if(!response.ok){const error=new Error('HTTP '+response.status);error.status=response.status;throw error;}
-    const codec=response.headers.get('X-Video-Codec');
-    if(!codec)throw new Error('没有收到视频编码信息');
-    const mime='video/mp4; codecs="'+codec+'"';
-    if(!MediaSource.isTypeSupported(mime))throw new Error('浏览器不支持 '+mime);
-    const sourceBuffer=mediaSource.addSourceBuffer(mime);
-    const reader=response.body.getReader();
-    setStatus('正在播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution)+' ...');
-    while(id===runId){
-      const item=await reader.read();
-      if(item.done)throw new Error('视频连接已结束');
-      await appendChunk(sourceBuffer,item.value);
-      if(video.paused)video.play().catch(()=>{});
-    }
+    const codec=response.headers.get('X-Video-Codec'),mime='video/mp4; codecs="'+codec+'"';
+    if(!codec||!MediaSource.isTypeSupported(mime))throw new Error('浏览器不支持视频编码');
+    const sourceBuffer=mediaSource.addSourceBuffer(mime),reader=response.body.getReader();
+    setVideoStatus('正在播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution)+' ...');
+    while(id===runId){const item=await reader.read();if(item.done)throw new Error('视频连接已结束');await appendChunk(video,sourceBuffer,item.value);if(video.paused)video.play().catch(()=>{});}
   }catch(error){
     if(id!==runId||error.name==='AbortError')return;
-    if(error.status===404||error.status===503||String(error.message||'').indexOf('浏览器不支持')>=0){
-      stopPlayback(false);showMjpegFallback(password,camera,resolution);return;
-    }
-    setStatus('连接失败，2秒后重试：'+error.message);
-    retryTimer=setTimeout(()=>connect(id,password,camera,resolution),2000);
+    if(error.status===404||error.status===503||String(error.message||'').indexOf('不支持视频编码')>=0){showMjpegFallback(id,password,camera,resolution);return;}
+    setVideoStatus('视频连接失败，2秒后重试：'+error.message);videoRetry=setTimeout(()=>connectVideo(id,password,camera,resolution),2000);
+  }
+}
+async function connectAudio(id,password){
+  if(id!==runId)return;
+  const prefix=password?encodeURIComponent(password)+'/':'',path='/'+prefix+'aac';
+  if(!window.MediaSource){audio.src=path;audio.load();audio.play().catch(()=>{});setAudioStatus('正在连接麦克风 ...');return;}
+  clearAudio();const mediaSource=new MediaSource();audioUrl=URL.createObjectURL(mediaSource);audio.src=audioUrl;audio.play().catch(()=>{});
+  try{
+    await waitEvent(mediaSource,'sourceopen');if(id!==runId)return;
+    audioAbort=new AbortController();const response=await fetch(path,{cache:'no-store',signal:audioAbort.signal});
+    if(response.status===204){clearAudio();setAudioStatus('麦克风未授权，当前无声音');return;}
+    if(!response.ok){const error=new Error('HTTP '+response.status);error.status=response.status;throw error;}
+    const codec=response.headers.get('X-Audio-Codec')||'mp4a.40.2',mime='audio/mp4; codecs="'+codec+'"';
+    if(!MediaSource.isTypeSupported(mime))throw new Error('浏览器不支持 '+mime);
+    const sourceBuffer=mediaSource.addSourceBuffer(mime),reader=response.body.getReader();setAudioStatus('正在播放麦克风声音 ...');
+    while(id===runId){const item=await reader.read();if(item.done)throw new Error('音频连接已结束');await appendChunk(audio,sourceBuffer,item.value);if(audio.paused)audio.play().catch(()=>{});}
+  }catch(error){
+    if(id!==runId||error.name==='AbortError')return;
+    if(error.status===404){setAudioStatus('密码错误');return;}
+    if(error.status===503){setAudioStatus('麦克风暂时不可用');return;}
+    setAudioStatus('音频连接失败，2秒后重试：'+error.message);audioRetry=setTimeout(()=>connectAudio(id,password),2000);
   }
 }
 form.addEventListener('submit',event=>{
-  event.preventDefault();
-  if(playbackActive){stopPlayback(true);return;}
+  event.preventDefault();if(playbackActive){stopPlayback(true);return;}
   const password=document.getElementById('password').value.trim().replace(/^\/+|\/+$/g,'');
-  const camera=parseInt(document.getElementById('camera').value,10);
-  const resolutionText=document.getElementById('resolution').value.trim();
-  const resolution=resolutionText===''?null:Number(resolutionText);
-  if(!Number.isInteger(camera)||camera<1){setStatus('摄像头编号无效');return;}
-  if(resolution!==null&&(!Number.isInteger(resolution)||resolution<1)){setStatus('分辨率档位无效');return;}
+  const camera=parseInt(document.getElementById('camera').value,10),resolutionText=document.getElementById('resolution').value.trim();
+  const resolution=resolutionText===''?null:Number(resolutionText),withVideo=playVideo.checked,withAudio=playAudio.checked;
+  if(!withVideo&&!withAudio){setVideoStatus('请至少选择视频或声音');setAudioStatus('');return;}
+  if(withVideo&&(!Number.isInteger(camera)||camera<1)){setVideoStatus('摄像头编号无效');return;}
+  if(withVideo&&resolution!==null&&(!Number.isInteger(resolution)||resolution<1)){setVideoStatus('分辨率档位无效');return;}
   try{
-    localStorage.setItem('cameraPassword',password);
-    localStorage.setItem('cameraNumber',String(camera));
+    localStorage.setItem('cameraPassword',password);localStorage.setItem('cameraNumber',String(camera));
     localStorage.setItem('cameraResolution',resolution===null?'':String(resolution));
+    localStorage.setItem('cameraPlayVideo',String(withVideo));localStorage.setItem('cameraPlayAudio',String(withAudio));
   }catch(error){}
-  setPlaybackState(true);
-  connect(runId,password,camera,resolution);
+  videoFrame.hidden=!withVideo;videoStatus.hidden=!withVideo;rotateButton.disabled=!withVideo;
+  audio.hidden=!withAudio;audioStatus.hidden=!withAudio;setVideoStatus('');setAudioStatus('');setPlaybackState(true);
+  const id=runId;if(withVideo)connectVideo(id,password,camera,resolution);if(withAudio)connectAudio(id,password);
 });
-rotateButton.addEventListener('click',()=>{rotation=(rotation+90)%360;updateVideoShape();});
-video.addEventListener('loadedmetadata',updateVideoShape);
+rotateButton.addEventListener('click',()=>{rotation=(rotation+90)%360;updateVideoShape();});video.addEventListener('loadedmetadata',updateVideoShape);
 try{
-  const savedPassword=localStorage.getItem('cameraPassword');
-  const savedCamera=localStorage.getItem('cameraNumber');
-  const savedResolution=localStorage.getItem('cameraResolution');
+  const savedPassword=localStorage.getItem('cameraPassword'),savedCamera=localStorage.getItem('cameraNumber'),savedResolution=localStorage.getItem('cameraResolution');
+  const savedVideo=localStorage.getItem('cameraPlayVideo'),savedAudio=localStorage.getItem('cameraPlayAudio');
   if(savedPassword!==null)document.getElementById('password').value=savedPassword;
   if(savedCamera!==null&&/^[1-9][0-9]*$/.test(savedCamera))document.getElementById('camera').value=savedCamera;
   if(savedResolution!==null&&/^[1-9][0-9]*$/.test(savedResolution))document.getElementById('resolution').value=savedResolution;
+  if(savedVideo!==null)playVideo.checked=savedVideo==='true';if(savedAudio!==null)playAudio.checked=savedAudio==='true';
 }catch(error){}
 updateVideoShape();
 </script>

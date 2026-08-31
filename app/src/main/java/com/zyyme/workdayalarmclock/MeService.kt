@@ -276,7 +276,7 @@ class MeService : Service() {
         }
 
         syncAmbientBrightnessSetting()
-        updateForegroundServiceType(cameraFeaturesEnabled())
+        updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
         syncCameraServerSetting()
 
         // 如果不需要启动Go服务，这个服务将只有播放音频url的功能
@@ -437,13 +437,13 @@ class MeService : Service() {
 
     fun syncCameraServerSetting() {
         val configured = MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
-        val enabled = configured && hasCameraPermission()
+        val enabled = configured && hasAnyMediaPermission()
         if (configured && !enabled) {
             MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_SERVER, false)
-            print2LogView("摄像头权限未授权，摄像头服务未启动")
+            print2LogView("摄像头和麦克风权限都未授权，媒体服务未启动")
         }
 
-        updateForegroundServiceType(cameraFeaturesEnabled())
+        updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
         if (!enabled) {
             cameraHttpServer?.stop()
             cameraHttpServer = null
@@ -462,7 +462,7 @@ class MeService : Service() {
             print2LogView("摄像头权限未授权，自动亮度未启动")
         }
         ambientBrightness.syncSettings()
-        updateForegroundServiceType(cameraFeaturesEnabled())
+        updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
     }
 
     fun ambientBrightnessLevel(): Int = ambientBrightness.level
@@ -482,6 +482,10 @@ class MeService : Service() {
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)) && hasCameraPermission()
     }
 
+    private fun microphoneFeaturesEnabled(): Boolean {
+        return MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) && hasAudioPermission()
+    }
+
     fun updateCameraPassword() {
         cameraHttpServer?.updatePassword(MeSettings.getCameraPassword(this))
     }
@@ -491,13 +495,23 @@ class MeService : Service() {
             checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun updateForegroundServiceType(cameraEnabled: Boolean) {
+    private fun hasAudioPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasAnyMediaPermission(): Boolean = hasCameraPermission() || hasAudioPermission()
+
+    private fun updateForegroundServiceType(cameraEnabled: Boolean, microphoneEnabled: Boolean) {
         val notification = notificationBuilder?.build() ?: return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                 if (cameraEnabled) {
                     serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                }
+                if (microphoneEnabled) {
+                    serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 }
                 startForeground(NOTIFICATION_ID, notification, serviceType)
             } else {
