@@ -2,6 +2,7 @@ package com.zyyme.workdayalarmclock
 
 import android.content.Context
 import android.content.Intent
+import androidx.appcompat.app.AppCompatDelegate
 
 /**
  * 设置
@@ -93,6 +94,15 @@ object MeSettings {
             ClockActivity::class.java
         }
         return Intent(context, activityClass)
+    }
+
+    fun applyClockTheme(context: Context) {
+        val nightMode = if (isEnabled(context, KEY_WHITE)) {
+            AppCompatDelegate.MODE_NIGHT_NO
+        } else {
+            AppCompatDelegate.MODE_NIGHT_YES
+        }
+        AppCompatDelegate.setDefaultNightMode(nightMode)
     }
 
     fun getNotificationForwardUrl(context: Context): String {

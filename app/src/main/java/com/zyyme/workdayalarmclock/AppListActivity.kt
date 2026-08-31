@@ -21,7 +21,6 @@ import android.widget.ImageButton
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.util.concurrent.Executors
@@ -248,11 +247,7 @@ class AppListActivity : AppCompatActivity() {
             MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) ||
             MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
         ) {
-            if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-            } else {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-            }
+            MeSettings.applyClockTheme(this)
             val intent = MeSettings.createClockIntent(this)
             intent.putExtra("clockMode", true)
             startActivity(intent)

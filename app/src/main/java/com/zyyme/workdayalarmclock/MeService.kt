@@ -23,7 +23,6 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.NotificationCompat
 import org.json.JSONArray
 import org.json.JSONObject
@@ -848,11 +847,7 @@ class MeService : Service() {
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
                     Handler(Looper.getMainLooper()).post {
                         // 闹钟时，有关闭屏幕权限再打开屏幕
-                        if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
-                            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-                        } else {
-                            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-                        }
+                        MeSettings.applyClockTheme(this)
                         val intent = MeSettings.createClockIntent(this)
                         intent.flags =
                             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

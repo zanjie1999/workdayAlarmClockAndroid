@@ -26,7 +26,6 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.PopupMenu
 import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
@@ -158,7 +157,7 @@ class MainActivity : AppCompatActivity() {
             startService(Intent(this, MeService::class.java))
             if (useClockMode) {
                 // 初次启动，切换到时钟模式 有clock文件的也切换      亮色主题（闹钟屏幕出线白色没那么明显）
-                applyClockTheme()
+                MeSettings.applyClockTheme(this)
                 val intent = MeSettings.createClockIntent(this)
                 intent.putExtra("clockMode", true)
                 startActivity(intent)
@@ -840,14 +839,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyClockTheme() {
-        if (MeSettings.isEnabled(this, MeSettings.KEY_WHITE)) {
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-        } else {
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-        }
-    }
-
     private fun exitApp() {
         Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
         onDestroy()
@@ -882,7 +873,7 @@ class MainActivity : AppCompatActivity() {
     override fun onBackPressed() {
         // 默认时钟模式的设备 返回退到全屏时钟
         if (useClockMode) {
-            applyClockTheme()
+            MeSettings.applyClockTheme(this)
             val intent = MeSettings.createClockIntent(this)
             intent.putExtra("clockMode", true)
             startActivity(intent)

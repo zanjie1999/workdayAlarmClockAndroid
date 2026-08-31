@@ -32,6 +32,7 @@ class HomeLauncherActivity : Activity() {
                 putExtra(AppListActivity.EXTRA_OPENED_FROM_HOME, true)
             }
         } else {
+            MeSettings.applyClockTheme(this)
             MeSettings.createClockIntent(this).apply {
                 putExtra("clockMode", true)
             }
