@@ -1,4 +1,4 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.camera
 
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream

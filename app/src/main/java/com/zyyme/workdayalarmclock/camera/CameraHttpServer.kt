@@ -1,4 +1,4 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.camera
 
 import android.Manifest
 import android.annotation.SuppressLint

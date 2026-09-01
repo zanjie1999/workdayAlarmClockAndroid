@@ -1,8 +1,9 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.camera
 
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.PowerManager
@@ -10,6 +11,12 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.Window
 import android.view.WindowManager
+import com.zyyme.workdayalarmclock.ClockActivity
+import com.zyyme.workdayalarmclock.DeskActivity
+import com.zyyme.workdayalarmclock.MainActivity
+import com.zyyme.workdayalarmclock.MeDeviceAdminReceiver
+import com.zyyme.workdayalarmclock.MeService
+import com.zyyme.workdayalarmclock.MeSettings
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -264,19 +271,19 @@ internal class AmbientBrightnessController(
         if (wakeLevel > 0 && newLevel >= wakeLevel) {
             val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
             @Suppress("DEPRECATION")
-            val screenOn = if (android.os.Build.VERSION.SDK_INT >= 20) powerManager.isInteractive else powerManager.isScreenOn
-            if (!screenOn) MeService.me?.wakeScreenForAmbient()
+            val screenOn = if (Build.VERSION.SDK_INT >= 20) powerManager.isInteractive else powerManager.isScreenOn
+            if (!screenOn) MeService.Companion.me?.wakeScreenForAmbient()
         }
     }
 
     private fun applyToVisibleWindows() {
-        MainActivity.me?.let { applyLatestTo(it.window) }
-        ClockActivity.me?.let { applyLatestTo(it.window) }
-        DeskActivity.me?.let { applyLatestTo(it.window) }
+        MainActivity.Companion.me?.let { applyLatestTo(it.window) }
+        ClockActivity.Companion.me?.let { applyLatestTo(it.window) }
+        DeskActivity.Companion.me?.let { applyLatestTo(it.window) }
     }
 
     private fun closeScreen() {
-        val keepScreenOn = ClockActivity.me?.isKeepScreenOn == true || DeskActivity.me?.isKeepScreenOn == true
+        val keepScreenOn = ClockActivity.Companion.me?.isKeepScreenOn == true || DeskActivity.Companion.me?.isKeepScreenOn == true
         if (keepScreenOn && !MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON)) {
             log("摄像头自动亮度跳过熄屏：当前设置了保持亮屏")
             return
@@ -288,8 +295,8 @@ internal class AmbientBrightnessController(
             return
         }
         try {
-            ClockActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            DeskActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            ClockActivity.Companion.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            DeskActivity.Companion.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             manager.lockNow()
         } catch (e: Exception) {
             log("摄像头自动亮度熄屏失败：${e.message}")

@@ -45,6 +45,7 @@ import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat

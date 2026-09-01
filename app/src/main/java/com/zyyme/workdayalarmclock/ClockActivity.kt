@@ -32,6 +32,7 @@ import androidx.core.widget.TextViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 
 import java.text.SimpleDateFormat
 import java.util.Date
