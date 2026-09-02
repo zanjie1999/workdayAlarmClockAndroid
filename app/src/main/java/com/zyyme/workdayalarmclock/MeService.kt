@@ -24,6 +24,8 @@ import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
+import com.zyyme.workdayalarmclock.camera.CameraHttpServer
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader

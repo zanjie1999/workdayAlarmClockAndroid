@@ -1,4 +1,4 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.camera
 
 import android.annotation.SuppressLint
 import android.media.AudioFormat

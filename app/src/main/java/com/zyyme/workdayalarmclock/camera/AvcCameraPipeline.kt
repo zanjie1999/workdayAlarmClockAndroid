@@ -1,4 +1,4 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.camera
 
 import android.annotation.SuppressLint
 import android.annotation.TargetApi
@@ -8,6 +8,7 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.MediaCodec
@@ -22,7 +23,6 @@ import android.util.Range
 import android.util.Size
 import android.view.Surface
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
@@ -95,7 +95,7 @@ internal class AvcCameraPipeline(
     private val startResolved = AtomicBoolean(false)
     private val startSucceeded = AtomicBoolean(false)
     private val startLatch = CountDownLatch(1)
-    private val codecConfigMonitor = java.lang.Object()
+    private val codecConfigMonitor = Object()
 
     private var avcStreamConfig: AvcStreamConfig? = null
     private var cameraThread: HandlerThread? = null
@@ -390,12 +390,12 @@ internal class AvcCameraPipeline(
                     ).apply {
                         addTarget(surface)
                         set(
-                            android.hardware.camera2.CaptureRequest.CONTROL_MODE,
-                            android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO
+                            CaptureRequest.CONTROL_MODE,
+                            CaptureRequest.CONTROL_MODE_AUTO
                         )
                         selection.aeRange?.let {
                             set(
-                                android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                                CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
                                 it
                             )
                         }
@@ -482,7 +482,7 @@ internal class AvcCameraPipeline(
     }
 
     private fun updateCodecConfig(annexBConfig: ByteArray) {
-        val parsed = FragmentedMp4Muxer.parseAvcConfig(
+        val parsed = FragmentedMp4Muxer.Companion.parseAvcConfig(
             annexBConfig,
             selectedWidth,
             selectedHeight,

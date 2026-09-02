@@ -31,6 +31,7 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import kotlin.system.exitProcess
 import androidx.core.net.toUri
+import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import java.util.concurrent.atomic.AtomicBoolean
 
 

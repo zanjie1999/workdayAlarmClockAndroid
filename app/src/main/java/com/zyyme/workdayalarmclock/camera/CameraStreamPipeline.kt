@@ -1,4 +1,4 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.camera
 
 import java.util.ArrayDeque
 
@@ -44,7 +44,7 @@ internal class CameraFrameHub(
     private val maxPackets: Int,
     private val keepLatestOnly: Boolean
 ) {
-    private val monitor = java.lang.Object()
+    private val monitor = Object()
     private val packets = ArrayDeque<CameraStreamPacket>()
     private var sequence = 0L
     private var closed = false
