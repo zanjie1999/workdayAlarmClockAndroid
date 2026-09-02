@@ -31,10 +31,6 @@ import java.util.concurrent.Executors
  */
 class AppListActivity : AppCompatActivity() {
 
-    companion object {
-        const val EXTRA_OPENED_FROM_HOME = "openedFromHomeLauncher"
-    }
-
     private lateinit var adapter: AppAdapter
     private lateinit var etSearch: EditText
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -59,7 +55,7 @@ class AppListActivity : AppCompatActivity() {
         rootView.requestFocus()
 
         btnBack.setOnClickListener {
-            handleBackNavigation()
+            finish()
         }
 
         adapter = AppAdapter(mutableListOf(), { appInfo ->
@@ -235,26 +231,6 @@ class AppListActivity : AppCompatActivity() {
 
         // 置顶应用在前，其余名称排序
         return appList.sortedWith(compareByDescending<AppInfo> { it.isPinned } .thenBy { it.name })
-    }
-
-    override fun onBackPressed() {
-        handleBackNavigation()
-    }
-
-    private fun handleBackNavigation() {
-        // 作为桌面打开，或处于默认时钟模式时，返回全屏时钟。
-        if (intent.getBooleanExtra(EXTRA_OPENED_FROM_HOME, false) ||
-            MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) ||
-            MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
-        ) {
-            MeSettings.applyClockTheme(this)
-            val intent = MeSettings.createClockIntent(this)
-            intent.putExtra("clockMode", true)
-            startActivity(intent)
-            finish()
-        } else {
-            super.onBackPressed()
-        }
     }
 
     override fun onDestroy() {

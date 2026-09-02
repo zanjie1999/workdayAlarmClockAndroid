@@ -58,6 +58,8 @@ class ClockActivity : AppCompatActivity() {
 
     var clockMode = false
 
+    private var returnPackage: String? = null
+
     var enableTop = false
 
     private var showLyrics = false
@@ -81,6 +83,7 @@ class ClockActivity : AppCompatActivity() {
         me = this
 
         super.onCreate(savedInstanceState)
+        returnPackage = intent.getStringExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE)
 
         // 启动Go服务 如果App以特殊方式启动
         if (MeService.me == null) {
@@ -135,17 +138,25 @@ class ClockActivity : AppCompatActivity() {
 //            MeService.me?.stopSelf()
 //        }
         findViewById<Button>(R.id.btn_back).setOnClickListener {
+            if (!returnPackage.isNullOrBlank()) {
+                if (!HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
+                return@setOnClickListener
+            }
             val intent: Intent = Intent(this, MainActivity::class.java)
             // 清除任务栈并创建新任务
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             startActivity(intent)
         }
         findViewById<Button>(R.id.btn_app).setOnClickListener {
-            val intent = Intent(this, AppListActivity::class.java)
+            val intent = Intent(this, AppListActivity::class.java).apply {
+                putExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE, returnPackage)
+            }
             startActivity(intent)
         }
         tvTop.setOnClickListener {
-            val intent = Intent(this, AppListActivity::class.java)
+            val intent = Intent(this, AppListActivity::class.java).apply {
+                putExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE, returnPackage)
+            }
             startActivity(intent)
         }
         findViewById<Button>(R.id.btn_prev).setOnClickListener {
@@ -390,6 +401,14 @@ class ClockActivity : AppCompatActivity() {
 
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent != null) {
+            setIntent(intent)
+            returnPackage = intent.getStringExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE)
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         isActivityStarted = true
@@ -409,6 +428,11 @@ class ClockActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
+        if (!returnPackage.isNullOrBlank()) {
+            if (!HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
+            return
+        }
+
         // 默认时钟模式的设备 返回退到main控制台
         if (MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)) {
             val intent: Intent = Intent(this, MainActivity::class.java)

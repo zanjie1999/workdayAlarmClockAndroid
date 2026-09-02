@@ -79,6 +79,7 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private var returnPackage: String? = null
     private val fullscreenRestoreRunnable = Runnable {
         if (!isFinishing && !isDestroyed) setFullscreen()
     }
@@ -209,6 +210,7 @@ class DeskActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         me = this
         super.onCreate(savedInstanceState)
+        returnPackage = intent.getStringExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE)
 
         if (MeService.me == null) {
             startService(Intent(this, MeService::class.java))
@@ -244,6 +246,7 @@ class DeskActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         if (intent != null) {
             setIntent(intent)
+            returnPackage = intent.getStringExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE)
             grid.post { handleIntent(intent) }
         }
         restoreFullscreenAfterTransition()
@@ -446,7 +449,9 @@ class DeskActivity : AppCompatActivity() {
         val dialog = AlertDialog.Builder(this)
             .setItems(items.toTypedArray()) { _, which ->
                 when {
-                    which == 0 -> startActivity(Intent(this, AppListActivity::class.java))
+                    which == 0 -> startActivity(Intent(this, AppListActivity::class.java).apply {
+                        putExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE, returnPackage)
+                    })
                     which == 1 -> chooseWallpaper()
                     which == 2 -> {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_MASK, !maskEnabled)
@@ -498,6 +503,10 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private fun returnToMain() {
+        if (!returnPackage.isNullOrBlank()) {
+            if (!HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
+            return
+        }
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -1256,6 +1265,11 @@ class DeskActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
+        if (!returnPackage.isNullOrBlank()) {
+            if (!HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
+            return
+        }
+
         if (MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) ||
             MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
         ) {

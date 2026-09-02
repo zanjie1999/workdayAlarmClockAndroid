@@ -1,10 +1,28 @@
 package com.zyyme.workdayalarmclock
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Intent
 import android.os.Bundle
 
 class HomeLauncherActivity : Activity() {
+    companion object {
+        const val EXTRA_RETURN_PACKAGE = "homeReturnPackage"
+
+        fun returnToPreviousApp(activity: Activity, packageName: String?): Boolean {
+            if (packageName.isNullOrBlank() || packageName == activity.packageName) return false
+            val launchIntent = activity.packageManager.getLaunchIntentForPackage(packageName) ?: return false
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            return try {
+                activity.startActivity(launchIntent)
+                activity.finish()
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -18,6 +36,7 @@ class HomeLauncherActivity : Activity() {
     }
 
     private fun openHomeDestination(runStartupApps: Boolean) {
+        val returnPackage = findPreviousPackage()
 
         val clockIsVisible = ClockActivity.me?.isActivityStarted == true ||
                 DeskActivity.me?.isActivityStarted == true
@@ -29,15 +48,27 @@ class HomeLauncherActivity : Activity() {
 
         val destination = if (clockIsVisible) {
             Intent(this, AppListActivity::class.java).apply {
-                putExtra(AppListActivity.EXTRA_OPENED_FROM_HOME, true)
+                putExtra(EXTRA_RETURN_PACKAGE, returnPackage)
             }
         } else {
             MeSettings.applyClockTheme(this)
             MeSettings.createClockIntent(this).apply {
                 putExtra("clockMode", true)
+                putExtra(EXTRA_RETURN_PACKAGE, returnPackage)
             }
         }
         startActivity(destination)
-        finish()
+    }
+
+    private fun findPreviousPackage(): String? {
+        return try {
+            val activityManager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
+            activityManager?.getRunningTasks(8)
+                ?.asSequence()
+                ?.mapNotNull { it.topActivity?.packageName }
+                ?.firstOrNull { it != packageName && it != "com.android.systemui" }
+        } catch (_: SecurityException) {
+            null
+        }
     }
 }
