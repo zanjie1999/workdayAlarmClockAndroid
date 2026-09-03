@@ -8,6 +8,7 @@ import android.os.Bundle
 class HomeLauncherActivity : Activity() {
     companion object {
         const val EXTRA_RETURN_PACKAGE = "homeReturnPackage"
+        const val EXTRA_IS_HOME_OPEN = "isHomeOpen"
 
         fun returnToPreviousApp(activity: Activity, packageName: String?): Boolean {
             if (packageName.isNullOrBlank() || packageName == activity.packageName) return false
@@ -49,6 +50,7 @@ class HomeLauncherActivity : Activity() {
         val destination = if (clockIsVisible) {
             Intent(this, AppListActivity::class.java).apply {
                 putExtra(EXTRA_RETURN_PACKAGE, returnPackage)
+                putExtra(EXTRA_IS_HOME_OPEN, true)
             }
         } else {
             MeSettings.applyClockTheme(this)

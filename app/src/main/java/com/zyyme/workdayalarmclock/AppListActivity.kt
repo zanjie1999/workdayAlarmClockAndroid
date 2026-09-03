@@ -39,6 +39,8 @@ class AppListActivity : AppCompatActivity() {
     private var isActivityDestroyed = false
     private val PREFS_NAME = "app_list"
     private val KEY_PINNED_APPS = "pinned_apps"
+    private var returnPackage: String? = null
+    private var isHomeOpen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,8 +57,10 @@ class AppListActivity : AppCompatActivity() {
         rootView.requestFocus()
 
         btnBack.setOnClickListener {
-            finish()
+            onBackPressed()
         }
+        returnPackage = intent.getStringExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE)
+        isHomeOpen = intent.getBooleanExtra(HomeLauncherActivity.EXTRA_IS_HOME_OPEN, false)
 
         adapter = AppAdapter(mutableListOf(), { appInfo ->
             // 点击 打开应用
@@ -231,6 +235,19 @@ class AppListActivity : AppCompatActivity() {
 
         // 置顶应用在前，其余名称排序
         return appList.sortedWith(compareByDescending<AppInfo> { it.isPinned } .thenBy { it.name })
+    }
+
+    override fun onBackPressed() {
+        if (isHomeOpen) {
+            // 因为如果是home打开的，那么现在栈全部退完了，需要手动的开一下clock/desk，不然会陷入一个魔幻的home循环
+            MeSettings.applyClockTheme(this)
+            val intent =  MeSettings.createClockIntent(this).apply {
+                putExtra("clockMode", true)
+                putExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE, returnPackage)
+            }
+            startActivity(intent)
+        }
+        finish()
     }
 
     override fun onDestroy() {
