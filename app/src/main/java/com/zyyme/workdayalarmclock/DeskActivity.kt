@@ -342,7 +342,7 @@ class DeskActivity : AppCompatActivity() {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
         }
         playButton.setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
+            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
         }
         nextButton.setOnClickListener {
             MeService.me?.keyHandle(2147483645, true)
@@ -1209,16 +1209,10 @@ class DeskActivity : AppCompatActivity() {
         }
     }
 
-    private fun fullscreenSystemUiVisibility(): Int = if (Build.MODEL == "HPN_XH") {
-        View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-    } else {
-        View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+    private fun hideSystemBars(targetWindow: Window) {
+        targetWindow.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-    }
-
-    private fun hideSystemBars(targetWindow: Window) {
-        targetWindow.decorView.systemUiVisibility = fullscreenSystemUiVisibility()
         WindowCompat.setDecorFitsSystemWindows(targetWindow, false)
         WindowInsetsControllerCompat(targetWindow, targetWindow.decorView).let { controller ->
             controller.hide(WindowInsetsCompat.Type.systemBars())

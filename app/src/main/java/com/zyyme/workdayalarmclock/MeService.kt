@@ -76,6 +76,9 @@ class MeService : Service() {
         private const val PLAYBACK_RESUME_REWIND_MS = 2000
         private const val PLAYBACK_CHECKPOINT_INTERVAL_MS = 1000L
         private const val WEATHER_UPDATE_INTERVAL_MS = 60L * 60L * 1000L
+        private const val MEDIA_TRACK_LONG_PRESS_DELAY_MS = 900L
+        private const val MEDIA_TRACK_SEEK_INTERVAL_MS = 500L
+        private const val MEDIA_TRACK_SEEK_STEP_MS = 5000
 
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
@@ -175,6 +178,15 @@ class MeService : Service() {
     private var longPressDownTime = 0L
     private var longPressRunnable: Runnable? = null
     private var clickWindowRunnable: Runnable? = null
+
+    // 实体上一首/下一首媒体键长按快退/快进状态
+    private var mediaTrackKeyCode = 0
+    private var mediaTrackLongPressTriggered = false
+    private var mediaTrackLongPressRunnable: Runnable? = null
+    private var mediaTrackSeekRunnable: Runnable? = null
+    private var mediaPlayKeyCode = 0
+    private var mediaPlayLongPressTriggered = false
+    private var mediaPlayLongPressRunnable: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -526,6 +538,8 @@ class MeService : Service() {
     }
 
     override fun onDestroy() {
+        stopMediaTrackLongPress()
+        stopMediaPlayLongPress()
         cameraHttpServer?.stop()
         cameraHttpServer = null
         if (::ambientBrightness.isInitialized) {
@@ -1682,6 +1696,14 @@ class MeService : Service() {
      * @param isDown true=按下, false=抬起
      */
     fun keyHandle(keyCode: Int, isDown: Boolean): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY
+            || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+            return handleMediaPlayKey(keyCode, isDown)
+        }
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT
+            || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            return handleMediaTrackKey(keyCode, isDown)
+        }
         val isMultiClick = keyCode in setOf(
             KeyEvent.KEYCODE_SOFT_SLEEP,
             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
@@ -1689,8 +1711,7 @@ class MeService : Service() {
             if (ysLedStatus()) 0 else KeyEvent.KEYCODE_FOCUS,
         )
         val isVolKey = keyCode in setOf(
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_VOLUME_UP,
-            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN
+            KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN
         )
 
         // === 按下 ===
@@ -1724,12 +1745,12 @@ class MeService : Service() {
                     }
                     if (keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
                         longPressTriggered = true
-                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                    } else if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
                         ClockActivity.me?.showMsg("下一首")
                         print2LogView("长按音量加 下一首")
                         requestTrackChange("next")
                         longPressTriggered = true
-                    } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                    } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
                         ClockActivity.me?.showMsg("上一首")
                         print2LogView("长按音量减 上一首")
                         requestTrackChange("prev")
@@ -1815,6 +1836,101 @@ class MeService : Service() {
     }
 
     /**
+     * 处理实体/蓝牙上一首、下一首键。短按在抬起时切歌，长按后连续 seek。
+     */
+    private fun handleMediaTrackKey(keyCode: Int, isDown: Boolean): Boolean {
+        if (isDown) {
+            // 部分设备会重复发送 ACTION_DOWN，保持同一次按键状态即可。
+            if (mediaTrackKeyCode == keyCode) return true
+            stopMediaTrackLongPress()
+            mediaTrackKeyCode = keyCode
+            mediaTrackLongPressTriggered = false
+            mediaTrackLongPressRunnable = Runnable {
+                if (mediaTrackKeyCode != keyCode || mediaTrackLongPressTriggered) return@Runnable
+                mediaTrackLongPressTriggered = true
+                val direction = if (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
+                print2LogView(if (direction > 0) "长按媒体按键 快进" else "长按媒体按键 快退")
+                seekMediaTrack(direction)
+                mediaTrackSeekRunnable = object : Runnable {
+                    override fun run() {
+                        if (mediaTrackKeyCode != keyCode || !mediaTrackLongPressTriggered) return
+                        seekMediaTrack(direction)
+                        multiClickHandler.postDelayed(this, MEDIA_TRACK_SEEK_INTERVAL_MS)
+                    }
+                }
+                multiClickHandler.postDelayed(mediaTrackSeekRunnable!!, MEDIA_TRACK_SEEK_INTERVAL_MS)
+            }
+            multiClickHandler.postDelayed(mediaTrackLongPressRunnable!!, MEDIA_TRACK_LONG_PRESS_DELAY_MS)
+            return true
+        }
+
+        if (mediaTrackKeyCode != keyCode) return true
+        val wasLongPress = mediaTrackLongPressTriggered
+        stopMediaTrackLongPress()
+        if (!wasLongPress) {
+            if (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                ClockActivity.me?.showMsg("下一首")
+                print2LogView("媒体按键 下一首")
+                requestTrackChange("next")
+            } else {
+                ClockActivity.me?.showMsg("上一首")
+                print2LogView("媒体按键 上一首")
+                requestTrackChange("prev")
+            }
+        }
+        return true
+    }
+
+    private fun seekMediaTrack(direction: Int) {
+        getPlaybackPosition()?.let { position ->
+            seekPlaybackTo(position + direction * MEDIA_TRACK_SEEK_STEP_MS)
+        }
+    }
+
+    /** 实体播放键长按触发一键播放，短按仍为播放/暂停。 */
+    private fun handleMediaPlayKey(keyCode: Int, isDown: Boolean): Boolean {
+        if (isDown) {
+            if (mediaPlayKeyCode == keyCode) return true
+            stopMediaPlayLongPress()
+            mediaPlayKeyCode = keyCode
+            mediaPlayLongPressTriggered = false
+            mediaPlayLongPressRunnable = Runnable {
+                if (mediaPlayKeyCode != keyCode || mediaPlayLongPressTriggered) return@Runnable
+                mediaPlayLongPressTriggered = true
+                print2LogView("长按媒体按键 一键")
+                ClockActivity.me?.showMsg("一键")
+                toGo("1key")
+            }
+            multiClickHandler.postDelayed(mediaPlayLongPressRunnable!!, MEDIA_TRACK_LONG_PRESS_DELAY_MS)
+            return true
+        }
+        if (mediaPlayKeyCode != keyCode) return true
+        val wasLongPress = mediaPlayLongPressTriggered
+        stopMediaPlayLongPress()
+        if (!wasLongPress) keyHandleAction(keyCode)
+        return true
+    }
+
+    private fun stopMediaPlayLongPress() {
+        mediaPlayLongPressRunnable?.let { multiClickHandler.removeCallbacks(it) }
+        mediaPlayLongPressRunnable = null
+        mediaPlayKeyCode = 0
+        mediaPlayLongPressTriggered = false
+    }
+
+    private fun stopMediaTrackLongPress() {
+        mediaTrackLongPressRunnable?.let { multiClickHandler.removeCallbacks(it) }
+        mediaTrackSeekRunnable?.let { multiClickHandler.removeCallbacks(it) }
+        mediaTrackLongPressRunnable = null
+        mediaTrackSeekRunnable = null
+        mediaTrackKeyCode = 0
+        mediaTrackLongPressTriggered = false
+    }
+
+    /** MediaSession transport callback: a one-shot command, not a raw key press. */
+    fun keyHandleMediaCommand(keyCode: Int): Boolean = keyHandleAction(keyCode)
+
+    /**
      * 非多击/音量键的立即响应逻辑
      */
     private fun keyHandleAction(keyCode: Int): Boolean {
@@ -1875,11 +1991,7 @@ class MeService : Service() {
                 return true
             }
             // 自定义音量键（按钮栏用，立即响应，无长按）
-            2147483647 -> {
-                adjustVolume(keyCode)
-                return true
-            }
-            2147483646 -> {
+            2147483647, 2147483646, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
                 adjustVolume(keyCode)
                 return true
             }

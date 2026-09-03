@@ -164,7 +164,7 @@ class ClockActivity : AppCompatActivity() {
             MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
         }
         findViewById<Button>(R.id.btn_play).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
+            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
         }
         findViewById<Button>(R.id.btn_next).setOnClickListener {
             MeService.me?.keyHandle(2147483645, true)
@@ -220,7 +220,7 @@ class ClockActivity : AppCompatActivity() {
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 if (clockMode) {
-                    MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
+                    MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
                 } else {
                     isKeepScreenOn = !isKeepScreenOn
                     if (isKeepScreenOn) {
@@ -326,8 +326,8 @@ class ClockActivity : AppCompatActivity() {
                 ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
-        val rootLaout = findViewById<LinearLayout>(R.id.root_layout)
-        rootLaout.post {
+        val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
+        rootLayout.post {
             // 延迟进行字体大小调整  初始化完后延时执行
             if (intent.getBooleanExtra("clockMode", false) ||
                 intent.action == "android.media.action.STILL_IMAGE_CAMERA"
@@ -462,6 +462,13 @@ class ClockActivity : AppCompatActivity() {
         val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
         var realHeightPixels = rootLayout.height
         var realWidthPixels = rootLayout.width
+        if (Build.MODEL == "HPN_XH") {
+            // Android4.4的HPN_XH少了一个状态栏的高度
+            val statusBarId = resources.getIdentifier("status_bar_height", "dimen", "android")
+            if (statusBarId != 0) {
+                realHeightPixels += resources.getDimensionPixelSize(statusBarId)
+            }
+        }
         isVerticalLayout = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  MeSettings.isEnabled(this, MeSettings.KEY_VERTICAL)
         val isRound = rootLayout.height == rootLayout.width || MeSettings.isEnabled(this, MeSettings.KEY_ROUND)
         circularMusicProgress.visibility = if (isRound) View.VISIBLE else View.GONE

@@ -30,7 +30,7 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
 
             }
             MeService.ACTION_PLAY -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
+                MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
                 Log.d("logView MediaButton", "ACTION_PLAY")
             }
             MeService.ACTION_NEXT -> {

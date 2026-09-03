@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_MEDIA_SERVER_PERMISSIONS = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
         private const val LOG_REFRESH_DELAY_MILLIS = 250L
+        private const val DPAD_CENTER_LONG_PRESS_DELAY_MS = 900L
     }
 
     var mediaSessionCompat: MediaSessionCompat? = null
@@ -70,6 +71,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playButton: ImageView
     private var settingsPopupMenu: PopupMenu? = null
     private var enableAmbientAfterPermission = false
+    private var dpadPassthrough = false
+    private var dpadCenterLongPressTriggered = false
+    private val dpadCenterLongPressRunnable = Runnable {
+        if (dpadPassthrough || dpadCenterLongPressTriggered) return@Runnable
+        dpadCenterLongPressTriggered = true
+        dpadPassthrough = true
+        showSettingsMenu(findViewById(R.id.iconMenu))
+    }
 
     private val scrollLogToBottom = Runnable {
         if (isActivityVisible && ::logScrollView.isInitialized) {
@@ -234,7 +243,7 @@ class MainActivity : AppCompatActivity() {
         }
         playButton = findViewById(R.id.iconPlay)
         playButton.setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, true)
+            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
         }
         findViewById<ImageView>(R.id.iconNext).setOnClickListener {
             MeService.me?.keyHandle(2147483645, true)
@@ -368,6 +377,11 @@ class MainActivity : AppCompatActivity() {
             } else {
                 false
             }
+        }
+        popupMenu.setOnDismissListener {
+            // 长按 Center 进入菜单后，返回时恢复应用自身的按键劫持。
+            dpadPassthrough = false
+            dpadCenterLongPressTriggered = false
         }
         settingsPopupMenu = popupMenu
         return popupMenu
@@ -874,6 +888,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(refreshLogView)
+        mainHandler.removeCallbacks(dpadCenterLongPressRunnable)
         if (::logScrollView.isInitialized) {
             logScrollView.removeCallbacks(scrollLogToBottom)
         }
@@ -900,16 +915,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
+        if (dpadPassthrough) {
+            if (keyEvent?.action == KeyEvent.ACTION_UP && keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                dpadCenterLongPressTriggered = false
+            }
+            return super.dispatchKeyEvent(keyEvent)
+        }
         // 方便按键机操作
         if (findViewById<EditText>(R.id.shellInput).text.toString() == "") {
             when (keyEvent?.action) {
                 KeyEvent.ACTION_DOWN -> {
+                    if (keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                        if (!dpadCenterLongPressTriggered) {
+                            mainHandler.postDelayed(
+                                dpadCenterLongPressRunnable,
+                                DPAD_CENTER_LONG_PRESS_DELAY_MS
+                            )
+                        }
+                        return true
+                    }
                     if (MeService.me?.keyHandle(keyEvent.keyCode, true) == true) {
                         return true
                     }
                 }
                 KeyEvent.ACTION_UP -> {
-                    if (keyEvent.keyCode == KeyEvent.KEYCODE_CALL) {
+                    if (keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                        mainHandler.removeCallbacks(dpadCenterLongPressRunnable)
+                        val wasLongPress = dpadCenterLongPressTriggered
+                        dpadCenterLongPressTriggered = false
+                        if (wasLongPress) return true
+                        if (MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_DPAD_CENTER) == true) {
+                            return true
+                        }
+                    } else if (keyEvent.keyCode == KeyEvent.KEYCODE_CALL) {
                         exitApp()
                     } else if (MeService.me?.keyHandle(keyEvent.keyCode, false) == true) {
                         return true

@@ -68,7 +68,7 @@ class MeMediaPlaybackManager(
         mediaSession?.setCallback(object : MediaSessionCompat.Callback() {
             override fun onPlay() {
                 print2LogView("onPlay called")
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PLAY, true)
+                MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY)
             }
 
             override fun onPause() {
@@ -83,12 +83,12 @@ class MeMediaPlaybackManager(
 
             override fun onSkipToNext() {
                 print2LogView("onSkipToNext called")
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_NEXT, true)
+                MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_NEXT)
             }
 
             override fun onSkipToPrevious() {
                 print2LogView("onSkipToPrevious called")
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
+                MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             }
         })
 
