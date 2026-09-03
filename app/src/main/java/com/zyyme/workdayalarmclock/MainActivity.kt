@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_DEVELOPER_OPTIONS = 10
         private const val CONFIG_CAMERA_AUTO_BRIGHTNESS = 11
         private const val TOGGLE_HOME_LAUNCHER = 12
+        private const val OPEN_DESK = 13
         private const val MENU_SETTING_START = 100
         private const val REQUEST_MEDIA_SERVER_PERMISSIONS = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
@@ -299,7 +300,8 @@ class MainActivity : AppCompatActivity() {
         val popupMenu = PopupMenu(this, anchor)
         popupMenu.menu.add(Menu.NONE, MENU_EXIT, 0, "退出${getString(R.string.app_name)}")
         popupMenu.menu.add(Menu.NONE, OPEN_WEB, 1, "打开Web控制台")
-        popupMenu.menu.add(Menu.NONE, OPEN_CLOCK, 3, "打开时钟模式")
+        popupMenu.menu.add(Menu.NONE, OPEN_CLOCK, 2, "打开小屏时钟模式")
+        popupMenu.menu.add(Menu.NONE, OPEN_DESK, 3, "打开大屏时钟模式")
         popupMenu.menu.add(Menu.NONE, OPEN_APPLIST, 4, "打开应用列表")
         popupMenu.menu.add(Menu.NONE, TOGGLE_HOME_LAUNCHER, 5, "作为桌面").apply {
             isCheckable = true
@@ -330,7 +332,10 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this, WebActivity::class.java))
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_CLOCK) {
-                startActivity(MeSettings.createClockIntent(this))
+                startActivity(Intent(this, ClockActivity::class.java))
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == OPEN_DESK) {
+                startActivity(Intent(this, DeskActivity::class.java))
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_APPLIST) {
                 startActivity(Intent(this, AppListActivity::class.java))
