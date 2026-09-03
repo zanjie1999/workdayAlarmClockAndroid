@@ -240,20 +240,20 @@ class MainActivity : AppCompatActivity() {
 
         // toolbar的控制按钮
         findViewById<ImageView>(R.id.iconPrev).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
+            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
         }
         playButton = findViewById(R.id.iconPlay)
         playButton.setOnClickListener {
             MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
         }
         findViewById<ImageView>(R.id.iconNext).setOnClickListener {
-            MeService.me?.keyHandle(2147483645, true)
+            MeService.me?.keyHandleMediaCommand(2147483645)
         }
         findViewById<ImageView>(R.id.iconStop).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
+            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_STOP)
         }
         findViewById<ImageView>(R.id.iconForward).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, true)
+            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
         }
         val menuIcon = findViewById<ImageView>(R.id.iconMenu)
         menuIcon.setOnClickListener {
