@@ -23,7 +23,7 @@
         android:id="@+id/desk_mask"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:background="#33000000"
+        android:background="#4D000000"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
