@@ -162,25 +162,25 @@ class ClockActivity : AppCompatActivity() {
             startActivity(intent)
         }
         findViewById<Button>(R.id.btn_prev).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
         }
         findViewById<Button>(R.id.btn_play).setOnClickListener {
-            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
         }
         findViewById<Button>(R.id.btn_next).setOnClickListener {
-            MeService.me?.keyHandle(2147483645, true)
+            MeService.me?.keyHandleAction(2147483645)
         }
         findViewById<Button>(R.id.btn_stop).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_STOP)
         }
         findViewById<Button>(R.id.btn_volm).setOnClickListener {
-            MeService.me?.keyHandle(2147483646, true)
+            MeService.me?.keyHandleAction(2147483646)
         }
         findViewById<Button>(R.id.btn_volp).setOnClickListener {
-            MeService.me?.keyHandle(2147483647, true)
+            MeService.me?.keyHandleAction(2147483647)
         }
         findViewById<Button>(R.id.btn_forward).setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, true)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
         }
 
         val musicSeekBar = findViewById<SeekBar>(R.id.sb_music_progress)
@@ -221,7 +221,7 @@ class ClockActivity : AppCompatActivity() {
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 if (clockMode) {
-                    MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+                    MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
                 } else {
                     isKeepScreenOn = !isKeepScreenOn
                     if (isKeepScreenOn) {
@@ -257,10 +257,10 @@ class ClockActivity : AppCompatActivity() {
                     if (Math.abs(diffX) > 100 && Math.abs(velocityX) > 100) {
                         if (diffX > 0) {
                             // 右
-                            MeService.me?.keyHandle(2147483645, true)
+                            MeService.me?.keyHandleAction(2147483645)
                         } else {
                             // 左
-                            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
+                            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
                         }
                         return true
                     }
@@ -269,10 +269,10 @@ class ClockActivity : AppCompatActivity() {
                     if (Math.abs(diffY) > 100 && Math.abs(velocityY) > 100) {
                         if (diffY > 0) {
                             // 下
-                            MeService.me?.keyHandle(2147483646, true)
+                            MeService.me?.keyHandleAction(2147483646)
                         } else {
                             // 上
-                            MeService.me?.keyHandle(2147483647, true)
+                            MeService.me?.keyHandleAction(2147483647)
                         }
                         return true
                     }

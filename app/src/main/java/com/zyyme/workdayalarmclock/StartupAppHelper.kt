@@ -139,20 +139,33 @@ object StartupAppHelper {
             startupAppLaunching = false
             return false
         }
+
+        // Keep the guard from getting stuck after a launcher HOME invocation. The
+        // caller schedules its destination for the same delay, so reset just before it.
+        Handler(Looper.getMainLooper()).postDelayed({
+            startupAppLaunching = false
+        }, startupPackageNames.size * STARTUP_APP_DELAY_MILLIS)
         return true
     }
 
     private fun launchStartupApps(context: Context, packageNames: List<String>): Boolean {
-        var hasAnyLaunched = false
-        packageNames.forEachIndexed { index, packageName ->
-            if (launchStartupApp(context, packageName)) {
-                hasAnyLaunched = true
-            }
-            if (index < packageNames.lastIndex) {
-                Thread.sleep(STARTUP_APP_DELAY_MILLIS)
-            }
+        val launchablePackages = packageNames.filter { packageName ->
+            context.packageManager.getLaunchIntentForPackage(packageName) != null
         }
-        return hasAnyLaunched
+        if (launchablePackages.isEmpty()) {
+            packageNames.forEach { packageName ->
+                Log.v("workdayAlarmClock", "开机启动应用不可启动：$packageName")
+            }
+            return false
+        }
+
+        val mainHandler = Handler(Looper.getMainLooper())
+        launchablePackages.forEachIndexed { index, packageName ->
+            mainHandler.postDelayed({
+                launchStartupApp(context, packageName)
+            }, index * STARTUP_APP_DELAY_MILLIS)
+        }
+        return true
     }
 
     private fun launchStartupApp(context: Context, packageName: String): Boolean {

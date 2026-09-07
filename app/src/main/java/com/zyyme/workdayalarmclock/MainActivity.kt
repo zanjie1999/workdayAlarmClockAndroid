@@ -240,20 +240,20 @@ class MainActivity : AppCompatActivity() {
 
         // toolbar的控制按钮
         findViewById<ImageView>(R.id.iconPrev).setOnClickListener {
-            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
         }
         playButton = findViewById(R.id.iconPlay)
         playButton.setOnClickListener {
-            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
         }
         findViewById<ImageView>(R.id.iconNext).setOnClickListener {
-            MeService.me?.keyHandleMediaCommand(2147483645)
+            MeService.me?.keyHandleAction(2147483645)
         }
         findViewById<ImageView>(R.id.iconStop).setOnClickListener {
-            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_STOP)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_STOP)
         }
         findViewById<ImageView>(R.id.iconForward).setOnClickListener {
-            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
         }
         val menuIcon = findViewById<ImageView>(R.id.iconMenu)
         menuIcon.setOnClickListener {
@@ -949,7 +949,7 @@ class MainActivity : AppCompatActivity() {
                         val wasLongPress = dpadCenterLongPressTriggered
                         dpadCenterLongPressTriggered = false
                         if (wasLongPress) return true
-                        if (MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_DPAD_CENTER) == true) {
+                        if (MeService.me?.keyHandleAction(KeyEvent.KEYCODE_DPAD_CENTER) == true) {
                             return true
                         }
                     } else if (keyEvent.keyCode == KeyEvent.KEYCODE_CALL) {

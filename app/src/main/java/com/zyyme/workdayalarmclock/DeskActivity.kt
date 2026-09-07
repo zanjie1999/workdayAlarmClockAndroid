@@ -339,19 +339,19 @@ class DeskActivity : AppCompatActivity() {
 
     private fun bindActions() {
         prevButton.setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
         }
         playButton.setOnClickListener {
-            MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
         }
         nextButton.setOnClickListener {
-            MeService.me?.keyHandle(2147483645, true)
+            MeService.me?.keyHandleAction(2147483645)
         }
         stopButton.setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_STOP)
         }
         alarmStopButton.setOnClickListener {
-            MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
+            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_STOP)
             showAlarmControls(false)
         }
 

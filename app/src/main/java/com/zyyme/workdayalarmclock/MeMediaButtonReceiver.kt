@@ -30,23 +30,23 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
 
             }
             MeService.ACTION_PLAY -> {
-                MeService.me?.keyHandleMediaCommand(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+                MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
                 Log.d("logView MediaButton", "ACTION_PLAY")
             }
             MeService.ACTION_NEXT -> {
-                MeService.me?.keyHandle(2147483645, true)
+                MeService.me?.keyHandleAction(2147483645)
                 Log.d("logView MediaButton", "ACTION_NEXT")
             }
             MeService.ACTION_PREVIOUS -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_PREVIOUS, true)
+                MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
                 Log.d("logView MediaButton", "ACTION_PREVIOUS")
             }
             MeService.ACTION_STOP -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_STOP, true)
+                MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_STOP)
                 Log.d("logView MediaButton", "ACTION_STOP")
             }
             MeService.ACTION_FORWARD -> {
-                MeService.me?.keyHandle(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, true)
+                MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
                 Log.d("logView MediaButton", "ACTION_FORWARD")
             }
             MeService.ACTION_WAKE -> {

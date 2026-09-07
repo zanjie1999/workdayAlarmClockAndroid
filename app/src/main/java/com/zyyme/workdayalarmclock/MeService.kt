@@ -1692,6 +1692,7 @@ class MeService : Service() {
 
     /**
      * 响应按键 (统一入口)
+     * 有长按检测，UI按钮不能用这个
      * @param keyCode 按键码
      * @param isDown true=按下, false=抬起
      */
@@ -1927,13 +1928,11 @@ class MeService : Service() {
         mediaTrackLongPressTriggered = false
     }
 
-    /** MediaSession transport callback: a one-shot command, not a raw key press. */
-    fun keyHandleMediaCommand(keyCode: Int): Boolean = keyHandleAction(keyCode)
-
     /**
      * 非多击/音量键的立即响应逻辑
+     * 直接触发，跳过长按检测
      */
-    private fun keyHandleAction(keyCode: Int): Boolean {
+    fun keyHandleAction(keyCode: Int): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
                 if (!isStop) {
