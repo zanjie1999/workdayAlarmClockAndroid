@@ -140,7 +140,8 @@ class ClockActivity : AppCompatActivity() {
 //        }
         findViewById<Button>(R.id.btn_back).setOnClickListener {
             if (!returnPackage.isNullOrBlank()) {
-                if (!HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
+                if (!HomeLauncherActivity.revealPreviousTask(this, returnPackage) &&
+                    !HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
                 return@setOnClickListener
             }
             val intent: Intent = Intent(this, MainActivity::class.java)
@@ -430,7 +431,8 @@ class ClockActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         if (!returnPackage.isNullOrBlank()) {
-            if (!HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
+            if (!HomeLauncherActivity.revealPreviousTask(this, returnPackage) &&
+                !HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
             return
         }
 

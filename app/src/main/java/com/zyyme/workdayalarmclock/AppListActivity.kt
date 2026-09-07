@@ -228,9 +228,8 @@ class AppListActivity : AppCompatActivity() {
         for (resolveInfo in resolveInfos) {
             val name = resolveInfo.loadLabel(packageManager).toString()
             val packageName = resolveInfo.activityInfo.packageName
-            val icon = resolveInfo.loadIcon(packageManager)
             val isPinned = pinnedApps.contains(packageName)
-            appList.add(AppInfo(name, packageName, icon, isPinned))
+            appList.add(AppInfo(name, packageName, resolveInfo, isPinned))
         }
 
         // 置顶应用在前，其余名称排序
@@ -253,6 +252,8 @@ class AppListActivity : AppCompatActivity() {
     override fun onDestroy() {
         isActivityDestroyed = true
         appLoadExecutor.shutdownNow()
+        mainHandler.removeCallbacksAndMessages(null)
+        adapter.release()
         super.onDestroy()
     }
 }

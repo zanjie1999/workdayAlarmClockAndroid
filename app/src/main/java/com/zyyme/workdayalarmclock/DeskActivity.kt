@@ -505,7 +505,8 @@ class DeskActivity : AppCompatActivity() {
 
     private fun returnToMain() {
         if (!returnPackage.isNullOrBlank()) {
-            if (!HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
+            if (!HomeLauncherActivity.revealPreviousTask(this, returnPackage) &&
+                !HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
             return
         }
         val intent = Intent(this, MainActivity::class.java).apply {
@@ -1261,7 +1262,8 @@ class DeskActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         if (!returnPackage.isNullOrBlank()) {
-            if (!HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
+            if (!HomeLauncherActivity.revealPreviousTask(this, returnPackage) &&
+                !HomeLauncherActivity.returnToPreviousApp(this, returnPackage)) moveTaskToBack(true)
             return
         }
 

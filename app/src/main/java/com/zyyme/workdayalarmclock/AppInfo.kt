@@ -1,10 +1,10 @@
 package com.zyyme.workdayalarmclock
 
-import android.graphics.drawable.Drawable
+import android.content.pm.ResolveInfo
 
 data class AppInfo(
     val name: String,
     val packageName: String,
-    val icon: Drawable,
+    val resolveInfo: ResolveInfo,
     val isPinned: Boolean = false
 )

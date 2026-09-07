@@ -10,6 +10,20 @@ class HomeLauncherActivity : Activity() {
         const val EXTRA_RETURN_PACKAGE = "homeReturnPackage"
         const val EXTRA_IS_HOME_OPEN = "isHomeOpen"
 
+        /**
+         * Home 启动器覆盖在原应用任务上时，优先把自己的任务移到后台，
+         * 让系统直接显示下面原本的任务，避免重新启动应用入口页面。
+         */
+        fun revealPreviousTask(activity: Activity, packageName: String?): Boolean {
+            if (packageName.isNullOrBlank() || packageName == activity.packageName) return false
+            return try {
+                activity.moveTaskToBack(true)
+                true
+            } catch (_: RuntimeException) {
+                false
+            }
+        }
+
         fun returnToPreviousApp(activity: Activity, packageName: String?): Boolean {
             if (packageName.isNullOrBlank() || packageName == activity.packageName) return false
             val launchIntent = activity.packageManager.getLaunchIntentForPackage(packageName) ?: return false
