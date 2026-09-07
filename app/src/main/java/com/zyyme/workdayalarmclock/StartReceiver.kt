@@ -10,7 +10,6 @@ import android.content.Intent
 class StartReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        val type = intent.getAction().toString();
         StartupAppHelper.startAtBooted(context, pendingResult = goAsync())
     }
 }

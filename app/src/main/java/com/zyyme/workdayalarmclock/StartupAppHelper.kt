@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -17,9 +18,9 @@ object StartupAppHelper {
     const val KEY_PINNED_APPS = "pinned_apps"
     private const val KEY_STARTUP_APPS = "startup_apps"
     const val STARTUP_APP_DELAY_MILLIS = 5_000L
-    private const val EXTRA_SKIP_STARTUP_APP = "skip_startup_app"
-
+    private val startupLock = Any()
     private var startupAppLaunching = false
+    private var startupAppsHandled = false
 
     fun getStartupAppPackageNames(context: Context): List<String> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -74,7 +75,8 @@ object StartupAppHelper {
     fun startAtBooted(
         context: Context,
         accessibility: Boolean = false,
-        pendingResult: BroadcastReceiver.PendingResult? = null
+        pendingResult: BroadcastReceiver.PendingResult? = null,
+        onFinished: (() -> Unit)? = null
     ) {
         val appContext = context.applicationContext
 
@@ -84,71 +86,56 @@ object StartupAppHelper {
 
         fun continueOriginalLogic() {
             try {
-                startupAppLaunching = false
-                startOriginalBootLogic(appContext, accessibility)
+                synchronized(startupLock) {
+                    startupAppLaunching = false
+                    startupAppsHandled = true
+                }
+                if (onFinished != null) {
+                    onFinished()
+                } else {
+                    startOriginalBootLogic(appContext, accessibility)
+                }
             } finally {
                 finishPending()
             }
         }
 
         val startupPackageNames = getStartupAppPackageNames(appContext)
+        synchronized(startupLock) {
+            if (startupAppLaunching) {
+                Log.v("workdayAlarmClock", "开机启动应用正在处理，跳过重复启动")
+                finishPending()
+                return
+            }
+            if (startupAppsHandled) {
+                Log.v("workdayAlarmClock", "开机启动应用已经处理，跳过重复启动")
+                try {
+                    onFinished?.invoke()
+                } finally {
+                    finishPending()
+                }
+                return
+            }
+            startupAppLaunching = true
+        }
+
         if (startupPackageNames.isEmpty()) {
             continueOriginalLogic()
             return
         }
 
-        if (startupAppLaunching) {
-            Log.v("workdayAlarmClock", "开机启动应用正在处理，跳过重复启动")
-            finishPending()
-            return
-        }
-
-        startupAppLaunching = true
-        if (!launchStartupApps(appContext, startupPackageNames)) {
-            startupAppLaunching = false
+        val launchedAppCount = launchStartupApps(appContext, startupPackageNames)
+        if (launchedAppCount == 0) {
             continueOriginalLogic()
             return
         }
 
         Handler(Looper.getMainLooper()).postDelayed({
             continueOriginalLogic()
-        }, startupPackageNames.size * STARTUP_APP_DELAY_MILLIS)
+        }, launchedAppCount * STARTUP_APP_DELAY_MILLIS)
     }
 
-    fun tryHandleLauncherBootActivity(context: Context, intent: Intent?): Boolean {
-        if (intent?.getBooleanExtra(EXTRA_SKIP_STARTUP_APP, false) == true) {
-            return false
-        }
-        if (intent?.action != Intent.ACTION_MAIN || !intent.hasCategory(Intent.CATEGORY_HOME)) {
-            return false
-        }
-
-        val appContext = context.applicationContext
-        val startupPackageNames = getStartupAppPackageNames(appContext)
-        if (startupPackageNames.isEmpty()) {
-            return false
-        }
-
-        if (startupAppLaunching) {
-            Log.v("workdayAlarmClock", "开机启动应用正在处理，跳过重复启动")
-            return true
-        }
-
-        startupAppLaunching = true
-        if (!launchStartupApps(appContext, startupPackageNames)) {
-            startupAppLaunching = false
-            return false
-        }
-
-        // Keep the guard from getting stuck after a launcher HOME invocation. The
-        // caller schedules its destination for the same delay, so reset just before it.
-        Handler(Looper.getMainLooper()).postDelayed({
-            startupAppLaunching = false
-        }, startupPackageNames.size * STARTUP_APP_DELAY_MILLIS)
-        return true
-    }
-
-    private fun launchStartupApps(context: Context, packageNames: List<String>): Boolean {
+    private fun launchStartupApps(context: Context, packageNames: List<String>): Int {
         val launchablePackages = packageNames.filter { packageName ->
             context.packageManager.getLaunchIntentForPackage(packageName) != null
         }
@@ -156,7 +143,7 @@ object StartupAppHelper {
             packageNames.forEach { packageName ->
                 Log.v("workdayAlarmClock", "开机启动应用不可启动：$packageName")
             }
-            return false
+            return 0
         }
 
         val mainHandler = Handler(Looper.getMainLooper())
@@ -165,7 +152,7 @@ object StartupAppHelper {
                 launchStartupApp(context, packageName)
             }, index * STARTUP_APP_DELAY_MILLIS)
         }
-        return true
+        return launchablePackages.size
     }
 
     private fun launchStartupApp(context: Context, packageName: String): Boolean {
@@ -191,10 +178,6 @@ object StartupAppHelper {
             Log.v("workdayAlarmClock", "disabledisabledisable 开机不启动")
             return
         }
-        if (MeService.me != null) {
-            // 已手动启动
-            return
-        }
 
         if (accessibility) {
             // 辅助功能服务 开机启动
@@ -204,7 +187,34 @@ object StartupAppHelper {
             Toast.makeText(context, "开机启动咯~", Toast.LENGTH_LONG).show()
         }
 
-        val intent = Intent(context, MainActivity::class.java)
+        launchInitialDestination(context, accessibility)
+    }
+
+    /**
+     * Starts the activity that should be visible after the boot/startup sequence.
+     * Clock mode is enabled for the configured setting or for one of the built-in
+     * device model allow-list entries; otherwise the normal control console opens.
+     */
+    fun launchInitialDestination(context: Context, accessibility: Boolean = false) {
+        val intent = if (
+            MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) ||
+            MeSettings.isEnabled(context, MeSettings.KEY_CLOCK)
+        ) {
+            MeSettings.applyClockTheme(context)
+            MeSettings.createClockIntent(context).apply {
+                putExtra("clockMode", true)
+            }
+        } else {
+            Intent(context, MainActivity::class.java)
+        }
+        launchInitialDestination(context, intent, accessibility)
+    }
+
+    private fun launchInitialDestination(
+        context: Context,
+        intent: Intent,
+        accessibility: Boolean
+    ) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (!accessibility) {
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
