@@ -57,9 +57,8 @@ class HomeLauncherActivity : Activity() {
             val destinationContext = applicationContext
             StartupAppHelper.startAtBooted(destinationContext, onFinished = {
                 StartupAppHelper.launchInitialDestination(destinationContext)
+                finish()
             })
-            finish()
-            return
         }
 
         val returnPackage = findPreviousPackage()
