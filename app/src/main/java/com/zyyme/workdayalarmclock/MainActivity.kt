@@ -47,13 +47,13 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_DEVICE_ADMIN = 5
         private const val OPEN_ACCESSIBILITY_SETTINGS = 6
         private const val OPEN_NOTIFICATION_FORWARD_URL = 7
-        private const val OPEN_TODO_URL = 13
         private const val TOGGLE_CAMERA_SERVER = 8
         private const val EDIT_CAMERA_PASSWORD = 9
         private const val OPEN_DEVELOPER_OPTIONS = 10
         private const val CONFIG_CAMERA_AUTO_BRIGHTNESS = 11
         private const val TOGGLE_HOME_LAUNCHER = 12
-        private const val OPEN_DESK = 13
+        private const val OPEN_TODO_URL = 13
+        private const val OPEN_DESK = 14
         private const val MENU_SETTING_START = 100
         private const val REQUEST_MEDIA_SERVER_PERMISSIONS = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
