@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 
 class WebActivity : AppCompatActivity() {
     companion object {
+        const val EXTRA_URL = "url"
         private const val CONTROL_URL = "http://127.0.0.1:8080"
     }
 
@@ -32,6 +33,7 @@ class WebActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        currentUrl = intent.getStringExtra(EXTRA_URL)?.takeIf { it.isNotBlank() } ?: CONTROL_URL
         setContentView(R.layout.activity_web)
 
         webView = findViewById(R.id.web_view)
@@ -109,7 +111,7 @@ class WebActivity : AppCompatActivity() {
         }
 
         if (savedInstanceState == null) {
-            webView.loadUrl(CONTROL_URL)
+            webView.loadUrl(currentUrl)
         } else {
             webView.restoreState(savedInstanceState)
         }

@@ -231,6 +231,10 @@ https://abc.com/api?message=应用{app}包名是{pkg}发送了标题为{title}�
 长按1秒音量- 上一首
 开机启动需要将 工作咩闹钟 设置为启动器  
 
+### 国美云音箱
+注意这个机器看起来虽然是AOSP但是他内置PCDN！  
+橙色按钮是一键按钮，实际为F11
+
 ### 协议 咩License
 使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   
 Using this project is deemed to indicate that you have read and agreed to abide by [this LICENSE](https://github.com/zanjie1999/LICENSE)   

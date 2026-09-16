@@ -83,8 +83,8 @@ class MeService : Service() {
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
         // getprop ro.product.model
-        //                                 绿色陪伴音箱，叮咚play，小魔镜, 小熊尼奥照照乐和Pro，Sayinfo音箱
-        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO", "rockchiprk3326_m2g")
+        //                                 绿色陪伴音箱，叮咚play，小魔镜, 小熊尼奥照照乐和Pro，Sayinfo音箱, 国美云音箱
+        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO", "rockchiprk3326_m2g", "rockchipGM800")
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
@@ -1705,11 +1705,16 @@ class MeService : Service() {
             || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
             return handleMediaTrackKey(keyCode, isDown)
         }
+        // 维护多击键 一键 1key键
         val isMultiClick = keyCode in setOf(
+            // 叮咚Play
             KeyEvent.KEYCODE_SOFT_SLEEP,
+            // 照照乐
             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
             if (isBonjour) KeyEvent.KEYCODE_VOLUME_MUTE else 0,
             if (ysLedStatus()) 0 else KeyEvent.KEYCODE_FOCUS,
+            // 国美云
+            KeyEvent.KEYCODE_F11
         )
         val isVolKey = keyCode in setOf(
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN

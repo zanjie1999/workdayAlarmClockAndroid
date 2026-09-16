@@ -444,8 +444,10 @@ class DeskActivity : AppCompatActivity() {
         if (hasNextWallpaper) {
             items += "下一张壁纸"
         }
+        val playlistItemIndex = items.size
+        items += "我的歌单"
+        val returnItemIndex = items.size
         items += "返回"
-        val returnItemIndex = if (hasNextWallpaper) 11 else 10
 
         val dialog = AlertDialog.Builder(this)
             .setItems(items.toTypedArray()) { _, which ->
@@ -470,6 +472,9 @@ class DeskActivity : AppCompatActivity() {
                     which == 5 -> showLyricsPositionDialog(lyricsPositionNames, lyricsPosition)
                     which in 6..9 -> showSlotContentDialog(which - 6, slotNames[which - 6], slotContentNames)
                     hasNextWallpaper && which == 10 -> advanceAutoWallpaper()
+                    which == playlistItemIndex -> startActivity(Intent(this, WebActivity::class.java).apply {
+                        putExtra(WebActivity.EXTRA_URL, "http://127.0.0.1:8080/playlist.html")
+                    })
                     which == returnItemIndex -> returnToMain()
                 }
             }
