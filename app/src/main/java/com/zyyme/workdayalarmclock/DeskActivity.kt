@@ -1272,9 +1272,7 @@ class DeskActivity : AppCompatActivity() {
             return
         }
 
-        if (MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) ||
-            MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
-        ) {
+        if (MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)) {
             startActivity(Intent(this, MainActivity::class.java))
             finish()
         } else {

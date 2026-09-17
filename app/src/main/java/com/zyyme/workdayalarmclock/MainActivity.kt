@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         me = this
-        useClockMode = MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
+        useClockMode = MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
 
         // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
         val amUrl = getIntent().getDataString();

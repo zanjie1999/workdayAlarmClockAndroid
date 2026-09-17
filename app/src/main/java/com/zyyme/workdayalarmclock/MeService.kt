@@ -19,6 +19,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.support.v4.media.session.PlaybackStateCompat
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -29,6 +30,7 @@ import com.zyyme.workdayalarmclock.camera.CameraHttpServer
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.IOException
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -38,6 +40,7 @@ import java.net.DatagramSocket
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.jvm.java
+import kotlin.math.sqrt
 
 /**
  * 后台服务
@@ -83,8 +86,12 @@ class MeService : Service() {
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
         // getprop ro.product.model
-        //                                 绿色陪伴音箱，叮咚play，小魔镜, 小熊尼奥照照乐和Pro，Sayinfo音箱, 国美云音箱
-        val clockModeModel = listOf<String>("softwinnerHPN_XH", "Intelcht_mrd", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO", "rockchiprk3326_m2g", "rockchipGM800")
+        //                                 绿色陪伴音箱            小魔镜                     法国闹钟                           小熊尼奥照照乐和Pro
+        val clockModeModel = listOf<String>("softwinnerHPN_XH", "sprduws6137_1h10_64b_1g", "AllwinnerQUAD-CORE A64 ococci", "MAGNEOC110001", "MAGNEOMAGNEO")
+
+        // 大屏时钟模式  默认勾选时钟模式和大屏时钟模式
+        //                                  叮咚Play         Sayinfo音箱           国美云音箱
+        val deskModeModel = listOf<String>("Intelcht_mrd", "rockchiprk3326_m2g", "rockchipGM800")
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
@@ -201,12 +208,44 @@ class MeService : Service() {
         TODO("Return the communication channel to the service.")
     }
 
+    private fun applyFirstLaunchModeDefaults() {
+        val configFile = File(applicationInfo.nativeLibraryDir, "workdayAlarmClock.json")
+        if (configFile.exists()) return
+
+        val deviceModel = Build.MANUFACTURER + Build.MODEL
+        val useDeskClockByModel = deskModeModel.contains(deviceModel)
+        if (clockModeModel.contains(deviceModel) || useDeskClockByModel) {
+            MeSettings.setEnabled(this, MeSettings.KEY_CLOCK, true)
+        }
+        if (useDeskClockByModel || isLargeLandscapeScreen()) {
+            MeSettings.setEnabled(this, MeSettings.KEY_DESK_CLOCK, true)
+        }
+    }
+
+    private fun isLargeLandscapeScreen(): Boolean {
+        val display = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
+        val metrics = DisplayMetrics()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            display.getRealMetrics(metrics)
+        } else {
+            display.getMetrics(metrics)
+        }
+        if (metrics.widthPixels <= metrics.heightPixels || metrics.xdpi <= 0f || metrics.ydpi <= 0f) {
+            return false
+        }
+
+        val widthInches = metrics.widthPixels / metrics.xdpi
+        val heightInches = metrics.heightPixels / metrics.ydpi
+        return sqrt(widthInches * widthInches + heightInches * heightInches) > 6.7f
+    }
+
     @SuppressLint("WrongConstant")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (me != null) {
             return 0
         }
         me = this
+        applyFirstLaunchModeDefaults()
 
         // 初始化音频服务
         meMediaPlaybackManager = MeMediaPlaybackManager(this)

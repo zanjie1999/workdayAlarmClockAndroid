@@ -3,7 +3,6 @@ package com.zyyme.workdayalarmclock
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -192,14 +191,11 @@ object StartupAppHelper {
 
     /**
      * Starts the activity that should be visible after the boot/startup sequence.
-     * Clock mode is enabled for the configured setting or for one of the built-in
-     * device model allow-list entries; otherwise the normal control console opens.
+     * Clock mode is enabled by the configured setting; otherwise the normal
+     * control console opens.
      */
     fun launchInitialDestination(context: Context, accessibility: Boolean = false) {
-        val intent = if (
-            MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) ||
-            MeSettings.isEnabled(context, MeSettings.KEY_CLOCK)
-        ) {
+        val intent = if (MeSettings.isEnabled(context, MeSettings.KEY_CLOCK)) {
             MeSettings.applyClockTheme(context)
             MeSettings.createClockIntent(context).apply {
                 putExtra("clockMode", true)

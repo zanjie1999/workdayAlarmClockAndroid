@@ -437,7 +437,7 @@ class ClockActivity : AppCompatActivity() {
         }
 
         // 默认时钟模式的设备 返回退到main控制台
-        if (MeService.clockModeModel.contains(Build.MANUFACTURER + Build.MODEL) || MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)) {
+        if (MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)) {
             val intent: Intent = Intent(this, MainActivity::class.java)
             startActivity(intent)
             finish()
