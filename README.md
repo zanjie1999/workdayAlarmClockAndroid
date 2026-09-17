@@ -141,12 +141,13 @@ http://设备IP:8880/abc/brightness
 并且拥有环形的进度条  
 <img width="902" height="1105" alt="image" src="https://github.com/user-attachments/assets/149a5c37-e329-4cc1-adc0-51aef222fa3d" />
 
+v36.3开始会跟随大屏时钟模式的壁纸设置，在收起时显示壁纸
 
 ## 大屏时钟模式
 在右上角菜单中勾选 使用大屏时钟 即可开启，再点击顶部空白区域即可进入，勾选 时钟模式 可以默认启动到时钟模式  
 <img width="1024" height="600" src="https://github.com/user-attachments/assets/a383513f-9558-4da5-8b6b-70c995f70056" />  
 长按中间的空白区域，可以进入设置，调节各个组件的位置和设置壁纸  
-将图片放到内置存储的zyymeWallpaper中可每小时随机轮换  
+将图片放到内置存储的 `zyymeWallpaper` 中可每小时随机轮换  
 界面为横屏设计，但是不限制屏幕方向，你看可以自行旋转屏幕  
 
 小提示，你可以把内容拼在 `http://192.168.1.152:8080/echo?msg=WEATHERAL%20` 后面，让内容显示在顶部歌词的位置，虽然这是为天气预警信息显示设计的，但你可以把任意信息推到上面显示
