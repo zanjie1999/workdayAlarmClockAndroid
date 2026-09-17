@@ -7,11 +7,14 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.support.v4.media.session.MediaSessionCompat
 import android.util.DisplayMetrics
@@ -23,6 +26,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -34,8 +38,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 
 /**
  * 时钟
@@ -43,6 +49,8 @@ import java.util.Date
 class ClockActivity : AppCompatActivity() {
     companion object {
         var me: ClockActivity? = null
+
+        private const val HOUR_MILLIS = 60L * 60L * 1000L
     }
 
     var mediaSessionCompat: MediaSessionCompat? = null
@@ -68,6 +76,22 @@ class ClockActivity : AppCompatActivity() {
     private var isVerticalLayout = false
 
     private var isUserSeeking = false
+
+    private lateinit var wallpaperView: ImageView
+    private lateinit var wallpaperMaskView: View
+    private var wallpaperBitmap: Bitmap? = null
+    private val autoWallpaperDirectory = File("/sdcard/zyymeWallpaper")
+    private var autoWallpaperFiles = emptyList<File>()
+    private var autoWallpaperIndex = -1
+    private var currentAutoWallpaper: File? = null
+    private val hourlyWallpaperRunnable = object : Runnable {
+        override fun run() {
+            if (clockMode && isActivityStarted && isScreenInteractive()) {
+                advanceAutoWallpaper()
+            }
+            scheduleHourlyWallpaperUpdates()
+        }
+    }
 
     fun showMsg(msg: String) {
         runOnUiThread {
@@ -125,6 +149,8 @@ class ClockActivity : AppCompatActivity() {
         setContentView(R.layout.activity_clock)
 //        mediaButtonReceiverInit()
 
+        wallpaperView = findViewById(R.id.clock_wallpaper)
+        wallpaperMaskView = findViewById(R.id.clock_wallpaper_mask)
         val tvTop = findViewById<TextView>(R.id.tv_top)
         val tvTime = findViewById<TextView>(R.id.tv_time)
         val tvDate = findViewById<TextView>(R.id.tv_date)
@@ -427,6 +453,12 @@ class ClockActivity : AppCompatActivity() {
         MeService.me?.syncLyricsSetting()
         setFullscreen()
         AmbientBrightnessController.applyLatestTo(window)
+        if (clockMode) {
+            wallpaperView.post {
+                loadClockWallpaper()
+                scheduleHourlyWallpaperUpdates()
+            }
+        }
     }
 
     override fun onBackPressed() {
@@ -454,6 +486,8 @@ class ClockActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.btm_layout3).visibility = View.GONE
         findViewById<LinearLayout>(R.id.btm_layout4).visibility = View.GONE
         findViewById<LinearLayout>(R.id.music_progress_layout).visibility = View.GONE
+        loadClockWallpaper()
+        scheduleHourlyWallpaperUpdates()
 
         val displayMetrics = DisplayMetrics()
         windowManager.defaultDisplay.getMetrics(displayMetrics)
@@ -517,6 +551,167 @@ class ClockActivity : AppCompatActivity() {
             isVerticalLayout = true
         }
         setupClockTextAutoSize(tvTop, tvTime, tvDate)
+    }
+
+    private fun scheduleHourlyWallpaperUpdates() {
+        timeHandler.removeCallbacks(hourlyWallpaperRunnable)
+        if (!clockMode) return
+        val remainder = System.currentTimeMillis() % HOUR_MILLIS
+        val delay = (HOUR_MILLIS - remainder).coerceAtLeast(1000L)
+        timeHandler.postDelayed(hourlyWallpaperRunnable, delay)
+    }
+
+    private fun isScreenInteractive(): Boolean {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        @Suppress("DEPRECATION")
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            powerManager.isInteractive
+        } else {
+            powerManager.isScreenOn
+        }
+    }
+
+    private fun listAutoWallpaperFiles(): List<File> {
+        return try {
+            if (!autoWallpaperDirectory.exists()) {
+                autoWallpaperDirectory.mkdirs()
+            }
+            if (!autoWallpaperDirectory.isDirectory) {
+                emptyList()
+            } else {
+                autoWallpaperDirectory.listFiles()
+                    ?.filter { it.isFile && isAutoWallpaperFile(it) }
+                    ?.sortedBy { it.name.lowercase(Locale.ROOT) }
+                    .orEmpty()
+            }
+        } catch (_: SecurityException) {
+            emptyList()
+        }
+    }
+
+    private fun isAutoWallpaperFile(file: File): Boolean {
+        return when (file.extension.lowercase(Locale.ROOT)) {
+            "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif" -> true
+            else -> false
+        }
+    }
+
+    private fun hasSameAutoWallpaperFiles(files: List<File>): Boolean {
+        return files.map { it.absolutePath }.toSet() ==
+                autoWallpaperFiles.map { it.absolutePath }.toSet()
+    }
+
+    private fun shuffleAutoWallpaperFiles(files: List<File>, avoid: File? = null): List<File> {
+        val shuffled = files.shuffled().toMutableList()
+        if (avoid != null && shuffled.size > 1 && shuffled.first().absolutePath == avoid.absolutePath) {
+            shuffled[0] = shuffled[1].also { shuffled[1] = shuffled[0] }
+        }
+        return shuffled
+    }
+
+    private fun advanceAutoWallpaper() {
+        val files = listAutoWallpaperFiles()
+        if (files.isEmpty()) {
+            autoWallpaperFiles = emptyList()
+            autoWallpaperIndex = -1
+            currentAutoWallpaper = null
+            loadClockWallpaper()
+            return
+        }
+
+        val previous = currentAutoWallpaper
+        if (!hasSameAutoWallpaperFiles(files) || autoWallpaperIndex !in autoWallpaperFiles.indices) {
+            autoWallpaperFiles = shuffleAutoWallpaperFiles(files, previous)
+            autoWallpaperIndex = 0
+        } else if (autoWallpaperIndex == autoWallpaperFiles.lastIndex) {
+            autoWallpaperFiles = shuffleAutoWallpaperFiles(files, previous)
+            autoWallpaperIndex = 0
+        } else {
+            autoWallpaperIndex++
+        }
+        currentAutoWallpaper = autoWallpaperFiles[autoWallpaperIndex]
+        loadClockWallpaper()
+    }
+
+    private fun selectAutoWallpaper(): File? {
+        val files = listAutoWallpaperFiles()
+        if (files.isEmpty()) {
+            autoWallpaperFiles = emptyList()
+            autoWallpaperIndex = -1
+            currentAutoWallpaper = null
+            return null
+        }
+        if (!hasSameAutoWallpaperFiles(files) ||
+            currentAutoWallpaper == null || !currentAutoWallpaper!!.isFile
+        ) {
+            autoWallpaperFiles = shuffleAutoWallpaperFiles(files)
+            autoWallpaperIndex = 0
+            currentAutoWallpaper = autoWallpaperFiles[autoWallpaperIndex]
+        }
+        return currentAutoWallpaper
+    }
+
+    private fun loadClockWallpaper() {
+        val width = wallpaperView.width.coerceAtLeast(resources.displayMetrics.widthPixels)
+        val height = wallpaperView.height.coerceAtLeast(resources.displayMetrics.heightPixels)
+        val auto = selectAutoWallpaper()
+        val selected = auto ?: File(filesDir, "desk.jpg")
+        val bitmap = decodeSampledFileSafely(selected, width, height)
+            ?: if (auto != null) {
+                decodeSampledFileSafely(File(filesDir, "desk.jpg"), width, height)
+            } else {
+                null
+            }
+
+        if (bitmap == null) {
+            hideClockWallpaper()
+            return
+        }
+
+        val old = wallpaperBitmap
+        wallpaperBitmap = bitmap
+        wallpaperView.setImageBitmap(bitmap)
+        wallpaperView.visibility = View.VISIBLE
+        wallpaperMaskView.visibility = View.VISIBLE
+        if (old != null && old !== bitmap && !old.isRecycled) old.recycle()
+    }
+
+    private fun hideClockWallpaper() {
+        wallpaperView.visibility = View.GONE
+        wallpaperMaskView.visibility = View.GONE
+        wallpaperView.setImageDrawable(null)
+        wallpaperBitmap?.let { if (!it.isRecycled) it.recycle() }
+        wallpaperBitmap = null
+    }
+
+    private fun decodeSampledFileSafely(file: File, width: Int, height: Int): Bitmap? {
+        return if (file.exists() && file.length() > 0L) {
+            try {
+                decodeSampledFile(file, width, height)
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+    }
+
+    private fun decodeSampledFile(file: File, width: Int, height: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight, width, height)
+        }
+        return BitmapFactory.decodeFile(file.absolutePath, options)
+    }
+
+    private fun calculateSampleSize(sourceWidth: Int, sourceHeight: Int, width: Int, height: Int): Int {
+        var sample = 1
+        while (sourceWidth / (sample * 2) >= width && sourceHeight / (sample * 2) >= height) {
+            sample *= 2
+        }
+        return sample
     }
 
     private fun setupClockTextAutoSize(tvTop: TextView, tvTime: TextView, tvDate: TextView) {
@@ -617,9 +812,11 @@ class ClockActivity : AppCompatActivity() {
     override fun onDestroy() {
 //        mediaButtonReceiverDestroy()
         // 时间计时器回收
+        timeHandler.removeCallbacks(hourlyWallpaperRunnable)
         if (runnable != null) {
             timeHandler.removeCallbacks(runnable!!)
         }
+        if (::wallpaperView.isInitialized) hideClockWallpaper()
 //        stopService(Intent(this, MeService::class.java))
 //        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
         me = null

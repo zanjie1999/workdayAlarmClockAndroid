@@ -6,6 +6,29 @@
     android:layout_height="match_parent"
     tools:context=".ClockActivity">
 
+    <ImageView
+        android:id="@+id/clock_wallpaper"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:contentDescription="壁纸"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <View
+        android:id="@+id/clock_wallpaper_mask"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="#40000000"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <com.zyyme.workdayalarmclock.CircularMusicProgressView
         android:id="@+id/circular_music_progress"
         android:layout_width="0dp"
