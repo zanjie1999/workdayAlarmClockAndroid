@@ -209,7 +209,7 @@ class MeService : Service() {
     }
 
     private fun applyFirstLaunchModeDefaults() {
-        val configFile = File(applicationInfo.nativeLibraryDir, "workdayAlarmClock.json")
+        val configFile = File(filesDir.absolutePath, "workdayAlarmClock.json")
         if (configFile.exists()) return
 
         val deviceModel = Build.MANUFACTURER + Build.MODEL
