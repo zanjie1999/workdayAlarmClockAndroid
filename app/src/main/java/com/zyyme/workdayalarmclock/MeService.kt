@@ -219,6 +219,7 @@ class MeService : Service() {
         }
         if (useDeskClockByModel || isLargeLandscapeScreen()) {
             MeSettings.setEnabled(this, MeSettings.KEY_DESK_CLOCK, true)
+            MeSettings.setEnabled(this, MeSettings.KEY_LYRICS, true)
         }
     }
 
