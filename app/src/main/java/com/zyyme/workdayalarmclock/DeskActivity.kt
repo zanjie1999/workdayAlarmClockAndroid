@@ -1277,9 +1277,7 @@ class DeskActivity : AppCompatActivity() {
         if (systemNavigationDialogCount > 0) {
             return super.dispatchKeyEvent(event)
         }
-        val isConfirmKey = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                event.keyCode == KeyEvent.KEYCODE_ENTER
-        if (isConfirmKey) {
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             when (event.action) {
                 KeyEvent.ACTION_DOWN -> {
                     if (event.repeatCount == 0 && confirmKeyDownCode == 0) {
