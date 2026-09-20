@@ -52,6 +52,7 @@ class ClockActivity : AppCompatActivity() {
         var me: ClockActivity? = null
 
         private const val HOUR_MILLIS = 60L * 60L * 1000L
+        private const val CONFIRM_LONG_PRESS_DELAY_MS = 900L
     }
 
     var mediaSessionCompat: MediaSessionCompat? = null
@@ -77,6 +78,15 @@ class ClockActivity : AppCompatActivity() {
     private var isVerticalLayout = false
 
     private var isUserSeeking = false
+    private var confirmKeyDownCode = 0
+    private var confirmKeyLongPressTriggered = false
+    private val confirmKeyLongPressRunnable = Runnable {
+        if (!clockMode || confirmKeyDownCode == 0 || confirmKeyLongPressTriggered) {
+            return@Runnable
+        }
+        confirmKeyLongPressTriggered = true
+        recreate()
+    }
 
     private lateinit var wallpaperView: ImageView
     private lateinit var wallpaperMaskView: View
@@ -817,6 +827,7 @@ class ClockActivity : AppCompatActivity() {
         if (runnable != null) {
             timeHandler.removeCallbacks(runnable!!)
         }
+        timeHandler.removeCallbacks(confirmKeyLongPressRunnable)
         if (::wallpaperView.isInitialized) hideClockWallpaper()
 //        stopService(Intent(this, MeService::class.java))
 //        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()
@@ -825,8 +836,44 @@ class ClockActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
+        if (keyEvent == null) return false
         if (clockMode) {
-            when (keyEvent?.action) {
+            val isConfirmKey = keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    keyEvent.keyCode == KeyEvent.KEYCODE_ENTER
+            if (isConfirmKey) {
+                when (keyEvent.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        if (keyEvent.repeatCount == 0 && confirmKeyDownCode == 0) {
+                            confirmKeyDownCode = keyEvent.keyCode
+                            confirmKeyLongPressTriggered = false
+                            timeHandler.postDelayed(
+                                confirmKeyLongPressRunnable,
+                                CONFIRM_LONG_PRESS_DELAY_MS
+                            )
+                        }
+                        return if (keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                            true
+                        } else {
+                            super.dispatchKeyEvent(keyEvent)
+                        }
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        if (confirmKeyDownCode == keyEvent.keyCode) {
+                            timeHandler.removeCallbacks(confirmKeyLongPressRunnable)
+                            val wasLongPress = confirmKeyLongPressTriggered
+                            confirmKeyDownCode = 0
+                            confirmKeyLongPressTriggered = false
+                            if (wasLongPress) return true
+                            if (keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                                MeService.me?.keyHandleAction(KeyEvent.KEYCODE_DPAD_CENTER)
+                                return true
+                            }
+                        }
+                        return super.dispatchKeyEvent(keyEvent)
+                    }
+                }
+            }
+            when (keyEvent.action) {
                 KeyEvent.ACTION_DOWN -> {
                     if (MeService.me?.keyHandle(keyEvent.keyCode, true) == true) {
                         return true

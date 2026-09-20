@@ -77,6 +77,7 @@ class DeskActivity : AppCompatActivity() {
         private const val LYRICS_BOTTOM = 1
         private const val LYRICS_NONE = 2
         private const val HOUR_MILLIS = 60L * 60L * 1000L
+        private const val CONFIRM_LONG_PRESS_DELAY_MS = 900L
 
     }
 
@@ -130,6 +131,14 @@ class DeskActivity : AppCompatActivity() {
     private var currentAutoWallpaper: File? = null
     private var isUserSeeking = false
     private var isUserAdjustingVolume = false
+    private var systemNavigationDialogCount = 0
+    private var confirmKeyDownCode = 0
+    private var confirmKeyLongPressTriggered = false
+    private val confirmKeyLongPressRunnable = Runnable {
+        if (confirmKeyDownCode == 0 || confirmKeyLongPressTriggered) return@Runnable
+        confirmKeyLongPressTriggered = true
+        showDeskMenu()
+    }
     private var lyricsRefreshScheduled = false
     private var lyricsEnabled = false
     var alarmMode = false
@@ -1230,7 +1239,12 @@ class DeskActivity : AppCompatActivity() {
 
     private fun showImmersiveDialog(dialog: AlertDialog) {
         dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
-        dialog.setOnDismissListener { setFullscreen() }
+        systemNavigationDialogCount++
+        dialog.setOnDismissListener {
+            systemNavigationDialogCount = (systemNavigationDialogCount - 1).coerceAtLeast(0)
+            if (systemNavigationDialogCount == 0) resetConfirmKeyLongPress()
+            setFullscreen()
+        }
         dialog.show()
         dialog.window?.let { dialogWindow ->
             hideSystemBars(dialogWindow)
@@ -1259,11 +1273,55 @@ class DeskActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent?): Boolean {
-        when (event?.action) {
+        if (event == null) return false
+        if (systemNavigationDialogCount > 0) {
+            return super.dispatchKeyEvent(event)
+        }
+        val isConfirmKey = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                event.keyCode == KeyEvent.KEYCODE_ENTER
+        if (isConfirmKey) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0 && confirmKeyDownCode == 0) {
+                        confirmKeyDownCode = event.keyCode
+                        confirmKeyLongPressTriggered = false
+                        handler.postDelayed(
+                            confirmKeyLongPressRunnable,
+                            CONFIRM_LONG_PRESS_DELAY_MS
+                        )
+                    }
+                    return if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                        true
+                    } else {
+                        super.dispatchKeyEvent(event)
+                    }
+                }
+                KeyEvent.ACTION_UP -> {
+                    if (confirmKeyDownCode == event.keyCode) {
+                        handler.removeCallbacks(confirmKeyLongPressRunnable)
+                        val wasLongPress = confirmKeyLongPressTriggered
+                        resetConfirmKeyLongPress()
+                        if (wasLongPress) return true
+                        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_DPAD_CENTER)
+                            return true
+                        }
+                    }
+                    return super.dispatchKeyEvent(event)
+                }
+            }
+        }
+        when (event.action) {
             KeyEvent.ACTION_DOWN -> if (MeService.me?.keyHandle(event.keyCode, true) == true) return true
             KeyEvent.ACTION_UP -> if (MeService.me?.keyHandle(event.keyCode, false) == true) return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun resetConfirmKeyLongPress() {
+        handler.removeCallbacks(confirmKeyLongPressRunnable)
+        confirmKeyDownCode = 0
+        confirmKeyLongPressTriggered = false
     }
 
     override fun onBackPressed() {
@@ -1283,6 +1341,7 @@ class DeskActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         window.decorView.removeCallbacks(fullscreenRestoreRunnable)
+        resetConfirmKeyLongPress()
         handler.removeCallbacks(refreshRunnable)
         handler.removeCallbacks(nonLyricsRefreshRunnable)
         handler.removeCallbacks(hourlyUpdateRunnable)
