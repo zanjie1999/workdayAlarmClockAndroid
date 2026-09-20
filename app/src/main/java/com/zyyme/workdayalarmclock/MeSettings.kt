@@ -24,6 +24,8 @@ object MeSettings {
     const val KEY_AP = "ap"
     const val KEY_AUTO_BACK_CLOCK = "auto_back_clock"
     const val KEY_NOTIFICATION_FORWARD_URL = "notification_forward_url"
+    const val KEY_NOTIFICATION_FORWARD_SCREEN_OFF_ONLY = "notification_forward_screen_off_only"
+    const val KEY_NOTIFICATION_FORWARD_BLACKLIST = "notification_forward_blacklist"
     const val KEY_TODO_URL = "todo_url"
     const val KEY_CAMERA_SERVER = "camera_server"
     const val KEY_CAMERA_PASSWORD = "camera_password"
@@ -118,6 +120,24 @@ object MeSettings {
             editor.remove(KEY_NOTIFICATION_FORWARD_URL)
         } else {
             editor.putString(KEY_NOTIFICATION_FORWARD_URL, cleanUrl)
+        }
+        editor.apply()
+    }
+
+    fun getNotificationForwardBlacklist(context: Context): Set<String> {
+        return preferences(context)
+            .getStringSet(KEY_NOTIFICATION_FORWARD_BLACKLIST, emptySet())
+            ?.toSet()
+            .orEmpty()
+    }
+
+    fun setNotificationForwardBlacklist(context: Context, packageNames: Set<String>) {
+        val cleanPackageNames = packageNames.filterTo(mutableSetOf()) { it.isNotBlank() }
+        val editor = preferences(context).edit()
+        if (cleanPackageNames.isEmpty()) {
+            editor.remove(KEY_NOTIFICATION_FORWARD_BLACKLIST)
+        } else {
+            editor.putStringSet(KEY_NOTIFICATION_FORWARD_BLACKLIST, cleanPackageNames)
         }
         editor.apply()
     }

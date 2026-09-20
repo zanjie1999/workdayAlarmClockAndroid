@@ -17,6 +17,7 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.inputmethod.EditorInfo
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -31,7 +32,9 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import kotlin.system.exitProcess
 import androidx.core.net.toUri
+import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
+import com.zyyme.workdayalarmclock.notification.MeNotificationListenerService
 import java.util.concurrent.atomic.AtomicBoolean
 
 
@@ -313,7 +316,7 @@ class MainActivity : AppCompatActivity() {
         }
         popupMenu.menu.add(Menu.NONE, OPEN_DEVICE_ADMIN, MENU_SETTING_START + settingsMenuItems.size, "授权熄屏权限")
         popupMenu.menu.add(Menu.NONE, OPEN_ACCESSIBILITY_SETTINGS, MENU_SETTING_START + settingsMenuItems.size + 1, "辅助功能设置")
-        popupMenu.menu.add(Menu.NONE, OPEN_NOTIFICATION_FORWARD_URL, MENU_SETTING_START + settingsMenuItems.size + 2, "通知转发URL")
+        popupMenu.menu.add(Menu.NONE, OPEN_NOTIFICATION_FORWARD_URL, MENU_SETTING_START + settingsMenuItems.size + 2, "通知转发设置")
         popupMenu.menu.add(Menu.NONE, OPEN_TODO_URL, MENU_SETTING_START + settingsMenuItems.size + 3, "待办接口URL")
         popupMenu.menu.add(Menu.NONE, TOGGLE_CAMERA_SERVER, MENU_SETTING_START + settingsMenuItems.size + 4, "IP摄像头").apply {
             isCheckable = true
@@ -350,7 +353,7 @@ class MainActivity : AppCompatActivity() {
                 openAccessibilitySettings()
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_NOTIFICATION_FORWARD_URL) {
-                showNotificationForwardUrlDialog()
+                showNotificationForwardSettingsDialog()
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_TODO_URL) {
                 showTodoUrlDialog()
@@ -787,9 +790,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showNotificationForwardUrlDialog() {
+    private fun showNotificationForwardSettingsDialog() {
+        val density = resources.displayMetrics.density
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val horizontalPadding = (20 * density).toInt()
+            setPadding(horizontalPadding, (8 * density).toInt(), horizontalPadding, 0)
+        }
+
+        container.addView(TextView(this).apply {
+            text = "转发 URL"
+            textSize = 14f
+        })
         val input = EditText(this).apply {
-            hint = "通知内容将拼在URL末端推送"
+            hint = "通知内容将拼在URL末端推送，也支持标签替换：应用{app}包名{pkg}标题{title}内容{msg}"
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_VARIATION_URI or
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
@@ -797,14 +811,81 @@ class MainActivity : AppCompatActivity() {
             setText(MeSettings.getNotificationForwardUrl(this@MainActivity))
             setSelection(text.length)
         }
+        container.addView(input)
+
+        val screenOffOnlySwitch = Switch(this).apply {
+            text = "亮屏时不推送"
+            isChecked = MeSettings.isEnabled(
+                this@MainActivity,
+                MeSettings.KEY_NOTIFICATION_FORWARD_SCREEN_OFF_ONLY
+            )
+            setPadding(0, (8 * density).toInt(), 0, 0)
+        }
+        container.addView(screenOffOnlySwitch)
+
+        container.addView(TextView(this).apply {
+            text = "应用黑名单（勾选后不推送）"
+            textSize = 14f
+            setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
+        })
+
+        val savedBlacklist = MeSettings.getNotificationForwardBlacklist(this)
+        val recentPackageNames = MeNotificationListenerService.getRecentPackageNames()
+        val recentPackageSet = recentPackageNames.toSet()
+
+        fun appDisplayName(packageName: String): String {
+            return try {
+                val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+                val appName = packageManager.getApplicationLabel(applicationInfo).toString()
+                if (appName == packageName) packageName else "$appName\n$packageName"
+            } catch (_: Exception) {
+                packageName
+            }
+        }
+
+        val recentChoices = recentPackageNames.map { it to appDisplayName(it) }
+        val blacklistOnlyChoices = savedBlacklist
+            .filterNot { it in recentPackageSet }
+            .map { it to appDisplayName(it) }
+            .sortedBy { it.second.lowercase() }
+        val appChoices = recentChoices + blacklistOnlyChoices
+        val appCheckBoxes = LinkedHashMap<String, CheckBox>()
+
+        if (appChoices.isEmpty()) {
+            container.addView(TextView(this).apply {
+                text = "暂无最近转发过通知的应用"
+                setPadding(0, (6 * density).toInt(), 0, (8 * density).toInt())
+            })
+        } else {
+            appChoices.forEach { (packageName, displayName) ->
+                val checkBox = CheckBox(this).apply {
+                    text = displayName
+                    isChecked = packageName in savedBlacklist
+                    setPadding(0, (2 * density).toInt(), 0, (2 * density).toInt())
+                }
+                appCheckBoxes[packageName] = checkBox
+                container.addView(checkBox)
+            }
+        }
+
+        val scroll = ScrollView(this).apply { addView(container) }
 
         AlertDialog.Builder(this)
-            .setTitle("通知转发URL")
-            .setView(input)
+            .setTitle("通知转发设置")
+            .setView(scroll)
             .setNegativeButton("取消", null)
             .setPositiveButton("保存") { _, _ ->
                 val url = input.text.toString().trim()
                 MeSettings.setNotificationForwardUrl(this, url)
+                MeSettings.setEnabled(
+                    this,
+                    MeSettings.KEY_NOTIFICATION_FORWARD_SCREEN_OFF_ONLY,
+                    screenOffOnlySwitch.isChecked
+                )
+                MeSettings.setNotificationForwardBlacklist(
+                    this,
+                    appCheckBoxes.filterValues { it.isChecked }.keys
+                )
                 if (url.isEmpty()) {
                     Toast.makeText(this, "通知转发功能已关闭", Toast.LENGTH_SHORT).show()
                 } else {

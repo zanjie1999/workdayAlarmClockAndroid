@@ -1,13 +1,17 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.notification
 
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.os.Build
+import android.os.PowerManager
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.annotation.RequiresApi
+import com.zyyme.workdayalarmclock.MeService
+import com.zyyme.workdayalarmclock.MeSettings
+import com.zyyme.workdayalarmclock.UnsafeHttps
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -29,7 +33,15 @@ class MeNotificationListenerService : NotificationListenerService() {
         private const val READ_TIMEOUT_MILLIS = 5000
         private const val DEDUP_WINDOW_MILLIS = 1000L
         private const val FORWARD_INTERVAL_MILLIS = 3000L
+        private const val RECENT_PACKAGE_LIMIT = 50
         private val URL_PLACEHOLDERS = listOf("{title}", "{msg}", "{pkg}", "{app}")
+
+        @Volatile
+        private var activeInstance: MeNotificationListenerService? = null
+
+        fun getRecentPackageNames(): List<String> {
+            return activeInstance?.recentPackages?.snapshotNewestFirst().orEmpty()
+        }
     }
 
     private data class PendingForward(
@@ -42,7 +54,14 @@ class MeNotificationListenerService : NotificationListenerService() {
     private val forwardingExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
     private val pendingForwards = ArrayDeque<PendingForward>()
     private val recentForwardKeys = HashMap<String, Long>()
+    private val recentPackages = RecentPackageList(RECENT_PACKAGE_LIMIT)
     private var scheduledForward: ScheduledFuture<*>? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        recentPackages.clear()
+        activeInstance = this
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null || sbn.packageName == packageName) {
@@ -60,7 +79,29 @@ class MeNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        enqueueForward(PendingForward(forwardUrl, title, content, sbn.packageName))
+        val screenOffOnly = MeSettings.isEnabled(
+            this,
+            MeSettings.KEY_NOTIFICATION_FORWARD_SCREEN_OFF_ONLY
+        )
+        if (NotificationForwardFilter.isBlockedByScreen(
+                screenOffOnly,
+                screenOffOnly && isScreenInteractive()
+            )
+        ) {
+            return
+        }
+
+        if (NotificationForwardFilter.isBlacklisted(
+                sbn.packageName,
+                MeSettings.getNotificationForwardBlacklist(this)
+            )
+        ) {
+            return
+        }
+
+        if (enqueueForward(PendingForward(forwardUrl, title, content, sbn.packageName))) {
+            recentPackages.record(sbn.packageName)
+        }
     }
 
     override fun onDestroy() {
@@ -69,10 +110,24 @@ class MeNotificationListenerService : NotificationListenerService() {
             scheduledForward = null
         }
         forwardingExecutor.shutdownNow()
+        recentPackages.clear()
+        if (activeInstance === this) {
+            activeInstance = null
+        }
         super.onDestroy()
     }
 
-    private fun enqueueForward(forward: PendingForward) {
+    @Suppress("DEPRECATION")
+    private fun isScreenInteractive(): Boolean {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+            powerManager.isInteractive
+        } else {
+            powerManager.isScreenOn
+        }
+    }
+
+    private fun enqueueForward(forward: PendingForward): Boolean {
         val now = SystemClock.elapsedRealtime()
         synchronized(pendingForwards) {
             val iterator = recentForwardKeys.entries.iterator()
@@ -84,7 +139,7 @@ class MeNotificationListenerService : NotificationListenerService() {
             val dedupKey = "${forward.packageName}\u0000${forward.title}\u0000${forward.content}"
             val lastForwardAt = recentForwardKeys[dedupKey]
             if (lastForwardAt != null && now - lastForwardAt < DEDUP_WINDOW_MILLIS) {
-                return
+                return false
             }
             recentForwardKeys[dedupKey] = now
             pendingForwards.addLast(forward)
@@ -96,6 +151,7 @@ class MeNotificationListenerService : NotificationListenerService() {
                 )
             }
         }
+        return true
     }
 
     private fun flushPendingForwards() {
@@ -169,26 +225,30 @@ class MeNotificationListenerService : NotificationListenerService() {
     }
 
     private fun buildForwardUrl(baseUrl: String, forwards: List<PendingForward>): String {
-        val title = forwards.joinToString("\n") { it.title }
-        val content = forwards.joinToString("\n") { it.content }
-        val packageName = forwards.joinToString("\n") { it.packageName }
-        if (!hasUrlPlaceholder(baseUrl)) {
+        val lastEqualsIndex = baseUrl.lastIndexOf('=')
+        if (lastEqualsIndex < 0) {
             return baseUrl + urlEncode(forwards.joinToString("\n") { "${it.title}：${it.content}" })
         }
 
-        var forwardUrl = baseUrl
-            .replace("{title}", urlEncode(title))
-            .replace("{msg}", urlEncode(content))
-            .replace("{pkg}", urlEncode(packageName))
-
-        if (forwardUrl.contains("{app}")) {
-            forwardUrl = forwardUrl.replace(
-                "{app}",
-                urlEncode(forwards.joinToString("\n") { getAppName(it.packageName) })
-            )
+        val prefix = baseUrl.substring(0, lastEqualsIndex + 1)
+        val template = baseUrl.substring(lastEqualsIndex + 1)
+        val separator = urlEncode("\n")
+        val mergedContent = forwards.joinToString(separator) { forward ->
+            if (hasUrlPlaceholder(template)) {
+                renderForwardTemplate(template, forward)
+            } else {
+                template + urlEncode("${forward.title}：${forward.content}")
+            }
         }
+        return prefix + mergedContent
+    }
 
-        return forwardUrl
+    private fun renderForwardTemplate(template: String, forward: PendingForward): String {
+        return template
+            .replace("{title}", urlEncode(forward.title))
+            .replace("{msg}", urlEncode(forward.content))
+            .replace("{pkg}", urlEncode(forward.packageName))
+            .replace("{app}", urlEncode(getAppName(forward.packageName)))
     }
 
     private fun hasUrlPlaceholder(url: String): Boolean {
@@ -210,6 +270,6 @@ class MeNotificationListenerService : NotificationListenerService() {
 
     private fun log(message: String) {
         Log.d(TAG, message)
-        MeService.me?.print2LogView(message)
+        MeService.Companion.me?.print2LogView(message)
     }
 }

@@ -1,8 +1,7 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.applist
 
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -23,6 +22,10 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.zyyme.workdayalarmclock.HomeLauncherActivity
+import com.zyyme.workdayalarmclock.MeSettings
+import com.zyyme.workdayalarmclock.R
+import com.zyyme.workdayalarmclock.StartupAppHelper
 import java.util.concurrent.Executors
 
 /**
@@ -59,8 +62,8 @@ class AppListActivity : AppCompatActivity() {
         btnBack.setOnClickListener {
             onBackPressed()
         }
-        returnPackage = intent.getStringExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE)
-        isHomeOpen = intent.getBooleanExtra(HomeLauncherActivity.EXTRA_IS_HOME_OPEN, false)
+        returnPackage = intent.getStringExtra(HomeLauncherActivity.Companion.EXTRA_RETURN_PACKAGE)
+        isHomeOpen = intent.getBooleanExtra(HomeLauncherActivity.Companion.EXTRA_IS_HOME_OPEN, false)
 
         adapter = AppAdapter(mutableListOf(), { appInfo ->
             // 点击 打开应用
@@ -156,18 +159,18 @@ class AppListActivity : AppCompatActivity() {
     }
 
     private fun copyPackageName(packageName: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager
         clipboard?.setPrimaryClip(ClipData.newPlainText("packageName", packageName))
         Toast.makeText(this, "已复制包名", Toast.LENGTH_SHORT).show()
     }
 
     private fun getPinnedApps(): Set<String> {
-        val prefs = getSharedPreferences(StartupAppHelper.PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences(StartupAppHelper.PREFS_NAME, MODE_PRIVATE)
         return prefs.getStringSet(StartupAppHelper.KEY_PINNED_APPS, emptySet()) ?: emptySet()
     }
 
     private fun togglePinApp(packageName: String) {
-        val prefs = getSharedPreferences(StartupAppHelper.PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences(StartupAppHelper.PREFS_NAME, MODE_PRIVATE)
         val pinnedApps = getPinnedApps().toMutableSet()
         if (pinnedApps.contains(packageName)) {
             pinnedApps.remove(packageName)
@@ -196,7 +199,7 @@ class AppListActivity : AppCompatActivity() {
         enableSearchKeyboardOnFocus()
         etSearch.requestFocus()
         etSearch.post {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.showSoftInput(etSearch, InputMethodManager.SHOW_IMPLICIT)
             etSearch.postDelayed({
                 if (!isActivityDestroyed) {
@@ -242,7 +245,7 @@ class AppListActivity : AppCompatActivity() {
             MeSettings.applyClockTheme(this)
             val intent =  MeSettings.createClockIntent(this).apply {
                 putExtra("clockMode", true)
-                putExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE, returnPackage)
+                putExtra(HomeLauncherActivity.Companion.EXTRA_RETURN_PACKAGE, returnPackage)
             }
             startActivity(intent)
         }

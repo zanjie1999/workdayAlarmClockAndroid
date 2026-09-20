@@ -36,6 +36,7 @@ import androidx.core.widget.TextViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 
 import java.io.File

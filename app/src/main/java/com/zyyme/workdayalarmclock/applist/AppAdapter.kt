@@ -1,4 +1,4 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.applist
 
 import android.graphics.Typeface
 import android.content.ComponentName
@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import com.zyyme.workdayalarmclock.R
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.ThreadPoolExecutor

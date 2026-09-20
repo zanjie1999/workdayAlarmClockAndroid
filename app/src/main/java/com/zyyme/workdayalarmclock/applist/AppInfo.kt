@@ -1,4 +1,4 @@
-package com.zyyme.workdayalarmclock
+package com.zyyme.workdayalarmclock.applist
 
 import android.content.pm.ResolveInfo
 

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.content.Intent
 import android.os.Bundle
+import com.zyyme.workdayalarmclock.applist.AppListActivity
 
 class HomeLauncherActivity : Activity() {
     companion object {
