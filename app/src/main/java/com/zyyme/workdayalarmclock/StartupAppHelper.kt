@@ -1,5 +1,6 @@
 package com.zyyme.workdayalarmclock
 
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -203,19 +204,52 @@ object StartupAppHelper {
         } else {
             Intent(context, MainActivity::class.java)
         }
-        launchInitialDestination(context, intent, accessibility)
-    }
-
-    private fun launchInitialDestination(
-        context: Context,
-        intent: Intent,
-        accessibility: Boolean
-    ) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (!accessibility) {
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         context.startActivity(intent)
+        // 检查一下有没有正常回到时钟
+        // 有的开机启动app启动的比较慢，导致最后显示的界面是别的app
+        scheduleClockVisibilityCheck(context)
+    }
+
+    /**
+     * 检查一下有没有正常回到时钟
+     * 有的开机启动app启动的比较慢，导致最后显示的界面是别的app
+     */
+    private fun scheduleClockVisibilityCheck(context: Context) {
+        if (!MeSettings.isEnabled(context, MeSettings.KEY_CLOCK)) return
+
+        val appContext = context.applicationContext
+        Handler(Looper.getMainLooper()).postDelayed({
+            val expectedActivity = MeSettings.createClockIntent(appContext).component?.className
+            val topActivity = try {
+                val manager = appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                manager?.getRunningTasks(1)?.firstOrNull()?.topActivity
+            } catch (_: SecurityException) {
+                null
+            }
+            val clockIsVisible = topActivity?.packageName == appContext.packageName &&
+                    topActivity?.className == expectedActivity
+
+            if (!clockIsVisible) {
+                Log.v(
+                    "workdayAlarmClock",
+                    "开机启动完成后时钟未在前台（当前=${topActivity?.flattenToShortString()}），再次切换时钟"
+                )
+                MeSettings.applyClockTheme(appContext)
+                try {
+                    val retryIntent = MeSettings.createClockIntent(appContext).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        putExtra("clockMode", true)
+                    }
+                    appContext.startActivity(retryIntent)
+                } catch (e: Exception) {
+                    Log.v("workdayAlarmClock", "再次切换时钟失败", e)
+                }
+            }
+        }, STARTUP_APP_DELAY_MILLIS)
     }
 
     private fun parseStartupApps(raw: String): List<String> {
