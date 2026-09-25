@@ -16,6 +16,7 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
+import android.util.Log
 import android.view.Surface
 import com.zyyme.workdayalarmclock.MeService
 import java.io.ByteArrayOutputStream
@@ -135,10 +136,14 @@ internal class CameraHttpServer(
         try {
             val request = readRequest(socket) ?: return
             val path = request.path
-            if ((request.method == "POST" || request.method == "PUT") && isPcmRoute(path)) {
+            if ((request.method == "POST" || request.method == "PUT") && path == "/aplay") {
                 if (!speakerEnabled()) {
                     writeEmptyResponse(socket, 404, "Not Found")
                     return
+                }
+                if (request.expectContinue) {
+                    socket.getOutputStream().write("HTTP/1.1 100 Continue\r\n\r\n".toByteArray(HTTP_CHARSET))
+                    socket.getOutputStream().flush()
                 }
                 socket.soTimeout = 0
                 streamPcm(socket, request)
@@ -197,8 +202,8 @@ internal class CameraHttpServer(
                     }
                 }
             }
-        } catch (_: Exception) {
-            // Client disconnects are expected while streams switch or viewers close.
+        } catch (e: Exception) {
+            print2LogView("HTTP客户端处理失败：${e.javaClass.simpleName}: ${e.message ?: "无错误信息"}")
         } finally {
             releaseClient(socket, pipeline)
             releaseAudioClient(socket, audioPipeline)
@@ -213,7 +218,8 @@ internal class CameraHttpServer(
         val method: String,
         val path: String,
         val uri: Uri,
-        val body: InputStream
+        val body: InputStream,
+        val expectContinue: Boolean
     )
 
     private fun readRequest(socket: Socket): HttpRequest? {
@@ -223,11 +229,21 @@ internal class CameraHttpServer(
         if (parts.size != 3 || parts[0] !in setOf("GET", "POST", "PUT")) return null
 
         var headerCount = 0
+        var chunked = false
+        var expectContinue = false
         while (true) {
             val line = readHttpLine(input) ?: return null
             if (line.isEmpty()) break
             headerCount++
             if (headerCount > 100) return null
+            if (line.substringBefore(':').trim().equals("Transfer-Encoding", ignoreCase = true)) {
+                chunked = line.substringAfter(':').trim().split(',')
+                    .any { it.trim().equals("chunked", ignoreCase = true) }
+            }
+            if (line.substringBefore(':').trim().equals("Expect", ignoreCase = true)) {
+                expectContinue = line.substringAfter(':').trim()
+                    .equals("100-continue", ignoreCase = true)
+            }
         }
 
         val uri = try {
@@ -236,7 +252,68 @@ internal class CameraHttpServer(
             return null
         }
         if (uri.fragment != null) return null
-        return HttpRequest(parts[0], uri.path.toString(), uri, input)
+        val body = if (chunked) ChunkedInputStream(input) else input
+        return HttpRequest(parts[0], uri.path.toString(), uri, body, expectContinue)
+    }
+
+    private class ChunkedInputStream(private val input: InputStream) : InputStream() {
+        private var remaining = 0
+        private var finished = false
+
+        override fun read(): Int {
+            if (!ensureChunk()) return -1
+            val value = input.read()
+            if (value < 0) throw java.io.EOFException("truncated chunk")
+            remaining--
+            if (remaining == 0) consumeCrlf()
+            return value
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (length == 0) return 0
+            if (!ensureChunk()) return -1
+            val count = input.read(buffer, offset, minOf(length, remaining))
+            if (count < 0) throw java.io.EOFException("truncated chunk")
+            if (count == 0) return 0
+            remaining -= count
+            if (remaining == 0) consumeCrlf()
+            return count
+        }
+
+        private fun ensureChunk(): Boolean {
+            if (finished) return false
+            if (remaining > 0) return true
+            val line = readLine() ?: throw java.io.EOFException("missing chunk header")
+            val sizeText = line.substringBefore(';').trim()
+            remaining = sizeText.toIntOrNull(16)
+                ?: throw IllegalArgumentException("invalid chunk size: $line")
+            if (remaining == 0) {
+                while (true) {
+                    val trailer = readLine() ?: throw java.io.EOFException("missing chunk trailer")
+                    if (trailer.isEmpty()) break
+                }
+                finished = true
+                return false
+            }
+            return true
+        }
+
+        private fun consumeCrlf() {
+            if (input.read() != '\r'.code || input.read() != '\n'.code) {
+                throw IllegalArgumentException("invalid chunk terminator")
+            }
+        }
+
+        private fun readLine(): String? {
+            val bytes = ByteArrayOutputStream()
+            while (true) {
+                val value = input.read()
+                if (value < 0) return null
+                if (value == '\n'.code) return bytes.toString(HTTP_CHARSET.name()).trimEnd('\r')
+                if (bytes.size() >= 8192) throw IllegalArgumentException("chunk line too long")
+                bytes.write(value)
+            }
+        }
     }
 
     private fun readHttpLine(input: InputStream): String? {
@@ -281,37 +358,38 @@ internal class CameraHttpServer(
         return path == "$prefix/aac"
     }
 
-    private fun isPcmRoute(path: String): Boolean {
-        val prefix = if (password.isEmpty()) "" else "/$password"
-        return path == "$prefix/aplay"
+    private fun print2LogView(s: String) {
+        MeService.me?.print2LogView("CameraHttp: $s")
+        Log.d("logView CameraHttp", s)
     }
 
     private fun streamPcm(socket: Socket, request: HttpRequest) {
-        val rate = request.uri.getQueryParameter("rate")?.toIntOrNull() ?: 44100
-        val channels = request.uri.getQueryParameter("channels")?.toIntOrNull() ?: 2
-        if (rate !in 8000..192000 || channels !in 1..2) {
-            MeService.me?.print2LogView("streamPcm: Unsupported")
-            writeEmptyResponse(socket, 400, "Unsupported")
-            return
-        }
+        try {
+            val rate = request.uri.getQueryParameter("rate")?.toIntOrNull() ?: 44100
+            val channels = request.uri.getQueryParameter("channels")?.toIntOrNull() ?: 2
+            if (rate !in 8000..192000 || channels !in 1..2) {
+                print2LogView("电脑音箱参数不支持：rate=$rate channels=$channels")
+                writeEmptyResponse(socket, 400, "Unsupported")
+                return
+            }
 
-        val channelMask = if (channels == 1) {
+            val channelMask = if (channels == 1) {
             AudioFormat.CHANNEL_OUT_MONO
         } else {
             AudioFormat.CHANNEL_OUT_STEREO
         }
-        val minBuffer = AudioTrack.getMinBufferSize(
+            val minBuffer = AudioTrack.getMinBufferSize(
             rate,
             channelMask,
             AudioFormat.ENCODING_PCM_16BIT
         )
-        if (minBuffer <= 0) {
-            MeService.me?.print2LogView("streamPcm: Unsupported Media Type $minBuffer")
-            writeEmptyResponse(socket, 415, "Unsupported Media Type $minBuffer")
-            return
-        }
+            if (minBuffer <= 0) {
+                print2LogView("电脑音箱无法获取缓冲区：rate=$rate channels=$channels result=$minBuffer")
+                writeEmptyResponse(socket, 415, "Unsupported Media Type")
+                return
+            }
 
-        val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
@@ -342,9 +420,9 @@ internal class CameraHttpServer(
             legacyTrack
         }
 
-        try {
             if (track.state != AudioTrack.STATE_INITIALIZED) {
-                MeService.me?.print2LogView("streamPcm: Unsupported Media Type")
+                print2LogView("电脑音箱初始化失败：rate=$rate channels=$channels state=${track.state}")
+                track.release()
                 writeEmptyResponse(socket, 415, "Unsupported Media Type")
                 return
             }
@@ -353,18 +431,46 @@ internal class CameraHttpServer(
             )
             socket.getOutputStream().flush()
             track.play()
-            val buffer = ByteArray(minBuffer.coerceAtLeast(2048))
+            val frameBytes = channels * 2
+            val buffer = ByteArray(minBuffer.coerceAtLeast(2048) + frameBytes)
+            var pending = 0
             while (true) {
-                val count = request.body.read(buffer)
+                val count = request.body.read(buffer, pending, buffer.size - pending)
                 if (count < 0) break
-                if (count > 0) track.write(buffer, 0, count)
+                if (count == 0) continue
+                val total = pending + count
+                val writable = total - (total % frameBytes)
+                var offset = 0
+                while (offset < writable) {
+                    val length = writable - offset
+                    val written = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        track.write(buffer, offset, length, AudioTrack.WRITE_BLOCKING)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        track.write(buffer, offset, length)
+                    }
+                    if (written < 0) {
+                        throw IllegalStateException("AudioTrack.write failed: $written")
+                    }
+                    if (written == 0) {
+                        Thread.sleep(1L)
+                    } else {
+                        offset += written
+                    }
+                }
+                pending = total - writable
+                if (pending > 0) {
+                    System.arraycopy(buffer, writable, buffer, 0, pending)
+                }
             }
-        } finally {
             try {
                 track.stop()
             } catch (_: Exception) {
             }
             track.release()
+        } catch (e: Exception) {
+            print2LogView("电脑音箱播放失败：${e.javaClass.simpleName}: ${e.message ?: "无错误信息"}")
+            throw e
         }
     }
 
