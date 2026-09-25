@@ -28,6 +28,7 @@ object MeSettings {
     const val KEY_NOTIFICATION_FORWARD_BLACKLIST = "notification_forward_blacklist"
     const val KEY_TODO_URL = "todo_url"
     const val KEY_CAMERA_SERVER = "camera_server"
+    const val KEY_COMPUTER_SPEAKER = "computer_speaker"
     const val KEY_CAMERA_PASSWORD = "camera_password"
     const val KEY_CAMERA_AUTO_BRIGHTNESS = "camera_auto_brightness"
     const val KEY_CAMERA_BRIGHTNESS_0 = "camera_brightness_0"

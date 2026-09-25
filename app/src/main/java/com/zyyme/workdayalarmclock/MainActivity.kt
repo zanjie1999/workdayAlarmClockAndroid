@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         private const val TOGGLE_HOME_LAUNCHER = 12
         private const val OPEN_TODO_URL = 13
         private const val OPEN_DESK = 14
+        private const val TOGGLE_COMPUTER_SPEAKER = 15
         private const val MENU_SETTING_START = 100
         private const val REQUEST_MEDIA_SERVER_PERMISSIONS = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
@@ -290,6 +291,8 @@ class MainActivity : AppCompatActivity() {
         }
         popupMenu.menu.findItem(TOGGLE_CAMERA_SERVER)?.isChecked =
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
+        popupMenu.menu.findItem(TOGGLE_COMPUTER_SPEAKER)?.isChecked =
+            MeSettings.isEnabled(this, MeSettings.KEY_COMPUTER_SPEAKER)
         popupMenu.menu.findItem(CONFIG_CAMERA_AUTO_BRIGHTNESS)?.isChecked =
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
         popupMenu.menu.findItem(TOGGLE_HOME_LAUNCHER)?.isChecked =
@@ -318,14 +321,17 @@ class MainActivity : AppCompatActivity() {
         popupMenu.menu.add(Menu.NONE, OPEN_ACCESSIBILITY_SETTINGS, MENU_SETTING_START + settingsMenuItems.size + 1, "辅助功能设置")
         popupMenu.menu.add(Menu.NONE, OPEN_NOTIFICATION_FORWARD_URL, MENU_SETTING_START + settingsMenuItems.size + 2, "通知转发设置")
         popupMenu.menu.add(Menu.NONE, OPEN_TODO_URL, MENU_SETTING_START + settingsMenuItems.size + 3, "待办接口URL")
-        popupMenu.menu.add(Menu.NONE, TOGGLE_CAMERA_SERVER, MENU_SETTING_START + settingsMenuItems.size + 4, "IP摄像头").apply {
+        popupMenu.menu.add(Menu.NONE, TOGGLE_COMPUTER_SPEAKER, MENU_SETTING_START + settingsMenuItems.size + 4, "作为电脑音箱").apply {
             isCheckable = true
         }
-        popupMenu.menu.add(Menu.NONE, EDIT_CAMERA_PASSWORD, MENU_SETTING_START + settingsMenuItems.size + 5, "摄像头密码")
-        popupMenu.menu.add(Menu.NONE, CONFIG_CAMERA_AUTO_BRIGHTNESS, MENU_SETTING_START + settingsMenuItems.size + 6, "摄像头自动亮度").apply {
+        popupMenu.menu.add(Menu.NONE, TOGGLE_CAMERA_SERVER, MENU_SETTING_START + settingsMenuItems.size + 5, "IP摄像头").apply {
             isCheckable = true
         }
-        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 7, "开发者选项")
+        popupMenu.menu.add(Menu.NONE, EDIT_CAMERA_PASSWORD, MENU_SETTING_START + settingsMenuItems.size + 6, "摄像头密码")
+        popupMenu.menu.add(Menu.NONE, CONFIG_CAMERA_AUTO_BRIGHTNESS, MENU_SETTING_START + settingsMenuItems.size + 7, "摄像头自动亮度").apply {
+            isCheckable = true
+        }
+        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 8, "开发者选项")
 
         popupMenu.setOnMenuItemClickListener { menuItem ->
             if (menuItem.itemId == MENU_EXIT) {
@@ -360,6 +366,12 @@ class MainActivity : AppCompatActivity() {
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == TOGGLE_CAMERA_SERVER) {
                 toggleCameraServer(menuItem.isChecked)
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == TOGGLE_COMPUTER_SPEAKER) {
+                val enabled = !menuItem.isChecked
+                MeSettings.setEnabled(this, MeSettings.KEY_COMPUTER_SPEAKER, enabled)
+                menuItem.isChecked = enabled
+                MeService.me?.syncCameraServerSetting()
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == EDIT_CAMERA_PASSWORD) {
                 showCameraPasswordDialog()

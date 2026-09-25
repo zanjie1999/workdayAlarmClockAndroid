@@ -491,23 +491,28 @@ class MeService : Service() {
     }
 
     fun syncCameraServerSetting() {
-        val configured = MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
-        val enabled = configured && hasAnyMediaPermission()
-        if (configured && !enabled) {
+        val cameraConfigured = MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
+        val speakerConfigured = MeSettings.isEnabled(this, MeSettings.KEY_COMPUTER_SPEAKER)
+        val cameraReady = !cameraConfigured || hasCameraPermission()
+        if (cameraConfigured && !cameraReady) {
             MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_SERVER, false)
-            print2LogView("摄像头和麦克风权限都未授权，媒体服务未启动")
+            print2LogView("摄像头权限未授权，IP摄像头未启动")
         }
 
         updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
-        if (!enabled) {
+        if (!speakerConfigured && !MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)) {
             cameraHttpServer?.stop()
             cameraHttpServer = null
             return
         }
 
-        val server = cameraHttpServer ?: CameraHttpServer(this, ambientBrightness) { message ->
-            print2LogView(message)
-        }.also { cameraHttpServer = it }
+        val server = cameraHttpServer ?: CameraHttpServer(
+            this,
+            ambientBrightness,
+            { message -> print2LogView(message) },
+            { MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) },
+            { MeSettings.isEnabled(this, MeSettings.KEY_COMPUTER_SPEAKER) }
+        ).also { cameraHttpServer = it }
         server.start(MeSettings.getCameraPassword(this))
     }
 

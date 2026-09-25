@@ -5,6 +5,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.Camera
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -13,7 +17,9 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
 import android.view.Surface
-import java.io.BufferedReader
+import com.zyyme.workdayalarmclock.MeService
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -27,7 +33,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class CameraHttpServer(
     context: Context,
     private val brightness: AmbientBrightnessController,
-    private val log: (String) -> Unit
+    private val log: (String) -> Unit,
+    private val cameraEnabled: () -> Boolean,
+    private val speakerEnabled: () -> Boolean
 ) {
     companion object {
         const val PORT = 8880
@@ -125,8 +133,22 @@ internal class CameraHttpServer(
         var pipeline: CameraStreamPipeline? = null
         var audioPipeline: AacAudioPipeline? = null
         try {
-            val path = readRequestPath(socket)
-            if (path == "/") {
+            val request = readRequest(socket) ?: return
+            val path = request.path
+            if ((request.method == "POST" || request.method == "PUT") && isPcmRoute(path)) {
+                if (!speakerEnabled()) {
+                    writeEmptyResponse(socket, 404, "Not Found")
+                    return
+                }
+                socket.soTimeout = 0
+                streamPcm(socket, request)
+                return
+            }
+            if (!cameraEnabled()) {
+                writeEmptyResponse(socket, 404, "Not Found")
+                return
+            }
+            if (path == "/" && request.method == "GET") {
                 writePlayerPage(socket)
                 return
             }
@@ -187,15 +209,22 @@ internal class CameraHttpServer(
         }
     }
 
-    private fun readRequestPath(socket: Socket): String? {
-        val reader = BufferedReader(InputStreamReader(socket.getInputStream(), HTTP_CHARSET))
-        val requestLine = reader.readLine() ?: return null
+    private data class HttpRequest(
+        val method: String,
+        val path: String,
+        val uri: Uri,
+        val body: InputStream
+    )
+
+    private fun readRequest(socket: Socket): HttpRequest? {
+        val input = socket.getInputStream()
+        val requestLine = readHttpLine(input) ?: return null
         val parts = requestLine.split(' ')
-        if (parts.size != 3 || parts[0] != "GET") return null
+        if (parts.size != 3 || parts[0] !in setOf("GET", "POST", "PUT")) return null
 
         var headerCount = 0
         while (true) {
-            val line = reader.readLine() ?: return null
+            val line = readHttpLine(input) ?: return null
             if (line.isEmpty()) break
             headerCount++
             if (headerCount > 100) return null
@@ -206,8 +235,19 @@ internal class CameraHttpServer(
         } catch (_: Exception) {
             return null
         }
-        if (uri.query != null || uri.fragment != null) return null
-        return uri.path
+        if (uri.fragment != null) return null
+        return HttpRequest(parts[0], uri.path.toString(), uri, input)
+    }
+
+    private fun readHttpLine(input: InputStream): String? {
+        val bytes = ByteArrayOutputStream()
+        while (true) {
+            val value = input.read()
+            if (value < 0) return if (bytes.size() == 0) null else bytes.toString(HTTP_CHARSET.name())
+            if (value == '\n'.code) return bytes.toString(HTTP_CHARSET.name()).trimEnd('\r')
+            if (bytes.size() >= 8192) return null
+            bytes.write(value)
+        }
     }
 
     private fun parseRoute(path: String): CameraStreamKey? {
@@ -239,6 +279,93 @@ internal class CameraHttpServer(
     private fun isAacRoute(path: String): Boolean {
         val prefix = if (password.isEmpty()) "" else "/$password"
         return path == "$prefix/aac"
+    }
+
+    private fun isPcmRoute(path: String): Boolean {
+        val prefix = if (password.isEmpty()) "" else "/$password"
+        return path == "$prefix/aplay"
+    }
+
+    private fun streamPcm(socket: Socket, request: HttpRequest) {
+        val rate = request.uri.getQueryParameter("rate")?.toIntOrNull() ?: 44100
+        val channels = request.uri.getQueryParameter("channels")?.toIntOrNull() ?: 2
+        if (rate !in 8000..192000 || channels !in 1..2) {
+            MeService.me?.print2LogView("streamPcm: Unsupported")
+            writeEmptyResponse(socket, 400, "Unsupported")
+            return
+        }
+
+        val channelMask = if (channels == 1) {
+            AudioFormat.CHANNEL_OUT_MONO
+        } else {
+            AudioFormat.CHANNEL_OUT_STEREO
+        }
+        val minBuffer = AudioTrack.getMinBufferSize(
+            rate,
+            channelMask,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBuffer <= 0) {
+            MeService.me?.print2LogView("streamPcm: Unsupported Media Type $minBuffer")
+            writeEmptyResponse(socket, 415, "Unsupported Media Type $minBuffer")
+            return
+        }
+
+        val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(rate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(channelMask)
+                        .build()
+                )
+                .setBufferSizeInBytes(minBuffer)
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            val legacyTrack = AudioTrack(
+                AudioManager.STREAM_MUSIC,
+                rate,
+                channelMask,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minBuffer,
+                AudioTrack.MODE_STREAM
+            )
+            legacyTrack
+        }
+
+        try {
+            if (track.state != AudioTrack.STATE_INITIALIZED) {
+                MeService.me?.print2LogView("streamPcm: Unsupported Media Type")
+                writeEmptyResponse(socket, 415, "Unsupported Media Type")
+                return
+            }
+            socket.getOutputStream().write(
+                "HTTP/1.0 200 OK\r\nConnection: close\r\n\r\n".toByteArray(HTTP_CHARSET)
+            )
+            socket.getOutputStream().flush()
+            track.play()
+            val buffer = ByteArray(minBuffer.coerceAtLeast(2048))
+            while (true) {
+                val count = request.body.read(buffer)
+                if (count < 0) break
+                if (count > 0) track.write(buffer, 0, count)
+            }
+        } finally {
+            try {
+                track.stop()
+            } catch (_: Exception) {
+            }
+            track.release()
+        }
     }
 
     private fun canStreamMicrophone(): Boolean {
