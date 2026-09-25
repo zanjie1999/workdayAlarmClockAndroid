@@ -378,15 +378,17 @@ internal class CameraHttpServer(
         } else {
             AudioFormat.CHANNEL_OUT_STEREO
         }
-            val minBuffer = AudioTrack.getMinBufferSize(
+        val minBuffer = (AudioTrack.getMinBufferSize(
             rate,
             channelMask,
             AudioFormat.ENCODING_PCM_16BIT
-        )
+        ) * 0.5).toInt()
             if (minBuffer <= 0) {
                 print2LogView("电脑音箱无法获取缓冲区：rate=$rate channels=$channels result=$minBuffer")
                 writeEmptyResponse(socket, 415, "Unsupported Media Type")
                 return
+            } else {
+                print2LogView("电脑音箱连接 缓冲：$minBuffer")
             }
 
             val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -404,7 +406,7 @@ internal class CameraHttpServer(
                         .setChannelMask(channelMask)
                         .build()
                 )
-                .setBufferSizeInBytes((minBuffer * 0.5).toInt())
+                .setBufferSizeInBytes(minBuffer)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .build()
         } else {
@@ -414,7 +416,7 @@ internal class CameraHttpServer(
                 rate,
                 channelMask,
                 AudioFormat.ENCODING_PCM_16BIT,
-                (minBuffer * 0.5).toInt(),
+                minBuffer,
                 AudioTrack.MODE_STREAM
             )
             legacyTrack
