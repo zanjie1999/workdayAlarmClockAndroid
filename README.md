@@ -65,6 +65,18 @@ run
 3. 如果你还安装了投屏软件或是小爱同学app，打开“自动回到时钟”，会在别的app停止播放声音后10秒回到时钟界面，解决语音唤醒后界面不会自动消失的问题
 
 
+## 作为电脑音箱
+本来是Linux独享的功能，顺手写的，在做了个Windows上位机发现延迟跟没有一样，效果太好了，就给Android加上了，毕竟延迟比叮咚Play蓝牙低太多了  
+在右上角菜单中打开“作为电脑音箱”即可，注意端口号是`8880`，跟工作咩闹钟Web服务不一样，跟IP摄像头功能的一样  
+
+Windows直接用上位机 [loopbackPost](https://github.com/zanjie1999/loopbackPost)  
+
+或者用ffmpeg和curl（采集设备名按本机情况替换）：
+```cmd
+ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acodec pcm_s16le -ar 44100 -ac 2 -f s16le - | curl.exe -T - "http://192.168.1.147:8880/aplay?rate=44100&channels=2"
+```
+
+
 ## IP摄像头服务
 在右上角菜单中打开“IP摄像头”，第一次开启时可授权摄像头和麦克风权限。只授权其中一个也可以启动服务，未授权的设备不会输出对应的流。服务监听 `8880` 端口，摄像头编号从 `1` 开始  
 可以在“摄像头密码”设置访问密码，留空则没有密码  
