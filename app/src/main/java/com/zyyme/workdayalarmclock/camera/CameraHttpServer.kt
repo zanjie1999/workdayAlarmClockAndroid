@@ -374,15 +374,16 @@ internal class CameraHttpServer(
             }
 
             val channelMask = if (channels == 1) {
-            AudioFormat.CHANNEL_OUT_MONO
-        } else {
-            AudioFormat.CHANNEL_OUT_STEREO
-        }
-        val minBuffer = (AudioTrack.getMinBufferSize(
-            rate,
-            channelMask,
-            AudioFormat.ENCODING_PCM_16BIT
-        ) * 0.5).toInt()
+                AudioFormat.CHANNEL_OUT_MONO
+            } else {
+                AudioFormat.CHANNEL_OUT_STEREO
+            }
+            val minBufferFallback = AudioTrack.getMinBufferSize(
+                rate,
+                channelMask,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+            val minBuffer = minBufferFallback / 2
             if (minBuffer <= 0) {
                 print2LogView("电脑音箱无法获取缓冲区：rate=$rate channels=$channels result=$minBuffer")
                 writeEmptyResponse(socket, 415, "Unsupported Media Type")
@@ -392,35 +393,47 @@ internal class CameraHttpServer(
             }
 
             val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(rate)
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setChannelMask(channelMask)
-                        .build()
-                )
-                .setBufferSizeInBytes(minBuffer)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            val legacyTrack = AudioTrack(
-                AudioManager.STREAM_MUSIC,
-                rate,
-                channelMask,
-                AudioFormat.ENCODING_PCM_16BIT,
-                minBuffer,
-                AudioTrack.MODE_STREAM
-            )
-            legacyTrack
-        }
+                AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setSampleRate(rate)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setChannelMask(channelMask)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(minBuffer)
+                    .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                val legacyTrack = try {
+                    AudioTrack(
+                        AudioManager.STREAM_MUSIC,
+                        rate,
+                        channelMask,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        minBuffer,
+                        AudioTrack.MODE_STREAM
+                    )
+                } catch (e: IllegalArgumentException) {
+                    print2LogView("小缓冲区不可用：$minBuffer，回退到 $minBufferFallback：${e.message}")
+                    AudioTrack(
+                        AudioManager.STREAM_MUSIC,
+                        rate,
+                        channelMask,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        minBufferFallback,
+                        AudioTrack.MODE_STREAM
+                    )
+                }
+                legacyTrack
+            }
 
             if (track.state != AudioTrack.STATE_INITIALIZED) {
                 print2LogView("电脑音箱初始化失败：rate=$rate channels=$channels state=${track.state}")
