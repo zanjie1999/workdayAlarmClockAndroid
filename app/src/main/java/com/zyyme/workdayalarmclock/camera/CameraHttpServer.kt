@@ -404,7 +404,7 @@ internal class CameraHttpServer(
                         .setChannelMask(channelMask)
                         .build()
                 )
-                .setBufferSizeInBytes(minBuffer)
+                .setBufferSizeInBytes((minBuffer * 0.5).toInt())
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .build()
         } else {
@@ -414,7 +414,7 @@ internal class CameraHttpServer(
                 rate,
                 channelMask,
                 AudioFormat.ENCODING_PCM_16BIT,
-                minBuffer,
+                (minBuffer * 0.5).toInt(),
                 AudioTrack.MODE_STREAM
             )
             legacyTrack
