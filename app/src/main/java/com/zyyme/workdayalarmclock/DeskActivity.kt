@@ -84,7 +84,7 @@ class DeskActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var returnPackage: String? = null
     private val fullscreenRestoreRunnable = Runnable {
-        if (!isFinishing && !isDestroyed) setFullscreen()
+        if (!isFinishing) setFullscreen()
     }
     var isActivityStarted = false
     private val slotKeys = arrayOf(
