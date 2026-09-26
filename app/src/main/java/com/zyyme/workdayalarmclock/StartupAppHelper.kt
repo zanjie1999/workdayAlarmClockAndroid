@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Handler
+import android.os.HandlerThread
+import android.os.SystemClock
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
@@ -18,6 +20,11 @@ object StartupAppHelper {
     const val KEY_PINNED_APPS = "pinned_apps"
     private const val KEY_STARTUP_APPS = "startup_apps"
     const val STARTUP_APP_DELAY_MILLIS = 5_000L
+    private const val MAX_CLOCK_VISIBILITY_CHECKS = 12
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val visibilityCheckHandler by lazy {
+        Handler(HandlerThread("ClockVisibilityCheck").apply { start() }.looper)
+    }
     private val startupLock = Any()
     private var startupAppLaunching = false
     private var startupAppsHandled = false
@@ -130,9 +137,9 @@ object StartupAppHelper {
             return
         }
 
-        Handler(Looper.getMainLooper()).postDelayed({
-            continueOriginalLogic()
-        }, launchedAppCount * STARTUP_APP_DELAY_MILLIS)
+        // 保持主线程处于启动流程中。某些定制系统会在这里切走或暂停进程
+        SystemClock.sleep(launchedAppCount * STARTUP_APP_DELAY_MILLIS)
+        continueOriginalLogic()
     }
 
     private fun launchStartupApps(context: Context, packageNames: List<String>): Int {
@@ -146,11 +153,11 @@ object StartupAppHelper {
             return 0
         }
 
-        val mainHandler = Handler(Looper.getMainLooper())
         launchablePackages.forEachIndexed { index, packageName ->
-            mainHandler.postDelayed({
-                launchStartupApp(context, packageName)
-            }, index * STARTUP_APP_DELAY_MILLIS)
+            if (index > 0) {
+                SystemClock.sleep(STARTUP_APP_DELAY_MILLIS)
+            }
+            launchStartupApp(context, packageName)
         }
         return launchablePackages.size
     }
@@ -209,47 +216,9 @@ object StartupAppHelper {
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         context.startActivity(intent)
-        // 检查一下有没有正常回到时钟
+
         // 有的开机启动app启动的比较慢，导致最后显示的界面是别的app
-        scheduleClockVisibilityCheck(context)
-    }
-
-    /**
-     * 检查一下有没有正常回到时钟
-     * 有的开机启动app启动的比较慢，导致最后显示的界面是别的app
-     */
-    private fun scheduleClockVisibilityCheck(context: Context) {
-        if (!MeSettings.isEnabled(context, MeSettings.KEY_CLOCK)) return
-
-        val appContext = context.applicationContext
-        Handler(Looper.getMainLooper()).postDelayed({
-            val expectedActivity = MeSettings.createClockIntent(appContext).component?.className
-            val topActivity = try {
-                val manager = appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                manager?.getRunningTasks(1)?.firstOrNull()?.topActivity
-            } catch (_: SecurityException) {
-                null
-            }
-            val clockIsVisible = topActivity?.packageName == appContext.packageName &&
-                    topActivity?.className == expectedActivity
-
-            if (!clockIsVisible) {
-                Log.v(
-                    "workdayAlarmClock",
-                    "开机启动完成后时钟未在前台（当前=${topActivity?.flattenToShortString()}），再次切换时钟"
-                )
-                MeSettings.applyClockTheme(appContext)
-                try {
-                    val retryIntent = MeSettings.createClockIntent(appContext).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                        putExtra("clockMode", true)
-                    }
-                    appContext.startActivity(retryIntent)
-                } catch (e: Exception) {
-                    Log.v("workdayAlarmClock", "再次切换时钟失败", e)
-                }
-            }
-        }, STARTUP_APP_DELAY_MILLIS)
+        MeService.me?.scheduleStartupClockReturn()
     }
 
     private fun parseStartupApps(raw: String): List<String> {

@@ -137,6 +137,7 @@ class MeService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
     private var autoBackClockRunnable: Runnable? = null
+    private var startupClockReturnRunnable: Runnable? = null
     private val playbackHandler = Handler(Looper.getMainLooper())
     private var playerState = PlayerState.IDLE
     private var playWhenReady = false
@@ -471,6 +472,27 @@ class MeService : Service() {
         autoBackClockRunnable = null
     }
 
+    /**
+     * 有的开机启动app启动的比较慢，导致最后显示的界面是别的app
+     */
+    fun scheduleStartupClockReturn(delayMillis: Long = 10000L) {
+        startupClockReturnRunnable?.let { mainHandler.removeCallbacks(it) }
+        startupClockReturnRunnable = Runnable {
+            startupClockReturnRunnable = null
+            if (!MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)) return@Runnable
+            try {
+                MeSettings.applyClockTheme(this)
+                startActivity(MeSettings.createClockIntent(this).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra("clockMode", true)
+                })
+            } catch (e: Exception) {
+                Log.v("workdayAlarmClock", "服务中切回时钟失败", e)
+            }
+        }
+        mainHandler.postDelayed(startupClockReturnRunnable!!, delayMillis)
+    }
+
     // 用于为通知操作创建 PendingIntent
     private fun createPendingIntentForAction(action: String): PendingIntent {
         val intent = Intent(this, MeMediaButtonReceiver::class.java).setAction(action)
@@ -592,6 +614,8 @@ class MeService : Service() {
             ambientBrightness.shutdown()
         }
         cancelAutoBackToClock()
+        startupClockReturnRunnable?.let { mainHandler.removeCallbacks(it) }
+        startupClockReturnRunnable = null
         playbackGeneration++
         playbackHandler.removeCallbacksAndMessages(null)
         releasePlayer()
@@ -1504,7 +1528,7 @@ class MeService : Service() {
         }
         val lines = lyricLines
         if (lines.isEmpty()) return null
-        val result = lines.binarySearchBy(positionMs) { it.timeMs }
+        val result = lines.binarySearchBy(positionMs + 200) { it.timeMs }
         val index = if (result >= 0) result else -result - 2
         return if (index >= 0) lines[index].text else ""
     }
