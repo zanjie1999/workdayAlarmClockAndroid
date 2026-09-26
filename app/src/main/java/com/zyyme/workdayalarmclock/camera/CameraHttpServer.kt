@@ -364,6 +364,7 @@ internal class CameraHttpServer(
     }
 
     private fun streamPcm(socket: Socket, request: HttpRequest) {
+        var track : AudioTrack? = null
         try {
             val rate = request.uri.getQueryParameter("rate")?.toIntOrNull() ?: 44100
             val channels = request.uri.getQueryParameter("channels")?.toIntOrNull() ?: 2
@@ -392,7 +393,7 @@ internal class CameraHttpServer(
                 print2LogView("电脑音箱连接 缓冲：$minBuffer")
             }
 
-            val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 AudioTrack.Builder()
                     .setAudioAttributes(
                         AudioAttributes.Builder()
@@ -486,6 +487,9 @@ internal class CameraHttpServer(
         } catch (e: Exception) {
             print2LogView("电脑音箱播放失败：${e.javaClass.simpleName}: ${e.message ?: "无错误信息"}")
             throw e
+        } finally {
+            track?.stop()
+            track?.release()
         }
     }
 
