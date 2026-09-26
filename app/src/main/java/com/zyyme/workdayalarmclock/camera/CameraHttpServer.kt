@@ -360,11 +360,34 @@ internal class CameraHttpServer(
 
     private fun print2LogView(s: String) {
         MeService.me?.print2LogView("CameraHttp: $s")
-        Log.d("logView CameraHttp", s)
+    }
+
+    private fun releasePcmTrack(track: AudioTrack?) {
+        if (track == null) return
+
+        // AudioTrack 初始化失败时 state == STATE_UNINITIALIZED，
+        // 此时不能调用 stop()/flush()，否则会抛：
+        // "stop() called on uninitialized AudioTrack"。
+        if (track.state == AudioTrack.STATE_INITIALIZED) {
+            try {
+                track.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                // 丢掉尚未播放的数据，断开连接时不要留下播放尾巴。
+                track.flush()
+            } catch (_: Exception) {
+            }
+        }
+
+        try {
+            track.release()
+        } catch (_: Exception) {
+        }
     }
 
     private fun streamPcm(socket: Socket, request: HttpRequest) {
-        var track : AudioTrack? = null
+        var track: AudioTrack? = null
         try {
             val rate = request.uri.getQueryParameter("rate")?.toIntOrNull() ?: 44100
             val channels = request.uri.getQueryParameter("channels")?.toIntOrNull() ?: 2
@@ -438,7 +461,8 @@ internal class CameraHttpServer(
 
             if (track.state != AudioTrack.STATE_INITIALIZED) {
                 print2LogView("电脑音箱初始化失败：rate=$rate channels=$channels state=${track.state}")
-                track.release()
+                releasePcmTrack(track)
+                track = null
                 writeEmptyResponse(socket, 415, "Unsupported Media Type")
                 return
             }
@@ -479,17 +503,15 @@ internal class CameraHttpServer(
                     System.arraycopy(buffer, writable, buffer, 0, pending)
                 }
             }
-            try {
-                track.stop()
-            } catch (_: Exception) {
-            }
-            track.release()
         } catch (e: Exception) {
             print2LogView("电脑音箱播放失败：${e.javaClass.simpleName}: ${e.message ?: "无错误信息"}")
             throw e
         } finally {
-            track?.stop()
-            track?.release()
+            // 每个 Socket 都只回收自己的 AudioTrack。
+            // 因此多个设备可以同时播放；旧连接即使晚于新连接退出，
+            // 也只会释放旧连接自己的 Track，不会碰新连接。
+            releasePcmTrack(track)
+            track = null
         }
     }
 
