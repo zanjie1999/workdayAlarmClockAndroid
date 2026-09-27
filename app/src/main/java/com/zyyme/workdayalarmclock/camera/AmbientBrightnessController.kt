@@ -219,7 +219,7 @@ internal class AmbientBrightnessController(
             faceMissingSince = now
             return
         }
-        if (now - faceMissingSince < 1_500L) return
+        if (now - faceMissingSince < 10_000L) return
 
         if (isBrightnessForcingScreenOff(level)) {
             brightnessWakeArmed = true
@@ -227,9 +227,7 @@ internal class AmbientBrightnessController(
         }
 
         brightnessWakeArmed = false
-        if (isScreenOn()) {
-            closeScreen()
-        }
+        closeScreen(ignoreKeepScreenOn = true)
     }
 
     fun beginLivePreview() {
@@ -354,11 +352,13 @@ internal class AmbientBrightnessController(
         DeskActivity.Companion.me?.let { applyLatestTo(it.window) }
     }
 
-    private fun closeScreen() {
-        val keepScreenOn = ClockActivity.Companion.me?.isKeepScreenOn == true || DeskActivity.Companion.me?.isKeepScreenOn == true
-        if (keepScreenOn && !MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON)) {
-            log("摄像头自动亮度跳过熄屏：当前设置了保持亮屏")
-            return
+    private fun closeScreen(ignoreKeepScreenOn: Boolean = false) {
+        if (!ignoreKeepScreenOn) {
+            val keepScreenOn = ClockActivity.Companion.me?.isKeepScreenOn == true || DeskActivity.Companion.me?.isKeepScreenOn == true
+            if (keepScreenOn && !MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON)) {
+                log("摄像头自动亮度跳过熄屏：当前设置了保持亮屏")
+                return
+            }
         }
         val manager = appContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(appContext, MeDeviceAdminReceiver::class.java)
