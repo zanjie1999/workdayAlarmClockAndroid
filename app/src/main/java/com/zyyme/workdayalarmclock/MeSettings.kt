@@ -41,6 +41,7 @@ object MeSettings {
     const val KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON = "camera_close_screen_keep_screen_on"
     const val KEY_CAMERA_AUTO_WAKE_LEVEL = "camera_auto_wake_level"
     const val KEY_CAMERA_BRIGHTNESS_INTERVAL = "camera_brightness_interval"
+    const val KEY_CAMERA_FACE_WAKE = "camera_face_wake"
     const val KEY_DESK_MASK = "desk_mask"
     const val KEY_DESK_LIGHT_TEXT = "desk_light_text"
     const val KEY_DESK_KEEP_SCREEN_ON = "desk_keep_screen_on"
