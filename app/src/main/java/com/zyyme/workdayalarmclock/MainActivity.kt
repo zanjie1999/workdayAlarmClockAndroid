@@ -538,8 +538,8 @@ class MainActivity : AppCompatActivity() {
         val input = EditText(this).apply {
             hint = "视频：ip:8880/密码/1，声音：ip:8880/密码/aac"
             inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_URI or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    InputType.TYPE_TEXT_VARIATION_URI or
+                    InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(true)
             setText(MeSettings.getCameraPassword(this@MainActivity))
             setSelection(text.length)
@@ -597,10 +597,10 @@ class MainActivity : AppCompatActivity() {
         fun applyManualSystemBrightness(value: Int) {
             val brightness = value.coerceIn(0, 255)
             try {                Settings.System.putInt(
-                    contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                )
+                contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS_MODE,
+                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            )
                 Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
             } catch (_: Exception) {
             }
@@ -821,8 +821,8 @@ class MainActivity : AppCompatActivity() {
         val input = EditText(this).apply {
             hint = "通知内容将拼在URL末端推送，也支持标签替换：应用{app}包名{pkg}标题{title}内容{msg}"
             inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_URI or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    InputType.TYPE_TEXT_VARIATION_URI or
+                    InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(true)
             setText(MeSettings.getNotificationForwardUrl(this@MainActivity))
             setSelection(text.length)
@@ -901,7 +901,8 @@ class MainActivity : AppCompatActivity() {
                 MeSettings.setNotificationForwardBlacklist(
                     this,
                     appCheckBoxes.filterValues { it.isChecked }.keys
-                )                if (url.isEmpty()) {
+                )
+                if (url.isEmpty()) {
                     Toast.makeText(this, "通知转发功能已关闭", Toast.LENGTH_SHORT).show()
                 } else {
                     requestNotificationListenerPermissionIfNeeded()
@@ -915,8 +916,8 @@ class MainActivity : AppCompatActivity() {
             hint = "需要返回[\"待办1\",\"待办2\"]的jsonArray或纯文本"
             setHintTextColor(Color.GRAY)
             inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_URI or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    InputType.TYPE_TEXT_VARIATION_URI or
+                    InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(true)
             setText(MeSettings.getTodoUrl(this@MainActivity))
             setSelection(text.length)
@@ -1101,3 +1102,43 @@ class MainActivity : AppCompatActivity() {
                     MediaSessionCompat(this@MainActivity, "WorkdayAlarmClock", this, null).apply {
                         //指明支持的按键信息类型
                         setFlags(
+                            MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+                        )
+
+                        setCallback(object : MediaSessionCompat.Callback() {
+                            override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
+                                MeMediaButtonReceiver().onReceive(this@MainActivity, mediaButtonEvent)
+                                return true
+                            }
+                        }, Handler(Looper.getMainLooper()))
+                        isActive = true
+                    }
+
+            } else {
+                audioManager.registerMediaButtonEventReceiver(this)
+            }
+        }
+
+    }
+
+    /**
+     * 销毁媒体按键监听
+     */
+    private fun mediaButtonReceiverDestroy() {
+        val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
+        // Android 5.0
+        if (Build.VERSION.SDK_INT >= 21) {
+            mediaSessionCompat?.let {
+                it.setCallback(null)
+                it.release()
+            }
+        } else {
+            mediaComponentName?.let {
+                audioManager.unregisterMediaButtonEventReceiver(it)
+            }
+
+        }
+    }
+
+}
