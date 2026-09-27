@@ -228,7 +228,7 @@ internal class AmbientBrightnessController(
 
         brightnessWakeArmed = false
         if (isScreenOn()) {
-            closeScreen(force = true, reason = "无人脸")
+            closeScreen()
         }
     }
 
@@ -313,7 +313,7 @@ internal class AmbientBrightnessController(
         }
 
         if (isBrightnessForcingScreenOff(newLevel)) {
-            closeScreen(reason = "环境亮度")
+            closeScreen()
             return
         }
 
@@ -354,31 +354,25 @@ internal class AmbientBrightnessController(
         DeskActivity.Companion.me?.let { applyLatestTo(it.window) }
     }
 
-    private fun closeScreen(force: Boolean = false, reason: String = "自动亮度"): Boolean {
+    private fun closeScreen() {
         val keepScreenOn = ClockActivity.Companion.me?.isKeepScreenOn == true || DeskActivity.Companion.me?.isKeepScreenOn == true
-        if (keepScreenOn && !force && !MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON)) {
+        if (keepScreenOn && !MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON)) {
             log("摄像头自动亮度跳过熄屏：当前设置了保持亮屏")
-            return false
+            return
         }
         val manager = appContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(appContext, MeDeviceAdminReceiver::class.java)
         if (!manager.isAdminActive(admin)) {
-            log("摄像头自动亮度无法熄屏（$reason）：设备管理员未激活")
-            return false
+            log("摄像头自动亮度无法熄屏：设备管理员未激活")
+            return
         }
-        return try {
-            if (force) {
-                ClockActivity.Companion.me?.isKeepScreenOn = false
-                DeskActivity.Companion.me?.isKeepScreenOn = false
-            }
+        try {
             ClockActivity.Companion.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             DeskActivity.Companion.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             manager.lockNow()
-            log("摄像头自动亮度熄屏（$reason）")
-            true
         } catch (e: Exception) {
-            log("摄像头自动亮度熄屏失败（$reason）：${e.message}")
-            false
+            log("摄像头自动亮度熄屏失败：${e.message}")
         }
     }
+
 }
