@@ -13,6 +13,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Suppress("DEPRECATION")
 internal class AmbientCameraSampler(
     private val onLuma: (Int) -> Unit,
+    private val onFace: (Boolean) -> Unit,
+    private val faceDetectionEnabled: () -> Boolean,
     private val log: (String) -> Unit
 ) {
     private val running = AtomicBoolean(false)
@@ -24,6 +26,7 @@ internal class AmbientCameraSampler(
     private var height = 0
     private var warmupUntil = 0L
     private var lastSampleAt = 0L
+    private var faceDetectionStarted = false
 
     private var isFrist = true
 
@@ -62,6 +65,22 @@ internal class AmbientCameraSampler(
                         onLuma(balancedLuma(data))
                     }
                     sourceCamera.addCallbackBuffer(data)
+                }
+
+                if (faceDetectionEnabled()) {
+                    if (parameters.maxNumDetectedFaces > 0) {
+                        try {
+                            opened.setFaceDetectionListener { faces, _ ->
+                                if (running.get()) onFace(faces != null && faces.isNotEmpty())
+                            }
+                            opened.startFaceDetection()
+                            faceDetectionStarted = true
+                        } catch (e: Exception) {
+                            log("人脸检测启动失败：${e.message}")
+                        }
+                    } else {
+                        log("当前摄像头不支持人脸检测")
+                    }
                 }
                 val bufferSize = width * height * ImageFormat.getBitsPerPixel(ImageFormat.NV21) / 8
                 repeat(2) { opened.addCallbackBuffer(ByteArray(bufferSize)) }
@@ -152,6 +171,12 @@ internal class AmbientCameraSampler(
     }
 
     private fun releaseCamera() {
+        try {
+            if (faceDetectionStarted) camera?.stopFaceDetection()
+            camera?.setFaceDetectionListener(null)
+        } catch (_: Exception) {
+        }
+        faceDetectionStarted = false
         try {
             camera?.setPreviewCallbackWithBuffer(null)
             camera?.stopPreview()
