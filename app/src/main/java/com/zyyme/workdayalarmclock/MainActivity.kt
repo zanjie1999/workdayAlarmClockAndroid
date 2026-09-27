@@ -704,7 +704,8 @@ class MainActivity : AppCompatActivity() {
                     if (!dialog.isShowing) return
                     val level = MeService.me?.ambientBrightnessLevel() ?: 4
                     val value = MeService.me?.ambientBrightnessValue() ?: 255
-                    dialog.setTitle("摄像头自动亮度（当前等级 $level，系统亮度 $value）")
+                    val faceStatus = MeService.me?.ambientFaceStatus() ?: "未开启"
+                    dialog.setTitle("摄像头自动亮度（当前等级 $level，系统亮度 $value，人脸：$faceStatus）")
                     mainHandler.postDelayed(this, 500L)
                 }
             }
