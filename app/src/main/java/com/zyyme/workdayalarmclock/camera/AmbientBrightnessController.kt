@@ -79,11 +79,6 @@ internal class AmbientBrightnessController(
     private val faceMissingTimeout = object : Runnable {
         override fun run() {
             if (!faceDetectionEnabled() || hasFace || faceMissingSince == 0L) return
-            val now = SystemClock.elapsedRealtime()
-            if (now - faceMissingSince < 10_000L) {
-                controlHandler.postDelayed(this, 10_000L - (now - faceMissingSince))
-                return
-            }
 
             brightnessWakeArmed = false
             log("摄像头自动亮度：熄屏原因=持续无人脸10秒")
