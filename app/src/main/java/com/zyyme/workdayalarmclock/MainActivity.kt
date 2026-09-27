@@ -297,8 +297,7 @@ class MainActivity : AppCompatActivity() {
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
         popupMenu.menu.findItem(TOGGLE_HOME_LAUNCHER)?.isChecked =
             isHomeLauncherEnabled()
-        popupMenu.show()
-    }
+        popupMenu.show()    }
 
     private fun getOrCreateSettingsMenu(anchor: ImageView): PopupMenu {
         settingsPopupMenu?.let { return it }
@@ -597,8 +596,7 @@ class MainActivity : AppCompatActivity() {
         }
         fun applyManualSystemBrightness(value: Int) {
             val brightness = value.coerceIn(0, 255)
-            try {
-                Settings.System.putInt(
+            try {                Settings.System.putInt(
                     contentResolver,
                     Settings.System.SCREEN_BRIGHTNESS_MODE,
                     Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
@@ -642,6 +640,11 @@ class MainActivity : AppCompatActivity() {
             isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
         }
         container.addView(enabledSwitch)
+        val faceWakeSwitch = Switch(this).apply {
+            text = "人脸检测触发亮屏/无人脸熄屏"
+            isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_FACE_WAKE)
+        }
+        container.addView(faceWakeSwitch)
         fun brightnessSeekBar(value: Int): SeekBar {
             return SeekBar(this).apply {
                 max = 255
@@ -734,6 +737,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 MeSettings.setInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, wake)
                 MeSettings.setString(this, MeSettings.KEY_CAMERA_BRIGHTNESS_INTERVAL, intervalValue.trim())
+                MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_FACE_WAKE, faceWakeSwitch.isChecked)
 
                 val shouldEnable = enabledSwitch.isChecked
                 if (shouldEnable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
@@ -897,8 +901,7 @@ class MainActivity : AppCompatActivity() {
                 MeSettings.setNotificationForwardBlacklist(
                     this,
                     appCheckBoxes.filterValues { it.isChecked }.keys
-                )
-                if (url.isEmpty()) {
+                )                if (url.isEmpty()) {
                     Toast.makeText(this, "通知转发功能已关闭", Toast.LENGTH_SHORT).show()
                 } else {
                     requestNotificationListenerPermissionIfNeeded()
@@ -1098,43 +1101,3 @@ class MainActivity : AppCompatActivity() {
                     MediaSessionCompat(this@MainActivity, "WorkdayAlarmClock", this, null).apply {
                         //指明支持的按键信息类型
                         setFlags(
-                            MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
-                                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
-                        )
-
-                        setCallback(object : MediaSessionCompat.Callback() {
-                            override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
-                                MeMediaButtonReceiver().onReceive(this@MainActivity, mediaButtonEvent)
-                                return true
-                            }
-                        }, Handler(Looper.getMainLooper()))
-                        isActive = true
-                    }
-
-            } else {
-                audioManager.registerMediaButtonEventReceiver(this)
-            }
-        }
-
-    }
-
-    /**
-     * 销毁媒体按键监听
-     */
-    private fun mediaButtonReceiverDestroy() {
-        val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager ?: return
-        // Android 5.0
-        if (Build.VERSION.SDK_INT >= 21) {
-            mediaSessionCompat?.let {
-                it.setCallback(null)
-                it.release()
-            }
-        } else {
-            mediaComponentName?.let {
-                audioManager.unregisterMediaButtonEventReceiver(it)
-            }
-
-        }
-    }
-
-}
