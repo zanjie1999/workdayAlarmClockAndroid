@@ -75,8 +75,19 @@ internal class AmbientBrightnessController(
     @Volatile private var faceDetectionActive = false
     private var brightnessWakeArmed = true
     private var lastFaceWakeAt = 0L
-    private var lastFaceCallbackAt = 0L
-    private var lastFaceCallbackLogAt = 0L
+
+    private val faceMissingTimeout: Runnable = Runnable {
+        if (!faceDetectionEnabled() || hasFace || faceMissingSince == 0L) return@Runnable
+        val now = SystemClock.elapsedRealtime()
+        if (now - faceMissingSince < 10_000L) {
+            controlHandler.postDelayed(this, 10_000L - (now - faceMissingSince))
+            return@Runnable
+        }
+
+        brightnessWakeArmed = false
+        log("摄像头自动亮度：熄屏原因=持续无人脸10秒")
+        closeScreen(ignoreKeepScreenOn = true)
+    }
 
     val level: Int
         get() = levelValue.get()
@@ -194,8 +205,6 @@ internal class AmbientBrightnessController(
         pendingCount = 0
         lastLumaAt = 0L
         faceMissingSince = 0L
-        lastFaceCallbackAt = 0L
-        lastFaceCallbackLogAt = 0L
         ignoreUntil = SystemClock.elapsedRealtime() + 1_200L
     }
 
@@ -208,39 +217,23 @@ internal class AmbientBrightnessController(
         if (detected) {
             hasFace = true
             faceMissingSince = 0L
-            if (isBrightnessForcingScreenOff(level)) return
+            controlHandler.removeCallbacks(faceMissingTimeout)
 
             val screenOn = isScreenOn()
             if (!screenOn && now - lastFaceWakeAt >= 2_000L) {
                 lastFaceWakeAt = now
+                log("摄像头自动亮度：亮屏原因=检测到人脸")
                 MeService.Companion.me?.wakeScreenForAmbient()
             }
             return
         }
 
         hasFace = false
-        val callbackGap = if (lastFaceCallbackAt == 0L) -1L else now - lastFaceCallbackAt
-        if (lastFaceCallbackLogAt == 0L || now - lastFaceCallbackLogAt >= 1_000L) {
-            val gapText = if (callbackGap < 0L) "首次" else callbackGap.toString() + "ms"
-            val missingText = if (faceMissingSince == 0L) "0" else (now - faceMissingSince).toString() + "ms"
-            log("人脸回调：无人，距上次无人回调=$gapText，持续无人=$missingText")
-            lastFaceCallbackLogAt = now
-        }
-        lastFaceCallbackAt = now
-
         if (faceMissingSince == 0L) {
             faceMissingSince = now
-            return
+            controlHandler.removeCallbacks(faceMissingTimeout)
+            controlHandler.postDelayed(faceMissingTimeout, 10_000L)
         }
-        if (now - faceMissingSince < 10_000L) return
-
-        if (isBrightnessForcingScreenOff(level)) {
-            brightnessWakeArmed = true
-            return
-        }
-
-        brightnessWakeArmed = false
-        closeScreen(ignoreKeepScreenOn = true)
     }
 
     fun beginLivePreview() {
@@ -330,7 +323,10 @@ internal class AmbientBrightnessController(
 
         val wakeLevel = MeSettings.getInt(appContext, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).coerceIn(0, 4)
         if (brightnessWakeArmed && wakeLevel > 0 && newLevel >= wakeLevel) {
-            if (!isScreenOn()) MeService.Companion.me?.wakeScreenForAmbient()
+            if (!isScreenOn()) {
+                log("摄像头自动亮度：亮屏原因=环境亮度达到唤醒等级" + wakeLevel + "，当前等级" + newLevel)
+                MeService.Companion.me?.wakeScreenForAmbient()
+            }
         }
     }
 
