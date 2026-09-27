@@ -61,7 +61,7 @@ internal class AmbientBrightnessController(
     private val levelValue = AtomicInteger(4)
     private val controlThread = HandlerThread("ambient-brightness-control").apply { start() }
     private val controlHandler = Handler(controlThread.looper)
-    private val sampler = AmbientCameraSampler(::updateLuma, log)
+    private val sampler = AmbientCameraSampler(::updateLuma, ::updateFace, { faceDetectionEnabled() }, log)
     @Volatile private var enabled = false
     @Volatile private var ipCameraActive = false
     @Volatile private var previewActive = false
@@ -70,6 +70,10 @@ internal class AmbientBrightnessController(
     private var ignoreUntil = 0L
     private var lastLumaAt = 0L
     private var lastAppliedLevel = -1
+    private var faceMissingSince = 0L
+    @Volatile private var hasFace = false
+    private var brightnessWakeArmed = true
+    private var lastFaceWakeAt = 0L
 
     val level: Int
         get() = levelValue.get()
@@ -94,6 +98,11 @@ internal class AmbientBrightnessController(
 
     fun syncSettings() {
         enabled = MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
+        if (!faceDetectionEnabled()) {
+            hasFace = false
+            faceMissingSince = 0L
+            brightnessWakeArmed = true
+        }
         controlHandler.removeCallbacks(periodicSample)
         controlHandler.removeCallbacks(stopPeriodicSample)
         sampler.stop()
@@ -181,7 +190,44 @@ internal class AmbientBrightnessController(
         pendingLevel = -1
         pendingCount = 0
         lastLumaAt = 0L
+        faceMissingSince = 0L
         ignoreUntil = SystemClock.elapsedRealtime() + 1_200L
+    }
+
+    @Synchronized
+    fun updateFace(detected: Boolean) {
+        if (!faceDetectionEnabled()) return
+
+        val now = SystemClock.elapsedRealtime()
+        if (detected) {
+            hasFace = true
+            faceMissingSince = 0L
+            if (isBrightnessForcingScreenOff(level)) return
+
+            val screenOn = isScreenOn()
+            if (!screenOn && now - lastFaceWakeAt >= 2_000L) {
+                lastFaceWakeAt = now
+                MeService.Companion.me?.wakeScreenForAmbient()
+            }
+            return
+        }
+
+        hasFace = false
+        if (faceMissingSince == 0L) {
+            faceMissingSince = now
+            return
+        }
+        if (now - faceMissingSince < 1_500L) return
+
+        if (isBrightnessForcingScreenOff(level)) {
+            brightnessWakeArmed = true
+            return
+        }
+
+        brightnessWakeArmed = false
+        if (isScreenOn()) {
+            closeScreen()
+        }
     }
 
     fun beginLivePreview() {
@@ -258,22 +304,39 @@ internal class AmbientBrightnessController(
             log("设置系统亮度失败：${e.message}")
         }
         applyToVisibleWindows()
-        val closeScreenEnabled = when (newLevel) {
+
+        if (newLevel <= 1) {
+            // 环境已经重新变暗：允许下一次亮度变化再次唤醒屏幕。
+            brightnessWakeArmed = true
+        }
+
+        if (isBrightnessForcingScreenOff(newLevel)) {
+            closeScreen()
+            return
+        }
+
+        val wakeLevel = MeSettings.getInt(appContext, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).coerceIn(0, 4)
+        if (brightnessWakeArmed && wakeLevel > 0 && newLevel >= wakeLevel) {
+            if (!isScreenOn()) MeService.Companion.me?.wakeScreenForAmbient()
+        }
+    }
+
+    private fun faceDetectionEnabled(): Boolean {
+        return enabled && MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_FACE_WAKE)
+    }
+
+    private fun isBrightnessForcingScreenOff(level: Int): Boolean {
+        return when (level) {
             0 -> MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN)
             1 -> MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_LEVEL_1)
             else -> false
         }
-        if (closeScreenEnabled) {
-            closeScreen()
-            return
-        }
-        val wakeLevel = MeSettings.getInt(appContext, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).coerceIn(0, 4)
-        if (wakeLevel > 0 && newLevel >= wakeLevel) {
-            val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-            @Suppress("DEPRECATION")
-            val screenOn = if (Build.VERSION.SDK_INT >= 20) powerManager.isInteractive else powerManager.isScreenOn
-            if (!screenOn) MeService.Companion.me?.wakeScreenForAmbient()
-        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isScreenOn(): Boolean {
+        val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return if (Build.VERSION.SDK_INT >= 20) powerManager.isInteractive else powerManager.isScreenOn
     }
 
     private fun applyToVisibleWindows() {
@@ -282,24 +345,26 @@ internal class AmbientBrightnessController(
         DeskActivity.Companion.me?.let { applyLatestTo(it.window) }
     }
 
-    private fun closeScreen() {
+    private fun closeScreen(): Boolean {
         val keepScreenOn = ClockActivity.Companion.me?.isKeepScreenOn == true || DeskActivity.Companion.me?.isKeepScreenOn == true
         if (keepScreenOn && !MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON)) {
             log("摄像头自动亮度跳过熄屏：当前设置了保持亮屏")
-            return
+            return false
         }
         val manager = appContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(appContext, MeDeviceAdminReceiver::class.java)
         if (!manager.isAdminActive(admin)) {
             log("摄像头自动亮度无法熄屏：设备管理员未激活")
-            return
+            return false
         }
-        try {
+        return try {
             ClockActivity.Companion.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             DeskActivity.Companion.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             manager.lockNow()
+            true
         } catch (e: Exception) {
             log("摄像头自动亮度熄屏失败：${e.message}")
+            false
         }
     }
 }
