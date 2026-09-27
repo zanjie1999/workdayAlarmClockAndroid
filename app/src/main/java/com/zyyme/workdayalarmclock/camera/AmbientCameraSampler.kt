@@ -67,25 +67,25 @@ internal class AmbientCameraSampler(
                     sourceCamera.addCallbackBuffer(data)
                 }
 
-                if (faceDetectionEnabled()) {
-                    if (parameters.maxNumDetectedFaces > 0) {
-                        try {
-                            opened.setFaceDetectionListener { faces, _ ->
-                                if (running.get()) onFace(faces != null && faces.isNotEmpty())
-                            }
-                            opened.startFaceDetection()
-                            faceDetectionStarted = true
-                        } catch (e: Exception) {
-                            log("人脸检测启动失败：${e.message}")
-                        }
-                    } else {
-                        log("当前摄像头不支持人脸检测")
-                    }
-                }
                 val bufferSize = width * height * ImageFormat.getBitsPerPixel(ImageFormat.NV21) / 8
                 repeat(2) { opened.addCallbackBuffer(ByteArray(bufferSize)) }
                 warmupUntil = SystemClock.elapsedRealtime() + 1_200L
                 opened.startPreview()
+
+                if (faceDetectionEnabled() && parameters.maxNumDetectedFaces > 0) {
+                    try {
+                        opened.setFaceDetectionListener { faces, _ ->
+                            if (running.get()) onFace(faces != null && faces.isNotEmpty())
+                        }
+                        opened.startFaceDetection()
+                        faceDetectionStarted = true
+                    } catch (e: Exception) {
+                        log("人脸检测启动失败：${e.message}")
+                    }
+                } else if (faceDetectionEnabled()) {
+                    log("当前摄像头不支持人脸检测")
+                }
+
                 success.set(true)
                 if (isFrist) {
                     // 输出刷屏了
