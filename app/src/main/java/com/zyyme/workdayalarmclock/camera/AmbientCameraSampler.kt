@@ -93,7 +93,7 @@ internal class AmbientCameraSampler(
                         }
                         opened.startFaceDetection()
                         faceDetectionStarted = true
-                        log("人脸检测已启动，最大人脸数：${parameters.maxNumDetectedFaces}")
+                        log("人脸检测已启动，最大人脸数：${parameters.maxNumDetectedFaces} 分辨率：${width}x$height")
                     } catch (e: Exception) {
                         log("人脸检测启动失败：${e.message}")
                     }
