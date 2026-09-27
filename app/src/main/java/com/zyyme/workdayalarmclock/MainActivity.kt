@@ -297,8 +297,7 @@ class MainActivity : AppCompatActivity() {
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
         popupMenu.menu.findItem(TOGGLE_HOME_LAUNCHER)?.isChecked =
             isHomeLauncherEnabled()
-        popupMenu.show()
-    }
+        popupMenu.show()    }
 
     private fun getOrCreateSettingsMenu(anchor: ImageView): PopupMenu {
         settingsPopupMenu?.let { return it }
@@ -539,8 +538,8 @@ class MainActivity : AppCompatActivity() {
         val input = EditText(this).apply {
             hint = "视频：ip:8880/密码/1，声音：ip:8880/密码/aac"
             inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_URI or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    InputType.TYPE_TEXT_VARIATION_URI or
+                    InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(true)
             setText(MeSettings.getCameraPassword(this@MainActivity))
             setSelection(text.length)
@@ -597,12 +596,11 @@ class MainActivity : AppCompatActivity() {
         }
         fun applyManualSystemBrightness(value: Int) {
             val brightness = value.coerceIn(0, 255)
-            try {
-                Settings.System.putInt(
-                    contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                )
+            try {                Settings.System.putInt(
+                contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS_MODE,
+                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            )
                 Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
             } catch (_: Exception) {
             }
@@ -642,6 +640,11 @@ class MainActivity : AppCompatActivity() {
             isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
         }
         container.addView(enabledSwitch)
+        val faceWakeSwitch = Switch(this).apply {
+            text = "人脸检测触发亮屏/无人脸熄屏"
+            isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_FACE_WAKE)
+        }
+        container.addView(faceWakeSwitch)
         fun brightnessSeekBar(value: Int): SeekBar {
             return SeekBar(this).apply {
                 max = 255
@@ -701,7 +704,8 @@ class MainActivity : AppCompatActivity() {
                     if (!dialog.isShowing) return
                     val level = MeService.me?.ambientBrightnessLevel() ?: 4
                     val value = MeService.me?.ambientBrightnessValue() ?: 255
-                    dialog.setTitle("摄像头自动亮度（当前等级 $level，系统亮度 $value）")
+                    val faceStatus = MeService.me?.ambientFaceStatus() ?: "未开启"
+                    dialog.setTitle("摄像头自动亮度（当前等级 $level，系统亮度 $value，人脸：$faceStatus）")
                     mainHandler.postDelayed(this, 500L)
                 }
             }
@@ -734,6 +738,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 MeSettings.setInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, wake)
                 MeSettings.setString(this, MeSettings.KEY_CAMERA_BRIGHTNESS_INTERVAL, intervalValue.trim())
+                MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_FACE_WAKE, faceWakeSwitch.isChecked)
 
                 val shouldEnable = enabledSwitch.isChecked
                 if (shouldEnable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
@@ -817,8 +822,8 @@ class MainActivity : AppCompatActivity() {
         val input = EditText(this).apply {
             hint = "通知内容将拼在URL末端推送，也支持标签替换：应用{app}包名{pkg}标题{title}内容{msg}"
             inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_URI or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    InputType.TYPE_TEXT_VARIATION_URI or
+                    InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(true)
             setText(MeSettings.getNotificationForwardUrl(this@MainActivity))
             setSelection(text.length)
@@ -912,8 +917,8 @@ class MainActivity : AppCompatActivity() {
             hint = "需要返回[\"待办1\",\"待办2\"]的jsonArray或纯文本"
             setHintTextColor(Color.GRAY)
             inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_URI or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    InputType.TYPE_TEXT_VARIATION_URI or
+                    InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(true)
             setText(MeSettings.getTodoUrl(this@MainActivity))
             setSelection(text.length)

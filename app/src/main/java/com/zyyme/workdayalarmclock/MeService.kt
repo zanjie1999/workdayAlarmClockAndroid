@@ -551,6 +551,8 @@ class MeService : Service() {
 
     fun ambientBrightnessValue(): Int = ambientBrightness.currentSystemBrightness()
 
+    fun ambientFaceStatus(): String = ambientBrightness.faceStatusText()
+
     fun startAmbientBrightnessPreview() {
         ambientBrightness.beginLivePreview()
     }

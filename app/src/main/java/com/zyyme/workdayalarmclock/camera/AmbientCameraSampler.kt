@@ -13,6 +13,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Suppress("DEPRECATION")
 internal class AmbientCameraSampler(
     private val onLuma: (Int) -> Unit,
+    private val onFace: (Boolean) -> Unit,
+    private val faceDetectionEnabled: () -> Boolean,
     private val log: (String) -> Unit
 ) {
     private val running = AtomicBoolean(false)
@@ -24,6 +26,9 @@ internal class AmbientCameraSampler(
     private var height = 0
     private var warmupUntil = 0L
     private var lastSampleAt = 0L
+    private var faceDetectionStarted = false
+    private var loggedWidth = 0
+    private var loggedHeight = 0
 
     private var isFrist = true
 
@@ -42,8 +47,14 @@ internal class AmbientCameraSampler(
                 if (!parameters.supportedPreviewFormats.orEmpty().contains(ImageFormat.NV21)) {
                     throw IllegalStateException("摄像头不支持NV21预览")
                 }
-                val size = parameters.supportedPreviewSizes.orEmpty()
-                    .minByOrNull { it.width.toLong() * it.height }
+                val supportedPreviewSizes = parameters.supportedPreviewSizes.orEmpty()
+                val size = supportedPreviewSizes
+                    .filter { it.height >= 480 }
+                    .minWithOrNull(
+                        compareBy<Camera.Size> { it.width.toLong() * it.height }
+                            .thenBy { it.width }
+                    )
+                    ?: supportedPreviewSizes.minByOrNull { it.width.toLong() * it.height }
                     ?: throw IllegalStateException("摄像头没有预览规格")
                 width = size.width
                 height = size.height
@@ -63,16 +74,34 @@ internal class AmbientCameraSampler(
                     }
                     sourceCamera.addCallbackBuffer(data)
                 }
+
                 val bufferSize = width * height * ImageFormat.getBitsPerPixel(ImageFormat.NV21) / 8
                 repeat(2) { opened.addCallbackBuffer(ByteArray(bufferSize)) }
                 warmupUntil = SystemClock.elapsedRealtime() + 1_200L
                 opened.startPreview()
-                success.set(true)
-                if (isFrist) {
-                    // 输出刷屏了
+
+                if (width != loggedWidth || height != loggedHeight) {
                     log("环境亮度采样已启动：${width}x$height")
-                    isFrist = false
+                    loggedWidth = width
+                    loggedHeight = height
                 }
+
+                if (faceDetectionEnabled() && parameters.maxNumDetectedFaces > 0) {
+                    try {
+                        opened.setFaceDetectionListener { faces, _ ->
+                            if (running.get()) onFace(faces != null && faces.isNotEmpty())
+                        }
+                        opened.startFaceDetection()
+                        faceDetectionStarted = true
+                        log("人脸检测已启动，最大人脸数：${parameters.maxNumDetectedFaces} 分辨率：${width}x$height")
+                    } catch (e: Exception) {
+                        log("人脸检测启动失败：${e.message}")
+                    }
+                } else if (faceDetectionEnabled()) {
+                    log("当前摄像头不支持人脸检测")
+                }
+
+                success.set(true)
             } catch (e: Exception) {
                 log("环境亮度采样启动失败：${e.message}")
                 releaseCamera()
@@ -152,6 +181,12 @@ internal class AmbientCameraSampler(
     }
 
     private fun releaseCamera() {
+        try {
+            if (faceDetectionStarted) camera?.stopFaceDetection()
+            camera?.setFaceDetectionListener(null)
+        } catch (_: Exception) {
+        }
+        faceDetectionStarted = false
         try {
             camera?.setPreviewCallbackWithBuffer(null)
             camera?.stopPreview()
