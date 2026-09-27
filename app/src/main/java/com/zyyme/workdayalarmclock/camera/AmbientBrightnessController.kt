@@ -72,6 +72,7 @@ internal class AmbientBrightnessController(
     private var lastAppliedLevel = -1
     private var faceMissingSince = 0L
     @Volatile private var hasFace = false
+    @Volatile private var faceDetectionActive = false
     private var brightnessWakeArmed = true
     private var lastFaceWakeAt = 0L
 
@@ -197,6 +198,7 @@ internal class AmbientBrightnessController(
     @Synchronized
     fun updateFace(detected: Boolean) {
         if (!faceDetectionEnabled()) return
+        faceDetectionActive = true
 
         val now = SystemClock.elapsedRealtime()
         if (detected) {
@@ -319,6 +321,13 @@ internal class AmbientBrightnessController(
         if (brightnessWakeArmed && wakeLevel > 0 && newLevel >= wakeLevel) {
             if (!isScreenOn()) MeService.Companion.me?.wakeScreenForAmbient()
         }
+    }
+
+    fun faceStatusText(): String = when {
+        !faceDetectionEnabled() -> "未开启"
+        !faceDetectionActive -> "检测中"
+        hasFace -> "有人"
+        else -> "无人"
     }
 
     private fun faceDetectionEnabled(): Boolean {
