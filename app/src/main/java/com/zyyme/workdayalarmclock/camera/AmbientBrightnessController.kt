@@ -75,6 +75,8 @@ internal class AmbientBrightnessController(
     @Volatile private var faceDetectionActive = false
     private var brightnessWakeArmed = true
     private var lastFaceWakeAt = 0L
+    private var lastFaceCallbackAt = 0L
+    private var lastFaceCallbackLogAt = 0L
 
     val level: Int
         get() = levelValue.get()
@@ -192,6 +194,8 @@ internal class AmbientBrightnessController(
         pendingCount = 0
         lastLumaAt = 0L
         faceMissingSince = 0L
+        lastFaceCallbackAt = 0L
+        lastFaceCallbackLogAt = 0L
         ignoreUntil = SystemClock.elapsedRealtime() + 1_200L
     }
 
@@ -215,6 +219,15 @@ internal class AmbientBrightnessController(
         }
 
         hasFace = false
+        val callbackGap = if (lastFaceCallbackAt == 0L) -1L else now - lastFaceCallbackAt
+        if (lastFaceCallbackLogAt == 0L || now - lastFaceCallbackLogAt >= 1_000L) {
+            val gapText = if (callbackGap < 0L) "首次" else callbackGap.toString() + "ms"
+            val missingText = if (faceMissingSince == 0L) "0" else (now - faceMissingSince).toString() + "ms"
+            log("人脸回调：无人，距上次无人回调=$gapText，持续无人=$missingText")
+            lastFaceCallbackLogAt = now
+        }
+        lastFaceCallbackAt = now
+
         if (faceMissingSince == 0L) {
             faceMissingSince = now
             return
