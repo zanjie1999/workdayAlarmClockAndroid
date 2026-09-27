@@ -27,6 +27,8 @@ internal class AmbientCameraSampler(
     private var warmupUntil = 0L
     private var lastSampleAt = 0L
     private var faceDetectionStarted = false
+    private var loggedWidth = 0
+    private var loggedHeight = 0
 
     private var isFrist = true
 
@@ -45,8 +47,14 @@ internal class AmbientCameraSampler(
                 if (!parameters.supportedPreviewFormats.orEmpty().contains(ImageFormat.NV21)) {
                     throw IllegalStateException("摄像头不支持NV21预览")
                 }
-                val size = parameters.supportedPreviewSizes.orEmpty()
-                    .minByOrNull { it.width.toLong() * it.height }
+                val supportedPreviewSizes = parameters.supportedPreviewSizes.orEmpty()
+                val size = supportedPreviewSizes
+                    .filter { it.height >= 480 }
+                    .minWithOrNull(
+                        compareBy<Camera.Size> { it.width.toLong() * it.height }
+                            .thenBy { it.width }
+                    )
+                    ?: supportedPreviewSizes.minByOrNull { it.width.toLong() * it.height }
                     ?: throw IllegalStateException("摄像头没有预览规格")
                 width = size.width
                 height = size.height
@@ -72,6 +80,12 @@ internal class AmbientCameraSampler(
                 warmupUntil = SystemClock.elapsedRealtime() + 1_200L
                 opened.startPreview()
 
+                if (width != loggedWidth || height != loggedHeight) {
+                    log("环境亮度采样已启动：${width}x$height")
+                    loggedWidth = width
+                    loggedHeight = height
+                }
+
                 if (faceDetectionEnabled() && parameters.maxNumDetectedFaces > 0) {
                     try {
                         opened.setFaceDetectionListener { faces, _ ->
@@ -79,6 +93,7 @@ internal class AmbientCameraSampler(
                         }
                         opened.startFaceDetection()
                         faceDetectionStarted = true
+                        log("人脸检测已启动，最大人脸数：${parameters.maxNumDetectedFaces}")
                     } catch (e: Exception) {
                         log("人脸检测启动失败：${e.message}")
                     }
@@ -87,11 +102,6 @@ internal class AmbientCameraSampler(
                 }
 
                 success.set(true)
-                if (isFrist) {
-                    // 输出刷屏了
-                    log("环境亮度采样已启动：${width}x$height")
-                    isFrist = false
-                }
             } catch (e: Exception) {
                 log("环境亮度采样启动失败：${e.message}")
                 releaseCamera()
