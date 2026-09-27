@@ -95,7 +95,8 @@ internal class AmbientBrightnessController(
             beginCameraWarmup()
             sampler.start()
             controlHandler.removeCallbacks(stopPeriodicSample)
-            controlHandler.postDelayed(stopPeriodicSample, 3_000L)
+            val cameraWindow = if (faceDetectionEnabled()) 10_000L else 3_000L
+            controlHandler.postDelayed(stopPeriodicSample, cameraWindow)
         }
     }
 
@@ -110,8 +111,10 @@ internal class AmbientBrightnessController(
     fun syncSettings() {
         enabled = MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
         if (!faceDetectionEnabled()) {
+            controlHandler.removeCallbacks(faceMissingTimeout)
             hasFace = false
             faceMissingSince = 0L
+            faceDetectionActive = false
             brightnessWakeArmed = true
         }
         controlHandler.removeCallbacks(periodicSample)
@@ -201,7 +204,6 @@ internal class AmbientBrightnessController(
         pendingLevel = -1
         pendingCount = 0
         lastLumaAt = 0L
-        faceMissingSince = 0L
         ignoreUntil = SystemClock.elapsedRealtime() + 1_200L
     }
 
