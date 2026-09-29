@@ -15,6 +15,7 @@ internal class AmbientCameraSampler(
     private val onLuma: (Int) -> Unit,
     private val onFace: (Boolean) -> Unit,
     private val faceDetectionEnabled: () -> Boolean,
+    private val continuousFaceCycleEnabled: () -> Boolean,
     private val log: (String) -> Unit
 ) {
     private val running = AtomicBoolean(false)
@@ -27,6 +28,8 @@ internal class AmbientCameraSampler(
     private var warmupUntil = 0L
     private var lastSampleAt = 0L
     private var faceDetectionStarted = false
+    private var faceDetectionRestartPending = false
+    @Volatile private var faceDetectionStartLogged = false
     private var loggedWidth = 0
     private var loggedHeight = 0
 
@@ -60,6 +63,14 @@ internal class AmbientCameraSampler(
                 height = size.height
                 parameters.previewFormat = ImageFormat.NV21
                 parameters.setPreviewSize(width, height)
+                // 采样摄像头没有可见预览，限制到 15 FPS 以降低底层人脸检测和 ISP 的 CPU 开销。
+                val fpsRanges = parameters.supportedPreviewFpsRange.orEmpty()
+                val targetFps = 15 * 1000
+                val fpsRange = fpsRanges
+                    .filter { it[0] <= targetFps && it[1] >= targetFps }
+                    .minByOrNull { it[1] - it[0] }
+                    ?: fpsRanges.minByOrNull { kotlin.math.abs(it[1] - targetFps) }
+                if (fpsRange != null) parameters.setPreviewFpsRange(fpsRange[0], fpsRange[1])
                 opened.parameters = parameters
 
                 val surfaceTexture = SurfaceTexture(11)
@@ -86,20 +97,7 @@ internal class AmbientCameraSampler(
                     loggedHeight = height
                 }
 
-                if (faceDetectionEnabled() && parameters.maxNumDetectedFaces > 0) {
-                    try {
-                        opened.setFaceDetectionListener { faces, _ ->
-                            if (running.get()) onFace(faces != null && faces.isNotEmpty())
-                        }
-                        opened.startFaceDetection()
-                        faceDetectionStarted = true
-                        log("人脸检测已启动，最大人脸数：${parameters.maxNumDetectedFaces} 分辨率：${width}x$height")
-                    } catch (e: Exception) {
-                        log("人脸检测启动失败：${e.message}")
-                    }
-                } else if (faceDetectionEnabled()) {
-                    log("当前摄像头不支持人脸检测")
-                }
+                updateFaceDetection(opened, faceDetectionEnabled())
 
                 success.set(true)
             } catch (e: Exception) {
@@ -119,6 +117,17 @@ internal class AmbientCameraSampler(
             return false
         }
         return true
+    }
+
+    fun setFaceDetectionEnabled(enabled: Boolean) {
+        cameraHandler?.post {
+            val opened = camera ?: return@post
+            updateFaceDetection(opened, enabled)
+        }
+    }
+
+    fun resetFaceDetectionStartLog() {
+        faceDetectionStartLogged = false
     }
 
     fun stop() {
@@ -151,6 +160,67 @@ internal class AmbientCameraSampler(
         return null
     }
 
+    private fun aspectRatio(size: Camera.Size): Double {
+        val shortSide = minOf(size.width, size.height).toDouble()
+        val longSide = maxOf(size.width, size.height).toDouble()
+        return if (shortSide == 0.0) 0.0 else longSide / shortSide
+    }
+
+    private fun updateFaceDetection(opened: Camera, enabled: Boolean) {
+        cameraHandler?.removeCallbacks(faceDetectionRestartRunnable)
+        cameraHandler?.removeCallbacks(faceCycleStopRunnable)
+        faceDetectionRestartPending = false
+        val maxFaces = try { opened.parameters.maxNumDetectedFaces } catch (_: Exception) { 0 }
+        if (!enabled) {
+            if (faceDetectionStarted) {
+                try { opened.stopFaceDetection() } catch (_: Exception) { }
+                try { opened.setFaceDetectionListener(null) } catch (_: Exception) { }
+                faceDetectionStarted = false
+            }
+            return
+        }
+        if (faceDetectionStarted) return
+        if (maxFaces <= 0) {
+            log("当前摄像头不支持人脸检测")
+            return
+        }
+        try {
+            opened.setFaceDetectionListener { faces, _ ->
+                if (!running.get()) return@setFaceDetectionListener
+                onFace(faces != null && faces.isNotEmpty())
+            }
+            opened.startFaceDetection()
+            faceDetectionStarted = true
+            if (!faceDetectionStartLogged) {
+                faceDetectionStartLogged = true
+                log("人脸检测已启动，最大人脸数：$maxFaces 分辨率：${width}x$height")
+            }
+            if (continuousFaceCycleEnabled()) {
+                cameraHandler?.removeCallbacks(faceCycleStopRunnable)
+                cameraHandler?.postDelayed(faceCycleStopRunnable, 3_000L)
+            }
+        } catch (e: Exception) {
+            log("人脸检测启动失败：${e.message}")
+        }
+    }
+
+    private val faceCycleStopRunnable = Runnable {
+        val handler = cameraHandler ?: return@Runnable
+        if (!faceDetectionStarted || !continuousFaceCycleEnabled()) return@Runnable
+        faceDetectionRestartPending = true
+        try { camera?.setFaceDetectionListener(null) } catch (_: Exception) { }
+        try { camera?.stopFaceDetection() } catch (_: Exception) { }
+        faceDetectionStarted = false
+        handler.postDelayed(faceDetectionRestartRunnable, 2_000L)
+    }
+
+    private val faceDetectionRestartRunnable = Runnable {
+        faceDetectionRestartPending = false
+        if (running.get() && faceDetectionEnabled()) {
+            camera?.let { updateFaceDetection(it, true) }
+        }
+    }
+
     private fun balancedLuma(data: ByteArray): Int {
         val pixelCount = width * height
         if (pixelCount <= 0 || data.isEmpty()) return 0
@@ -181,6 +251,9 @@ internal class AmbientCameraSampler(
     }
 
     private fun releaseCamera() {
+        cameraHandler?.removeCallbacks(faceDetectionRestartRunnable)
+        cameraHandler?.removeCallbacks(faceCycleStopRunnable)
+        faceDetectionRestartPending = false
         try {
             if (faceDetectionStarted) camera?.stopFaceDetection()
             camera?.setFaceDetectionListener(null)

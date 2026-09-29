@@ -17,6 +17,9 @@ import com.zyyme.workdayalarmclock.MainActivity
 import com.zyyme.workdayalarmclock.MeDeviceAdminReceiver
 import com.zyyme.workdayalarmclock.MeService
 import com.zyyme.workdayalarmclock.MeSettings
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -61,10 +64,17 @@ internal class AmbientBrightnessController(
     private val levelValue = AtomicInteger(4)
     private val controlThread = HandlerThread("ambient-brightness-control").apply { start() }
     private val controlHandler = Handler(controlThread.looper)
-    private val sampler = AmbientCameraSampler(::updateLuma, ::updateFace, { faceDetectionEnabled() }, log)
+    private val sampler = AmbientCameraSampler(
+        ::updateLuma,
+        ::updateFace,
+        { faceDetectionEnabled() },
+        { intervalMillis() == 0L },
+        log
+    )
     @Volatile private var enabled = false
     @Volatile private var ipCameraActive = false
     @Volatile private var previewActive = false
+    @Volatile private var previewFaceWakeOverride: Boolean? = null
     private var pendingLevel = -1
     private var pendingCount = 0
     private var ignoreUntil = 0L
@@ -81,7 +91,7 @@ internal class AmbientBrightnessController(
             if (!faceDetectionEnabled() || hasFace || faceMissingSince == 0L) return
 
             brightnessWakeArmed = false
-            log("摄像头自动亮度：熄屏原因=持续无人脸10秒")
+            timedLog("摄像头自动亮度：熄屏原因=持续无人脸10秒")
             Handler(appContext.mainLooper).post { closeScreen() }
         }
     }
@@ -218,10 +228,16 @@ internal class AmbientBrightnessController(
             faceMissingSince = 0L
             controlHandler.removeCallbacks(faceMissingTimeout)
 
+            // 间隔采样时，检测到人脸即可结束本轮采样；无人脸则由 10 秒超时结束。
+            if (!previewActive && intervalMillis() > 0L) {
+                controlHandler.removeCallbacks(stopPeriodicSample)
+                controlHandler.post(stopPeriodicSample)
+            }
+
             val screenOn = isScreenOn()
             if (!screenOn && now - lastFaceWakeAt >= 2_000L) {
                 lastFaceWakeAt = now
-                log("摄像头自动亮度：亮屏原因=检测到人脸")
+                timedLog("摄像头自动亮度：亮屏原因=检测到人脸")
                 MeService.Companion.me?.wakeScreenForAmbient()
             }
             return
@@ -237,7 +253,9 @@ internal class AmbientBrightnessController(
 
     fun beginLivePreview() {
         previewActive = true
+        previewFaceWakeOverride = MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_FACE_WAKE)
         lastAppliedLevel = -1
+        sampler.resetFaceDetectionStartLog()
         controlHandler.removeCallbacks(periodicSample)
         controlHandler.removeCallbacks(stopPeriodicSample)
         sampler.stop()
@@ -247,9 +265,22 @@ internal class AmbientBrightnessController(
         }
     }
 
+    fun setPreviewFaceWakeEnabled(enabled: Boolean) {
+        if (!previewActive || previewFaceWakeOverride == enabled) return
+        previewFaceWakeOverride = enabled
+        hasFace = false
+        faceDetectionActive = false
+        faceMissingSince = 0L
+        controlHandler.removeCallbacks(faceMissingTimeout)
+        if (!ipCameraActive) {
+            sampler.setFaceDetectionEnabled(enabled)
+        }
+    }
+
     fun endLivePreview() {
         if (!previewActive) return
         previewActive = false
+        previewFaceWakeOverride = null
         sampler.stop()
         if (!enabled) {
             if (levelValue.getAndSet(4) != 4) latestLevel = 4
@@ -302,11 +333,15 @@ internal class AmbientBrightnessController(
             brightnessKey(newLevel),
             DEFAULT_BRIGHTNESS[newLevel]
         ).coerceIn(0, 255)
-        try {
-            Settings.System.putInt(appContext.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
-            Settings.System.putInt(appContext.contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
-        } catch (e: Exception) {
-            log("设置系统亮度失败：${e.message}")
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.System.canWrite(appContext)) {
+            try {
+                Settings.System.putInt(appContext.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+                Settings.System.putInt(appContext.contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
+            } catch (e: Exception) {
+                log("设置系统亮度失败：${e.message}")
+            }
+        } else {
+            log("设置系统亮度失败：未授予修改系统设置权限，请在自动亮度设置中允许")
         }
         applyToVisibleWindows()
 
@@ -323,7 +358,7 @@ internal class AmbientBrightnessController(
         val wakeLevel = MeSettings.getInt(appContext, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).coerceIn(0, 4)
         if (brightnessWakeArmed && wakeLevel > 0 && newLevel >= wakeLevel) {
             if (!isScreenOn()) {
-                log("摄像头自动亮度：亮屏原因=环境亮度达到唤醒等级" + wakeLevel + "，当前等级" + newLevel)
+                timedLog("摄像头自动亮度：亮屏原因=环境亮度达到唤醒等级" + wakeLevel + "，当前等级" + newLevel)
                 MeService.Companion.me?.wakeScreenForAmbient()
             }
         }
@@ -336,8 +371,14 @@ internal class AmbientBrightnessController(
         else -> "无人"
     }
 
+    private fun timedLog(message: String) {
+        val timestamp = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date())
+        log("$timestamp $message")
+    }
+
     private fun faceDetectionEnabled(): Boolean {
-        return enabled && MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_FACE_WAKE)
+        return enabled && (previewFaceWakeOverride
+            ?: MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_FACE_WAKE))
     }
 
     private fun isBrightnessForcingScreenOff(level: Int): Boolean {

@@ -561,6 +561,10 @@ class MeService : Service() {
         ambientBrightness.endLivePreview()
     }
 
+    fun setAmbientPreviewFaceWakeEnabled(enabled: Boolean) {
+        ambientBrightness.setPreviewFaceWakeEnabled(enabled)
+    }
+
     private fun cameraFeaturesEnabled(): Boolean {
         return (MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) ||
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)) && hasCameraPermission()

@@ -75,7 +75,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var logScrollView: ScrollView
     private lateinit var playButton: ImageView
     private var settingsPopupMenu: PopupMenu? = null
-    private var enableAmbientAfterPermission = false
+    private var openAmbientDialogAfterPermission = false
     private var dpadPassthrough = false
     private var dpadCenterLongPressTriggered = false
     private val dpadCenterLongPressRunnable = Runnable {
@@ -494,6 +494,11 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this,"请激活设备管理员权限\n远程锁屏需要这个权限\n卸载app需要在这里卸载", Toast.LENGTH_LONG).show()
     }
 
+    private fun hasDeviceAdminPermission(): Boolean {
+        val manager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        return manager.isAdminActive(ComponentName(this, MeDeviceAdminReceiver::class.java))
+    }
+
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         Toast.makeText(this, "请开启工作咩闹钟辅助功能", Toast.LENGTH_LONG).show()
@@ -568,6 +573,33 @@ class MainActivity : AppCompatActivity() {
 
     @Suppress("DEPRECATION")
     private fun showCameraAutoBrightnessDialog() {
+        // 摄像头自动亮度打开后会立即启动采样，因此在进入设置页时就请求摄像头权限。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+        ) {
+            openAmbientDialogAfterPermission = true
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                REQUEST_AMBIENT_CAMERA_PERMISSION
+            )
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(this)) {
+            Toast.makeText(this, "请允许修改系统设置，用于调节系统亮度", Toast.LENGTH_LONG).show()
+            try {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                        "package:$packageName".toUri()
+                    )
+                )
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            }
+        }
+
         fun numberInput(defaultValue: String, currentValue: String, decimal: Boolean = false): EditText {
             return EditText(this).apply {
                 hint = defaultValue
@@ -643,6 +675,9 @@ class MainActivity : AppCompatActivity() {
         val faceWakeSwitch = Switch(this).apply {
             text = "人脸检测触发亮屏/无人脸熄屏"
             isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_FACE_WAKE)
+            setOnCheckedChangeListener { _, checked ->
+                MeService.me?.setAmbientPreviewFaceWakeEnabled(checked)
+            }
         }
         container.addView(faceWakeSwitch)
         fun brightnessSeekBar(value: Int): SeekBar {
@@ -662,16 +697,34 @@ class MainActivity : AppCompatActivity() {
         val closeScreenSwitch = Switch(this).apply {
             text = "档位0关闭屏幕（关闭时设置亮度0）"
             isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_CLOSE_SCREEN)
+            setOnCheckedChangeListener { button, checked ->
+                if (checked && !hasDeviceAdminPermission()) {
+                    button.isChecked = false
+                    openDeviceAdminSettings()
+                }
+            }
         }
         container.addView(closeScreenSwitch)
         val closeScreenLevel1Switch = Switch(this).apply {
             text = "档位1关闭屏幕（关闭时设置上面的亮度）"
             isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_CLOSE_SCREEN_LEVEL_1)
+            setOnCheckedChangeListener { button, checked ->
+                if (checked && !hasDeviceAdminPermission()) {
+                    button.isChecked = false
+                    openDeviceAdminSettings()
+                }
+            }
         }
         container.addView(closeScreenLevel1Switch)
         val closeScreenKeepScreenOnSwitch = Switch(this).apply {
             text = "保持亮屏时仍关闭屏幕"
             isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_CAMERA_CLOSE_SCREEN_KEEP_SCREEN_ON)
+            setOnCheckedChangeListener { button, checked ->
+                if (checked && !hasDeviceAdminPermission()) {
+                    button.isChecked = false
+                    openDeviceAdminSettings()
+                }
+            }
         }
         container.addView(closeScreenKeepScreenOnSwitch)
         val wakeLevel = numberInput(
@@ -741,15 +794,8 @@ class MainActivity : AppCompatActivity() {
                 MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_FACE_WAKE, faceWakeSwitch.isChecked)
 
                 val shouldEnable = enabledSwitch.isChecked
-                if (shouldEnable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                    ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    enableAmbientAfterPermission = true
-                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQUEST_AMBIENT_CAMERA_PERMISSION)
-                } else {
-                    MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS, shouldEnable)
-                    MeService.me?.syncAmbientBrightnessSetting()
-                }
+                MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS, shouldEnable)
+                MeService.me?.syncAmbientBrightnessSetting()
                 dialog.dismiss()
             }
             dialog.setOnDismissListener {
@@ -780,12 +826,13 @@ class MainActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_AMBIENT_CAMERA_PERMISSION) {
             val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-            MeSettings.setEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS, granted && enableAmbientAfterPermission)
-            settingsPopupMenu?.menu?.findItem(CONFIG_CAMERA_AUTO_BRIGHTNESS)?.isChecked =
-                granted && enableAmbientAfterPermission
-            enableAmbientAfterPermission = false
-            MeService.me?.syncAmbientBrightnessSetting()
-            if (!granted) Toast.makeText(this, "摄像头权限未授权", Toast.LENGTH_LONG).show()
+            val openDialog = openAmbientDialogAfterPermission
+            openAmbientDialogAfterPermission = false
+            if (granted && openDialog) {
+                showCameraAutoBrightnessDialog()
+            } else if (!granted) {
+                Toast.makeText(this, "摄像头权限未授权，无法使用自动亮度", Toast.LENGTH_LONG).show()
+            }
             return
         }
         if (requestCode != REQUEST_MEDIA_SERVER_PERMISSIONS) return
