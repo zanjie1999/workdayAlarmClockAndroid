@@ -39,7 +39,10 @@ import java.lang.reflect.Method
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.HttpURLConnection
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.URL
+import kotlin.collections.iterator
 import kotlin.jvm.java
 import kotlin.math.sqrt
 
@@ -226,7 +229,7 @@ class MeService : Service() {
     }
 
     private fun isLargeLandscapeScreen(): Boolean {
-        val display = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
+        val display = (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay
         val metrics = DisplayMetrics()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
             display.getRealMetrics(metrics)
@@ -255,7 +258,7 @@ class MeService : Service() {
 
         // 保活通知 8.0开始channel不是个字符串 不会保持唤醒
         val channelId = "me_bg"
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             val importance = NotificationManager.IMPORTANCE_DEFAULT
             val notificationChannel = NotificationChannel(channelId, "保活通知", importance).apply {
@@ -340,7 +343,7 @@ class MeService : Service() {
             return super.onStartCommand(intent, flags, startId)
         }
 
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         // 创建 OnAudioFocusChangeListener
         val afChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -448,7 +451,7 @@ class MeService : Service() {
                 return@Runnable
             }
             // 解决小爱的悬浮窗不会消失的bug  虽然不知道当前显示的app是什么，但是直接启动一下本应启动的小爱同学也无伤大雅
-            val storedApps = this.getSharedPreferences("app_list", Context.MODE_PRIVATE).getString("startup_apps", null).orEmpty().trim()
+            val storedApps = this.getSharedPreferences("app_list", MODE_PRIVATE).getString("startup_apps", null).orEmpty().trim()
             Log.d("scheduleAutoBackToClock", "storedApps: $storedApps")
             if (storedApps.contains("\"com.xiaomi.xiaoailite\"")) {
                 val intent = packageManager.getLaunchIntentForPackage("com.xiaomi.xiaoailite")
@@ -641,7 +644,7 @@ class MeService : Service() {
         unregisterReceiver(batteryReceiver)
         stopForeground(true)
         if (wakePendingIntent != null) {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
             alarmManager.cancel(wakePendingIntent)
         }
         me = null
@@ -654,7 +657,7 @@ class MeService : Service() {
     private fun wakeScreen() {
         try {
             if (screenWakeLock == null) {
-                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                val powerManager = getSystemService(POWER_SERVICE) as PowerManager
                 screenWakeLock = powerManager.newWakeLock(
                     PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
                     "workDayAlarmClock:ScreenWake"
@@ -779,7 +782,33 @@ class MeService : Service() {
     }
 
 
-    fun print2LogView(s:String) {
+    fun getIp(): String {
+        val interfaces = NetworkInterface.getNetworkInterfaces()
+
+        while (interfaces.hasMoreElements()) {
+            val intf = interfaces.nextElement()
+
+            if (!intf.isUp || intf.isLoopback)
+                continue
+
+            for (addr in intf.inetAddresses) {
+                if (!addr.isLoopbackAddress &&
+                    addr is Inet4Address
+                ) {
+                    return addr.hostAddress
+                }
+            }
+        }
+
+        return "在Wi-Fi设置查看IP"
+    }
+
+    fun print2LogView(inp:String) {
+        // go获取不到ip，得靠Android了
+        var s = inp
+        if (inp.contains("设备ip")) {
+            s = inp.replace("设备ip", getIp())
+        }
         Log.d("logView", s)
         synchronized(logBuilder) {
             logBuilder.append(s).append('\n')
@@ -849,7 +878,11 @@ class MeService : Service() {
                     DeskActivity.me?.lyricsView?.text = s.substring(9).trim()
                 }
             } else if (s.startsWith("ECHO ")) {
-                val msg = s.substring(5)
+                var msg = s.substring(5)
+                // go获取不到ip，得靠Android了
+                if (msg.contains("设备ip")) {
+                    msg = msg.replace("设备ip", getIp())
+                }
                 lastEcho = msg
                 updateNotificationTitle(msg)
                 mainHandler.post {
@@ -919,13 +952,13 @@ class MeService : Service() {
                 ysSetLedsValue(n[0].toInt(), n.last().toInt(), n[1].toLong(), true)
             } else if (s == "WAKELOCK") {
                 // 加cpu唤醒锁 2000mah电池平均每小时耗电1% 但工作稳定
-                wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
+                wakeLock = (getSystemService(POWER_SERVICE) as PowerManager).run {
                     newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeService").apply {
                         acquire()
                         print2LogView("已启用CPU唤醒锁")
                     }
                 }
-                wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL, "workDayAlarmClock:WifiLock")
+                wifiLock = (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL, "workDayAlarmClock:WifiLock")
                 wifiLock?.acquire()
             } else if (s == "ALARMON") {
                 if (wakePendingIntent == null) {
@@ -948,7 +981,7 @@ class MeService : Service() {
                     print2LogView("已关闭每分钟唤醒")
                 }
             } else if (s == "ALARM") {
-                val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
                     Handler(Looper.getMainLooper()).post {
@@ -971,7 +1004,7 @@ class MeService : Service() {
                 }
                 print2LogView("已亮屏")
             } else if (s == "SCREENOFF") {
-                val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
                     try {
@@ -1105,13 +1138,13 @@ class MeService : Service() {
         meMediaPlaybackManager?.updatePlaybackState(PlaybackStateCompat.STATE_PLAYING, 0)
         // 如果没有唤醒锁，在开播时增加唤醒锁
         if (wakeLock == null && wakeLockPlay == null) {
-            wakeLockPlay = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
+            wakeLockPlay = (getSystemService(POWER_SERVICE) as PowerManager).run {
                 newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "workDayAlarmClock::MeServicePlay").apply {
                     acquire()
                 }
             }
             if (wifiLock == null) {
-                wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "workDayAlarmClock:WifiLock")
+                wifiLock = (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "workDayAlarmClock:WifiLock")
                 wifiLock?.acquire()
             }
         }
@@ -2171,7 +2204,7 @@ class MeService : Service() {
     fun startAp() {
         try {
             // 用反射开热点
-            val wifiManager: WifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val wifiManager: WifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
             var wifiCfg: WifiConfiguration? = null
             try {
                 // 获取系统热点设置  新系统大概率是不行的

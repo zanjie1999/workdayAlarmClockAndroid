@@ -35,6 +35,8 @@ import androidx.core.net.toUri
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.notification.MeNotificationListenerService
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.util.concurrent.atomic.AtomicBoolean
 
 
@@ -189,7 +191,7 @@ class MainActivity : AppCompatActivity() {
         // 存储空间权限 Android11
         if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
             Toast.makeText(this,"请允许权限\n用于本地音乐播放", Toast.LENGTH_LONG).show()
-            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:${BuildConfig.APPLICATION_ID}".toUri()))
+            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:$packageName".toUri()))
         } else if (Build.VERSION.SDK_INT < 30 && ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE ) != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this,"请允许权限\n用于本地音乐播放", Toast.LENGTH_LONG).show()
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
@@ -267,15 +269,17 @@ class MainActivity : AppCompatActivity() {
         menuIcon.post {
             if (!isFinishing) getOrCreateSettingsMenu(menuIcon)
         }
-        findViewById<Toolbar>(R.id.toolbar).setOnClickListener {
+        val toolbar = findViewById<Toolbar>(R.id.toolbar)
+        toolbar.setOnClickListener {
             val intent = MeSettings.createClockIntent(this)
             startActivity(intent)
         }
-        findViewById<Toolbar>(R.id.toolbar).setOnLongClickListener {
+        toolbar.setOnLongClickListener {
             val intent = Intent(this, AppListActivity::class.java)
             startActivity(intent)
             true
         }
+        toolbar.subtitle = MeService.me?.getIp() + "咩咩"
 
     }
 
