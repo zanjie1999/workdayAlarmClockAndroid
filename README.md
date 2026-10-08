@@ -67,7 +67,7 @@ run
 
 ## 作为电脑音箱
 本来是Linux独享的功能，顺手写的，在做了个Windows上位机发现延迟跟没有一样，效果太好了，就给Android加上了，毕竟延迟比叮咚Play蓝牙低太多了  
-在右上角菜单中打开“作为电脑音箱”即可，注意端口号是`8880`，跟工作咩闹钟Web服务不一样，跟IP摄像头功能的一样  
+在右上角菜单中打开“作为电脑音箱”即可，注意端口号是`8880`，跟工作咩闹钟Web服务不一样，跟IP摄像头功能的一样
 
 Windows直接用上位机 [loopbackPost](https://github.com/zanjie1999/loopbackPost)  
 
@@ -76,6 +76,13 @@ Windows直接用上位机 [loopbackPost](https://github.com/zanjie1999/loopbackP
 ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acodec pcm_s16le -ar 44100 -ac 2 -f s16le - | curl.exe -T - "http://192.168.1.147:8880/aplay?rate=44100&channels=2"
 ```
 
+## 作为电脑显示器
+关于这个功能，如果你只是想串流当个副屏什么的，我推荐你去用群共享里的 咩Moonlight ，因为它我做了专门的优化，MTK延迟比官方低，支持到Android4，并且有自动连接和触摸输入等奇奇怪怪的功能  
+
+这又是Linux独享的功能，实在手痒，顺手做了Android的，性能没有 咩Moonlight 优秀，画面会显示在 小屏时钟 的最上面，或者 大屏时钟 的壁纸位置，上面的组件会在10秒后自动隐藏，点击屏幕显示  
+开启作为电脑音箱的同时会开启这个功能，临时征用一下音箱的屏幕显示个任务管理器或是挂机游戏什么的挺合适的，只需要电脑5%的CPU和2%的GPU，远低于Sunshine和Spacedesk  
+
+Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPost)  
 
 ## IP摄像头服务
 在右上角菜单中打开“IP摄像头”，第一次开启时可授权摄像头和麦克风权限。只授权其中一个也可以启动服务，未授权的设备不会输出对应的流。服务监听 `8880` 端口，摄像头编号从 `1` 开始  

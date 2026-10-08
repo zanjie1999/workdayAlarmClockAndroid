@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +27,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -81,6 +83,8 @@ class ClockActivity : AppCompatActivity() {
     private lateinit var wallpaperView: ImageView
     private lateinit var wallpaperMaskView: View
     private var wallpaperBitmap: Bitmap? = null
+    private var framebufferOverlay: ImageView? = null
+    private var framebufferBitmap: Bitmap? = null
     private val autoWallpaperDirectory = File("/sdcard/zyymeWallpaper")
     private var autoWallpaperFiles = emptyList<File>()
     private var autoWallpaperIndex = -1
@@ -691,6 +695,38 @@ class ClockActivity : AppCompatActivity() {
         wallpaperBitmap = null
     }
 
+    internal fun showFramebufferFrame(bitmap: Bitmap) {
+        if (isFinishing) {
+            if (!bitmap.isRecycled) bitmap.recycle()
+            return
+        }
+        val content = findViewById<FrameLayout>(android.R.id.content)
+        val overlay = framebufferOverlay ?: ImageView(this).apply {
+            contentDescription = "电脑屏幕串流"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            content.addView(this)
+        }.also { framebufferOverlay = it }
+        val old = framebufferBitmap
+        framebufferBitmap = bitmap
+        overlay.setImageBitmap(bitmap)
+        if (old != null && old !== bitmap && !old.isRecycled) old.recycle()
+    }
+
+    internal fun hideFramebufferFrame() {
+        framebufferOverlay?.let { overlay ->
+            (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
+            overlay.setImageDrawable(null)
+        }
+        framebufferOverlay = null
+        framebufferBitmap?.let { if (!it.isRecycled) it.recycle() }
+        framebufferBitmap = null
+    }
+
     private fun decodeSampledFileSafely(file: File, width: Int, height: Int): Bitmap? {
         return if (file.exists() && file.length() > 0L) {
             try {
@@ -823,6 +859,7 @@ class ClockActivity : AppCompatActivity() {
         if (runnable != null) {
             timeHandler.removeCallbacks(runnable!!)
         }
+        hideFramebufferFrame()
         if (::wallpaperView.isInitialized) hideClockWallpaper()
 //        stopService(Intent(this, MeService::class.java))
 //        Toast.makeText(this, "${this.getString(R.string.app_name)} 在后台运行", Toast.LENGTH_SHORT).show()

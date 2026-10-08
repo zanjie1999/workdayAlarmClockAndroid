@@ -17,7 +17,9 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import android.util.DisplayMetrics
 import android.view.Surface
+import android.view.WindowManager
 import com.zyyme.workdayalarmclock.MeService
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -36,10 +38,13 @@ internal class CameraHttpServer(
     private val brightness: AmbientBrightnessController,
     private val log: (String) -> Unit,
     private val cameraEnabled: () -> Boolean,
-    private val speakerEnabled: () -> Boolean
+    private val speakerEnabled: () -> Boolean,
+    private val framebufferFrame: (ByteArray) -> Unit,
+    private val framebufferStreamState: (Boolean) -> Unit
 ) {
     companion object {
         const val PORT = 8880
+        private const val MAX_JPEG_FRAME_BYTES = 16 * 1024 * 1024
         private val HTTP_CHARSET: Charset = Charset.forName("US-ASCII")
         private val HTML_CHARSET: Charset = Charset.forName("UTF-8")
     }
@@ -52,9 +57,11 @@ internal class CameraHttpServer(
     private val streamLockState = Any()
     private val clients = LinkedHashMap<Socket, CameraStreamPipeline>()
     private val audioClients = LinkedHashSet<Socket>()
+    private val framebufferStreamActive = AtomicBoolean(false)
     @Volatile private var password = ""
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
+    @Volatile private var activeFramebufferSocket: Socket? = null
     private var activePipeline: CameraStreamPipeline? = null
     private var activeAudioPipeline: AacAudioPipeline? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -103,6 +110,10 @@ internal class CameraHttpServer(
         } catch (_: Exception) {
         }
         serverSocket = null
+        try {
+            activeFramebufferSocket?.close()
+        } catch (_: Exception) {
+        }
         closeActiveSession()
         closeActiveAudioSession()
         acceptThread?.interrupt()
@@ -147,6 +158,22 @@ internal class CameraHttpServer(
                 }
                 socket.soTimeout = 0
                 streamPcm(socket, request)
+                return
+            }
+            if (path == "/fbinfo") {
+                if (request.method == "GET") {
+                    writeFramebufferInfo(socket)
+                } else {
+                    writeEmptyResponse(socket, 405, "Method Not Allowed")
+                }
+                return
+            }
+            if (path == "/fb") {
+                if (request.method != "POST" && request.method != "PUT") {
+                    writeEmptyResponse(socket, 405, "Method Not Allowed")
+                    return
+                }
+                streamFramebuffer(socket, request)
                 return
             }
             if (!cameraEnabled()) {
@@ -219,7 +246,8 @@ internal class CameraHttpServer(
         val path: String,
         val uri: Uri,
         val body: InputStream,
-        val expectContinue: Boolean
+        val expectContinue: Boolean,
+        val contentType: String?
     )
 
     private fun readRequest(socket: Socket): HttpRequest? {
@@ -231,6 +259,7 @@ internal class CameraHttpServer(
         var headerCount = 0
         var chunked = false
         var expectContinue = false
+        var contentType: String? = null
         while (true) {
             val line = readHttpLine(input) ?: return null
             if (line.isEmpty()) break
@@ -244,6 +273,9 @@ internal class CameraHttpServer(
                 expectContinue = line.substringAfter(':').trim()
                     .equals("100-continue", ignoreCase = true)
             }
+            if (line.substringBefore(':').trim().equals("Content-Type", ignoreCase = true)) {
+                contentType = line.substringAfter(':').trim()
+            }
         }
 
         val uri = try {
@@ -253,7 +285,185 @@ internal class CameraHttpServer(
         }
         if (uri.fragment != null) return null
         val body = if (chunked) ChunkedInputStream(input) else input
-        return HttpRequest(parts[0], uri.path.toString(), uri, body, expectContinue)
+        return HttpRequest(parts[0], uri.path.toString(), uri, body, expectContinue, contentType)
+    }
+
+    private fun writeFramebufferInfo(socket: Socket) {
+        val metrics = DisplayMetrics()
+        val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            windowManager.defaultDisplay.getRealMetrics(metrics)
+        } else {
+            windowManager.defaultDisplay.getMetrics(metrics)
+        }
+        val width = metrics.widthPixels.coerceAtLeast(1)
+        val height = metrics.heightPixels.coerceAtLeast(1)
+        val stride = width.toLong() * 4L
+        val frameSize = stride * height
+        val body = org.json.JSONObject()
+            .put("device", "Android display")
+            .put("width", width)
+            .put("height", height)
+            .put("width_virtual", width)
+            .put("height_virtual", height)
+            .put("bits_per_pixel", 32)
+            .put("format", "xrgb8888")
+            .put("stride", stride)
+            .put("frame_size", frameSize)
+            .put("memory_size", frameSize.coerceAtMost(0xffffffffL))
+            .put("y_pan_step", 0)
+            .put("double_buffer", false)
+            .put("red_offset", 16)
+            .put("red_length", 8)
+            .put("green_offset", 8)
+            .put("green_length", 8)
+            .put("blue_offset", 0)
+            .put("blue_length", 8)
+            .put("alpha_offset", 0)
+            .put("alpha_length", 0)
+            .toString()
+            .toByteArray(HTML_CHARSET)
+        writeJsonResponse(socket, 200, "OK", body)
+    }
+
+    private fun streamFramebuffer(socket: Socket, request: HttpRequest) {
+        val boundary = parseMultipartBoundary(request.contentType)
+        if (boundary == null) {
+            writeJsonResponse(
+                socket,
+                400,
+                "Bad Request",
+                """{"error":"Content-Type must be multipart/x-mixed-replace with a boundary"}"""
+                    .toByteArray(HTML_CHARSET)
+            )
+            return
+        }
+        if (!framebufferStreamActive.compareAndSet(false, true)) {
+            writeEmptyResponse(socket, 503, "Service Unavailable")
+            return
+        }
+        activeFramebufferSocket = socket
+
+        var frameCount = 0L
+        var jpegBytes = 0L
+        var streamStarted = false
+        try {
+            if (request.expectContinue) {
+                socket.getOutputStream().write(
+                    "HTTP/1.1 100 Continue\r\n\r\n".toByteArray(HTTP_CHARSET)
+                )
+                socket.getOutputStream().flush()
+            }
+            socket.soTimeout = 0
+            framebufferStreamState(true)
+            streamStarted = true
+            val boundaryLine = "--$boundary"
+            while (running.get() && !socket.isClosed) {
+                val line = readHttpLine(request.body)
+                    ?: throw java.io.EOFException("missing MJPEG boundary")
+                if (line == "$boundaryLine--") break
+                if (line != boundaryLine) {
+                    throw IllegalArgumentException("invalid MJPEG boundary")
+                }
+
+                var contentLength: Int? = null
+                var partContentType: String? = null
+                var headerCount = 0
+                while (true) {
+                    val header = readHttpLine(request.body)
+                        ?: throw java.io.EOFException("truncated MJPEG part headers")
+                    if (header.isEmpty()) break
+                    headerCount++
+                    if (headerCount > 32) {
+                        throw IllegalArgumentException("too many MJPEG part headers")
+                    }
+                    val name = header.substringBefore(':').trim()
+                    val value = header.substringAfter(':', "").trim()
+                    when {
+                        name.equals("Content-Length", ignoreCase = true) ->
+                            contentLength = value.toIntOrNull()
+                        name.equals("Content-Type", ignoreCase = true) ->
+                            partContentType = value
+                    }
+                }
+                if (partContentType != null &&
+                    !partContentType.startsWith("image/jpeg", ignoreCase = true)
+                ) {
+                    throw IllegalArgumentException("MJPEG part is not image/jpeg")
+                }
+                val frameLength = contentLength
+                    ?: throw IllegalArgumentException("MJPEG part is missing Content-Length")
+                if (frameLength <= 0 || frameLength > MAX_JPEG_FRAME_BYTES) {
+                    throw IllegalArgumentException("invalid JPEG frame size: $frameLength")
+                }
+
+                val frame = ByteArray(frameLength)
+                var offset = 0
+                while (offset < frame.size) {
+                    val count = request.body.read(frame, offset, frame.size - offset)
+                    if (count < 0) throw java.io.EOFException("truncated JPEG frame")
+                    if (count == 0) continue
+                    offset += count
+                }
+                if (readHttpLine(request.body) != "") {
+                    throw IllegalArgumentException("missing MJPEG part terminator")
+                }
+                framebufferFrame(frame)
+                frameCount++
+                jpegBytes += frameLength
+            }
+            if (frameCount == 0L) {
+                throw IllegalArgumentException("empty MJPEG stream")
+            }
+            val response = """{"ok":true,"frames":$frameCount,"jpeg_bytes":$jpegBytes}"""
+                .toByteArray(HTML_CHARSET)
+            writeJsonResponse(socket, 200, "OK", response)
+            log("桌面画面串流已结束：$frameCount 帧，$jpegBytes 字节")
+        } catch (e: Exception) {
+            val status = if (frameCount == 0L) 400 else 502
+            val reason = if (status == 400) "Bad Request" else "Bad Gateway"
+            log("桌面画面串流失败：${e.javaClass.simpleName}: ${e.message ?: "无错误信息"}")
+            val response = """{"error":"MJPEG stream failed","frames":$frameCount,"jpeg_bytes":$jpegBytes}"""
+                .toByteArray(HTML_CHARSET)
+            writeJsonResponse(socket, status, reason, response)
+        } finally {
+            if (streamStarted) framebufferStreamState(false)
+            if (activeFramebufferSocket === socket) activeFramebufferSocket = null
+            framebufferStreamActive.set(false)
+        }
+    }
+
+    private fun parseMultipartBoundary(contentType: String?): String? {
+        if (contentType == null) return null
+        val parameters = contentType.split(';')
+        val mediaType = parameters.firstOrNull()?.trim()
+        if (!mediaType.equals("multipart/x-mixed-replace", ignoreCase = true) &&
+            !mediaType.equals("multipart/mixed", ignoreCase = true)
+        ) {
+            return null
+        }
+        val boundary = parameters.drop(1).firstNotNullOfOrNull { parameter ->
+            if (parameter.substringBefore('=').trim().equals("boundary", ignoreCase = true)) {
+                parameter.substringAfter('=', "").trim().removeSurrounding("\"")
+            } else {
+                null
+            }
+        }
+        return boundary?.takeIf {
+            it.isNotEmpty() && it.length <= 200 && '\r' !in it && '\n' !in it
+        }
+    }
+
+    private fun writeJsonResponse(socket: Socket, status: Int, reason: String, body: ByteArray) {
+        val header = "HTTP/1.0 $status $reason\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-cache, no-store\r\n" +
+            "Content-Type: application/json; charset=utf-8\r\n" +
+            "Content-Length: ${body.size}\r\n\r\n"
+        val output = socket.getOutputStream()
+        output.write(header.toByteArray(HTTP_CHARSET))
+        output.write(body)
+        output.flush()
     }
 
     private class ChunkedInputStream(private val input: InputStream) : InputStream() {

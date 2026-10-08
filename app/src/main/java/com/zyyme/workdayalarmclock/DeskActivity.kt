@@ -47,6 +47,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
+import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -98,6 +99,8 @@ class DeskActivity : AppCompatActivity() {
     private val baseIconDrawables = mutableMapOf<Int, Drawable>()
 
     private lateinit var wallpaperView: ImageView
+    private lateinit var framebufferOverlay: ImageView
+    private lateinit var overlayContainer: View
     private lateinit var maskView: View
     private lateinit var grid: LinearLayout
     private lateinit var timePanel: LinearLayout
@@ -124,6 +127,11 @@ class DeskActivity : AppCompatActivity() {
     private lateinit var alarmStopButton: Button
 
     private var wallpaperBitmap: Bitmap? = null
+    private var framebufferBitmap: Bitmap? = null
+    private var framebufferStreaming = false
+    private val hideFramebufferControlsRunnable = Runnable {
+        if (framebufferStreaming) overlayContainer.visibility = View.GONE
+    }
     private var pendingWallpaperUri: Uri? = null
     private val autoWallpaperDirectory = File("/sdcard/zyymeWallpaper")
     private var autoWallpaperFiles = emptyList<File>()
@@ -266,6 +274,7 @@ class DeskActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         isActivityStarted = true
+        setFramebufferStreaming(FramebufferFrameRenderer.isStreaming())
     }
 
     override fun onStop() {
@@ -313,6 +322,8 @@ class DeskActivity : AppCompatActivity() {
 
     private fun bindViews() {
         wallpaperView = findViewById(R.id.desk_wallpaper)
+        framebufferOverlay = findViewById(R.id.desk_framebuffer)
+        overlayContainer = findViewById(R.id.desk_overlay_container)
         maskView = findViewById(R.id.desk_mask)
         grid = findViewById(R.id.desk_grid)
         timePanel = findViewById(R.id.desk_time_panel)
@@ -348,6 +359,9 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private fun bindActions() {
+        framebufferOverlay.setOnClickListener {
+            showFramebufferControlsForTenSeconds()
+        }
         prevButton.setOnClickListener {
             MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
         }
@@ -968,6 +982,46 @@ class DeskActivity : AppCompatActivity() {
         }
     }
 
+    internal fun showFramebufferFrame(bitmap: Bitmap) {
+        if (isFinishing) {
+            if (!bitmap.isRecycled) bitmap.recycle()
+            return
+        }
+        val old = framebufferBitmap
+        framebufferBitmap = bitmap
+        framebufferOverlay.setImageBitmap(bitmap)
+        framebufferOverlay.visibility = View.VISIBLE
+        if (old != null && old !== bitmap && !old.isRecycled) old.recycle()
+    }
+
+    internal fun setFramebufferStreaming(active: Boolean) {
+        framebufferStreaming = active
+        handler.removeCallbacks(hideFramebufferControlsRunnable)
+        if (active) {
+            framebufferOverlay.visibility = View.VISIBLE
+            showFramebufferControlsForTenSeconds()
+        } else {
+            overlayContainer.visibility = View.VISIBLE
+        }
+    }
+
+    private fun showFramebufferControlsForTenSeconds() {
+        if (!framebufferStreaming) return
+        overlayContainer.visibility = View.VISIBLE
+        handler.removeCallbacks(hideFramebufferControlsRunnable)
+        handler.postDelayed(hideFramebufferControlsRunnable, 10_000L)
+    }
+
+    internal fun hideFramebufferFrame() {
+        setFramebufferStreaming(false)
+        if (::framebufferOverlay.isInitialized) {
+            framebufferOverlay.setImageDrawable(null)
+            framebufferOverlay.visibility = View.GONE
+        }
+        framebufferBitmap?.let { if (!it.isRecycled) it.recycle() }
+        framebufferBitmap = null
+    }
+
     private fun decodeSampledFileSafely(file: File, width: Int, height: Int): Bitmap? {
         return if (file.exists() && file.length() > 0L) {
             try {
@@ -1343,6 +1397,8 @@ class DeskActivity : AppCompatActivity() {
         handler.removeCallbacks(refreshRunnable)
         handler.removeCallbacks(nonLyricsRefreshRunnable)
         handler.removeCallbacks(hourlyUpdateRunnable)
+        handler.removeCallbacks(hideFramebufferControlsRunnable)
+        hideFramebufferFrame()
         wallpaperBitmap?.let { if (!it.isRecycled) it.recycle() }
         wallpaperBitmap = null
         if (me === this) me = null

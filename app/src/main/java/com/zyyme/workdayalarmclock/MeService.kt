@@ -27,6 +27,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
+import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
 import com.zyyme.workdayalarmclock.camera.CameraHttpServer
 import org.json.JSONArray
 import org.json.JSONObject
@@ -536,7 +537,9 @@ class MeService : Service() {
             ambientBrightness,
             { message -> print2LogView(message) },
             { MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) },
-            { MeSettings.isEnabled(this, MeSettings.KEY_COMPUTER_SPEAKER) }
+            { MeSettings.isEnabled(this, MeSettings.KEY_COMPUTER_SPEAKER) },
+            { frame -> FramebufferFrameRenderer.submit(frame) },
+            { active -> FramebufferFrameRenderer.setStreaming(active) }
         ).also { cameraHttpServer = it }
         server.start(MeSettings.getCameraPassword(this))
     }
