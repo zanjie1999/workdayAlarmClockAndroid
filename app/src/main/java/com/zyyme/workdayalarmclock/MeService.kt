@@ -538,7 +538,7 @@ class MeService : Service() {
             { message -> print2LogView(message) },
             { MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) },
             { MeSettings.isEnabled(this, MeSettings.KEY_COMPUTER_SPEAKER) },
-            { frame -> FramebufferFrameRenderer.submit(frame) },
+            { frame, length -> FramebufferFrameRenderer.submit(frame, length) },
             { active -> FramebufferFrameRenderer.setStreaming(active) }
         ).also { cameraHttpServer = it }
         server.start(MeSettings.getCameraPassword(this))

@@ -18,8 +18,11 @@ import android.os.Build
 import android.os.PowerManager
 import android.util.Log
 import android.util.DisplayMetrics
+import android.graphics.Point
 import android.view.Surface
 import android.view.WindowManager
+import com.zyyme.workdayalarmclock.ClockActivity
+import com.zyyme.workdayalarmclock.DeskActivity
 import com.zyyme.workdayalarmclock.MeService
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -39,7 +42,7 @@ internal class CameraHttpServer(
     private val log: (String) -> Unit,
     private val cameraEnabled: () -> Boolean,
     private val speakerEnabled: () -> Boolean,
-    private val framebufferFrame: (ByteArray) -> Unit,
+    private val framebufferFrame: (ByteArray, Int) -> Unit,
     private val framebufferStreamState: (Boolean) -> Unit
 ) {
     companion object {
@@ -289,15 +292,14 @@ internal class CameraHttpServer(
     }
 
     private fun writeFramebufferInfo(socket: Socket) {
+        val displaySize = activeActivityDisplaySize()
         val metrics = DisplayMetrics()
-        val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            windowManager.defaultDisplay.getRealMetrics(metrics)
-        } else {
+        if (displaySize == null) {
+            val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             windowManager.defaultDisplay.getMetrics(metrics)
         }
-        val width = metrics.widthPixels.coerceAtLeast(1)
-        val height = metrics.heightPixels.coerceAtLeast(1)
+        val width = (displaySize?.x ?: metrics.widthPixels).coerceAtLeast(1)
+        val height = (displaySize?.y ?: metrics.heightPixels).coerceAtLeast(1)
         val stride = width.toLong() * 4L
         val frameSize = stride * height
         val body = org.json.JSONObject()
@@ -324,6 +326,16 @@ internal class CameraHttpServer(
             .toString()
             .toByteArray(HTML_CHARSET)
         writeJsonResponse(socket, 200, "OK", body)
+    }
+
+    private fun activeActivityDisplaySize(): Point? {
+        val activity = ClockActivity.me?.takeIf { it.isActivityStarted }
+            ?: DeskActivity.me?.takeIf { it.isActivityStarted }
+            ?: return null
+        val content = activity.findViewById<android.view.View>(android.R.id.content)
+            ?: return null
+        if (content.width <= 0 || content.height <= 0) return null
+        return Point(content.width, content.height)
     }
 
     private fun streamFramebuffer(socket: Socket, request: HttpRequest) {
@@ -397,18 +409,24 @@ internal class CameraHttpServer(
                     throw IllegalArgumentException("invalid JPEG frame size: $frameLength")
                 }
 
-                val frame = ByteArray(frameLength)
-                var offset = 0
-                while (offset < frame.size) {
-                    val count = request.body.read(frame, offset, frame.size - offset)
-                    if (count < 0) throw java.io.EOFException("truncated JPEG frame")
-                    if (count == 0) continue
-                    offset += count
+                val jpeg = FramebufferJpegBufferPool.acquire(frameLength)
+                var frame: ByteArray? = jpeg
+                try {
+                    var offset = 0
+                    while (offset < frameLength) {
+                        val count = request.body.read(jpeg, offset, frameLength - offset)
+                        if (count < 0) throw java.io.EOFException("truncated JPEG frame")
+                        if (count == 0) continue
+                        offset += count
+                    }
+                    if (readHttpLine(request.body) != "") {
+                        throw IllegalArgumentException("missing MJPEG part terminator")
+                    }
+                    framebufferFrame(jpeg, frameLength)
+                    frame = null
+                } finally {
+                    frame?.let(FramebufferJpegBufferPool::release)
                 }
-                if (readHttpLine(request.body) != "") {
-                    throw IllegalArgumentException("missing MJPEG part terminator")
-                }
-                framebufferFrame(frame)
                 frameCount++
                 jpegBytes += frameLength
             }

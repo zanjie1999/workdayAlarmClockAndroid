@@ -40,6 +40,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
+import com.zyyme.workdayalarmclock.camera.FramebufferBitmapReaper
+import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
 
 import java.io.File
 import java.text.SimpleDateFormat
@@ -51,6 +53,7 @@ import java.util.Locale
  */
 class ClockActivity : AppCompatActivity() {
     companion object {
+        @Volatile
         var me: ClockActivity? = null
 
         private const val HOUR_MILLIS = 60L * 60L * 1000L
@@ -58,7 +61,7 @@ class ClockActivity : AppCompatActivity() {
 
     var mediaSessionCompat: MediaSessionCompat? = null
     var mediaComponentName: ComponentName? = null
-    var isActivityStarted = false
+    @Volatile var isActivityStarted = false
 
     private var timeHandler: Handler = Handler()
     private var runnable: Runnable? = null
@@ -445,6 +448,7 @@ class ClockActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         isActivityStarted = true
+        FramebufferFrameRenderer.requestLatestFrame()
     }
 
     override fun onStop() {
@@ -695,10 +699,10 @@ class ClockActivity : AppCompatActivity() {
         wallpaperBitmap = null
     }
 
-    internal fun showFramebufferFrame(bitmap: Bitmap) {
+    internal fun showFramebufferFrame(bitmap: Bitmap): Bitmap? {
         if (isFinishing) {
             if (!bitmap.isRecycled) bitmap.recycle()
-            return
+            return null
         }
         val content = findViewById<FrameLayout>(android.R.id.content)
         val overlay = framebufferOverlay ?: ImageView(this).apply {
@@ -711,10 +715,10 @@ class ClockActivity : AppCompatActivity() {
             )
             content.addView(this)
         }.also { framebufferOverlay = it }
-        val old = framebufferBitmap
+        val previous = framebufferBitmap
         framebufferBitmap = bitmap
         overlay.setImageBitmap(bitmap)
-        if (old != null && old !== bitmap && !old.isRecycled) old.recycle()
+        return previous
     }
 
     internal fun hideFramebufferFrame() {
@@ -723,8 +727,9 @@ class ClockActivity : AppCompatActivity() {
             overlay.setImageDrawable(null)
         }
         framebufferOverlay = null
-        framebufferBitmap?.let { if (!it.isRecycled) it.recycle() }
+        val previous = framebufferBitmap
         framebufferBitmap = null
+        FramebufferBitmapReaper.retire(previous)
     }
 
     private fun decodeSampledFileSafely(file: File, width: Int, height: Int): Bitmap? {

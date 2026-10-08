@@ -47,6 +47,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
+import com.zyyme.workdayalarmclock.camera.FramebufferBitmapReaper
 import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
 import java.io.File
 import java.io.FileOutputStream
@@ -61,6 +62,7 @@ import kotlin.math.roundToInt
  */
 class DeskActivity : AppCompatActivity() {
     companion object {
+        @Volatile
         var me: DeskActivity? = null
 
         const val EXTRA_ALARM_MODE = "deskAlarmMode"
@@ -87,7 +89,7 @@ class DeskActivity : AppCompatActivity() {
     private val fullscreenRestoreRunnable = Runnable {
         if (!isFinishing) setFullscreen()
     }
-    var isActivityStarted = false
+    @Volatile var isActivityStarted = false
     private val slotKeys = arrayOf(
         MeSettings.KEY_DESK_SLOT_TOP_LEFT,
         MeSettings.KEY_DESK_SLOT_TOP_RIGHT,
@@ -275,6 +277,7 @@ class DeskActivity : AppCompatActivity() {
         super.onStart()
         isActivityStarted = true
         setFramebufferStreaming(FramebufferFrameRenderer.isStreaming())
+        FramebufferFrameRenderer.requestLatestFrame()
     }
 
     override fun onStop() {
@@ -982,16 +985,16 @@ class DeskActivity : AppCompatActivity() {
         }
     }
 
-    internal fun showFramebufferFrame(bitmap: Bitmap) {
+    internal fun showFramebufferFrame(bitmap: Bitmap): Bitmap? {
         if (isFinishing) {
             if (!bitmap.isRecycled) bitmap.recycle()
-            return
+            return null
         }
-        val old = framebufferBitmap
+        val previous = framebufferBitmap
         framebufferBitmap = bitmap
         framebufferOverlay.setImageBitmap(bitmap)
         framebufferOverlay.visibility = View.VISIBLE
-        if (old != null && old !== bitmap && !old.isRecycled) old.recycle()
+        return previous
     }
 
     internal fun setFramebufferStreaming(active: Boolean) {
@@ -1018,8 +1021,9 @@ class DeskActivity : AppCompatActivity() {
             framebufferOverlay.setImageDrawable(null)
             framebufferOverlay.visibility = View.GONE
         }
-        framebufferBitmap?.let { if (!it.isRecycled) it.recycle() }
+        val previous = framebufferBitmap
         framebufferBitmap = null
+        FramebufferBitmapReaper.retire(previous)
     }
 
     private fun decodeSampledFileSafely(file: File, width: Int, height: Int): Bitmap? {
