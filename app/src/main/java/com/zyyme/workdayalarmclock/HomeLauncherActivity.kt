@@ -56,10 +56,17 @@ class HomeLauncherActivity : Activity() {
             intent?.hasCategory(Intent.CATEGORY_HOME) == true
         ) {
             val destinationContext = applicationContext
-            StartupAppHelper.startAtBooted(destinationContext, onFinished = {
+            val startupResult = StartupAppHelper.startAtBooted(destinationContext, onFinished = {
                 StartupAppHelper.launchInitialDestination(destinationContext)
                 finish()
             })
+
+            // 只有真正启动了启动流程，或已有启动流程正在执行时，
+            // 才交给启动流程决定最终页面。启动流程已处理过则按普通 Home 导航。
+            if (startupResult != StartupAppHelper.StartResult.ALREADY_HANDLED) {
+                finish()
+                return
+            }
         }
 
         val returnPackage = findPreviousPackage()

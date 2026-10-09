@@ -29,6 +29,12 @@ object StartupAppHelper {
     private var startupAppLaunching = false
     private var startupAppsHandled = false
 
+    enum class StartResult {
+        STARTED,
+        ALREADY_RUNNING,
+        ALREADY_HANDLED
+    }
+
     fun getStartupAppPackageNames(context: Context): List<String> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -84,7 +90,7 @@ object StartupAppHelper {
         accessibility: Boolean = false,
         pendingResult: BroadcastReceiver.PendingResult? = null,
         onFinished: (() -> Unit)? = null
-    ) {
+    ): StartResult {
         val appContext = context.applicationContext
 
         fun finishPending() {
@@ -112,34 +118,32 @@ object StartupAppHelper {
             if (startupAppLaunching) {
                 Log.v("workdayAlarmClock", "开机启动应用正在处理，跳过重复启动")
                 finishPending()
-                return
+                return StartResult.ALREADY_RUNNING
             }
             if (startupAppsHandled) {
                 Log.v("workdayAlarmClock", "开机启动应用已经处理，跳过重复启动")
-                try {
-                    onFinished?.invoke()
-                } finally {
-                    finishPending()
-                }
-                return
+                // 不再调用 onFinished：否则每次按 Home 都会重新安排延迟回到时钟。
+                finishPending()
+                return StartResult.ALREADY_HANDLED
             }
             startupAppLaunching = true
         }
 
         if (startupPackageNames.isEmpty()) {
             continueOriginalLogic()
-            return
+            return StartResult.STARTED
         }
 
         val launchedAppCount = launchStartupApps(appContext, startupPackageNames)
         if (launchedAppCount == 0) {
             continueOriginalLogic()
-            return
+            return StartResult.STARTED
         }
 
         // 保持主线程处于启动流程中。某些定制系统会在这里切走或暂停进程
         SystemClock.sleep(launchedAppCount * STARTUP_APP_DELAY_MILLIS)
         continueOriginalLogic()
+        return StartResult.STARTED
     }
 
     private fun launchStartupApps(context: Context, packageNames: List<String>): Int {
