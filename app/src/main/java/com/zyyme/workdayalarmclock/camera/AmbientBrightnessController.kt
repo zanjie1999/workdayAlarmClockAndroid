@@ -82,16 +82,18 @@ internal class AmbientBrightnessController(
     private var lastAppliedLevel = -1
     private var faceMissingSince = 0L
     @Volatile private var hasFace = false
+    @Volatile private var faceWasSeen = false
     @Volatile private var faceDetectionActive = false
     private var brightnessWakeArmed = true
     private var lastFaceWakeAt = 0L
 
     private val faceMissingTimeout = object : Runnable {
         override fun run() {
-            if (!faceDetectionEnabled() || hasFace || faceMissingSince == 0L) return
+            if (!faceDetectionEnabled() || hasFace || !faceWasSeen || faceMissingSince == 0L) return
 
             brightnessWakeArmed = false
-            timedLog("摄像头自动亮度：熄屏原因=持续无人脸10秒")
+            faceWasSeen = false
+            timedLog("摄像头自动亮度：熄屏原因=检测到人脸后持续无人脸10秒")
             Handler(appContext.mainLooper).post { closeScreen() }
         }
     }
@@ -103,6 +105,10 @@ internal class AmbientBrightnessController(
         override fun run() {
             if (!enabled || ipCameraActive || intervalMillis() <= 0L) return
             beginCameraWarmup()
+            hasFace = false
+            faceDetectionActive = false
+            faceMissingSince = 0L
+            controlHandler.removeCallbacks(faceMissingTimeout)
             sampler.start()
             controlHandler.removeCallbacks(stopPeriodicSample)
             val cameraWindow = if (faceDetectionEnabled()) 10_000L else 3_000L
@@ -111,7 +117,14 @@ internal class AmbientBrightnessController(
     }
 
     private val stopPeriodicSample: Runnable = Runnable {
+        val shouldCloseScreen = faceDetectionEnabled() && faceWasSeen && !hasFace
+        controlHandler.removeCallbacks(faceMissingTimeout)
         sampler.stop()
+        if (shouldCloseScreen) {
+            faceWasSeen = false
+            timedLog("摄像头自动亮度：熄屏原因=检测到人脸后变为无人脸")
+            Handler(appContext.mainLooper).post { closeScreen() }
+        }
         if (enabled && !ipCameraActive) {
             val interval = intervalMillis()
             if (interval > 0L) controlHandler.postDelayed(periodicSample, interval)
@@ -123,6 +136,7 @@ internal class AmbientBrightnessController(
         if (!faceDetectionEnabled()) {
             controlHandler.removeCallbacks(faceMissingTimeout)
             hasFace = false
+            faceWasSeen = false
             faceMissingSince = 0L
             faceDetectionActive = false
             brightnessWakeArmed = true
@@ -225,6 +239,7 @@ internal class AmbientBrightnessController(
         val now = SystemClock.elapsedRealtime()
         if (detected) {
             hasFace = true
+            faceWasSeen = true
             faceMissingSince = 0L
             controlHandler.removeCallbacks(faceMissingTimeout)
 
@@ -244,7 +259,7 @@ internal class AmbientBrightnessController(
         }
 
         hasFace = false
-        if (faceMissingSince == 0L) {
+        if (faceWasSeen && faceMissingSince == 0L) {
             faceMissingSince = now
             controlHandler.removeCallbacks(faceMissingTimeout)
             controlHandler.postDelayed(faceMissingTimeout, 10_000L)
@@ -255,6 +270,7 @@ internal class AmbientBrightnessController(
         previewActive = true
         previewFaceWakeOverride = MeSettings.isEnabled(appContext, MeSettings.KEY_CAMERA_FACE_WAKE)
         lastAppliedLevel = -1
+        faceWasSeen = false
         sampler.resetFaceDetectionStartLog()
         controlHandler.removeCallbacks(periodicSample)
         controlHandler.removeCallbacks(stopPeriodicSample)
@@ -269,6 +285,7 @@ internal class AmbientBrightnessController(
         if (!previewActive || previewFaceWakeOverride == enabled) return
         previewFaceWakeOverride = enabled
         hasFace = false
+        faceWasSeen = false
         faceDetectionActive = false
         faceMissingSince = 0L
         controlHandler.removeCallbacks(faceMissingTimeout)

@@ -1207,7 +1207,7 @@ internal class CameraHttpServer(
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>咩IP摄像头</title>
 <style>
-*{box-sizing:border-box}body{font-family:sans-serif;max-width:960px;margin:0 auto;padding:16px;background:#000;color:#eee}
+*{box-sizing:border-box}body{font-family:sans-serif;max-width:1100px;margin:0 auto;padding:16px;background:#000;color:#eee}
 #controls{display:flex;flex-wrap:wrap;gap:8px;align-items:end}.field{display:flex;flex:1 1 180px;min-width:0;flex-direction:column;gap:4px;font-size:14px;color:#bbb}
 input,button{width:100%;min-height:42px;font:inherit;font-size:16px;padding:8px 10px;border:1px solid #555;border-radius:4px}input{background:#222;color:#eee}
 button{flex:0 1 110px;cursor:pointer;background:#333;color:#eee}button[type=submit]{background:#1769aa;border-color:#278bd2}

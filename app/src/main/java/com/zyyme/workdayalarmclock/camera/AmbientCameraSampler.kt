@@ -187,7 +187,11 @@ internal class AmbientCameraSampler(
         try {
             opened.setFaceDetectionListener { faces, _ ->
                 if (!running.get()) return@setFaceDetectionListener
-                onFace(faces != null && faces.isNotEmpty())
+                val detected = faces != null && faces.isNotEmpty()
+                onFace(detected)
+                if (detected && continuousFaceCycleEnabled()) {
+                    pauseFaceDetection(8_000L)
+                }
             }
             opened.startFaceDetection()
             faceDetectionStarted = true
@@ -205,13 +209,20 @@ internal class AmbientCameraSampler(
     }
 
     private val faceCycleStopRunnable = Runnable {
-        val handler = cameraHandler ?: return@Runnable
+        if (cameraHandler == null) return@Runnable
         if (!faceDetectionStarted || !continuousFaceCycleEnabled()) return@Runnable
+        pauseFaceDetection(2_000L)
+    }
+
+    private fun pauseFaceDetection(delayMillis: Long) {
+        val handler = cameraHandler ?: return
+        if (!faceDetectionStarted || faceDetectionRestartPending) return
         faceDetectionRestartPending = true
+        handler.removeCallbacks(faceCycleStopRunnable)
         try { camera?.setFaceDetectionListener(null) } catch (_: Exception) { }
         try { camera?.stopFaceDetection() } catch (_: Exception) { }
         faceDetectionStarted = false
-        handler.postDelayed(faceDetectionRestartRunnable, 2_000L)
+        handler.postDelayed(faceDetectionRestartRunnable, delayMillis)
     }
 
     private val faceDetectionRestartRunnable = Runnable {
