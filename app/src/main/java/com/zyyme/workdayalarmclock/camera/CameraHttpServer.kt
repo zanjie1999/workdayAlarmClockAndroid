@@ -53,6 +53,7 @@ internal class CameraHttpServer(
     }
 
     private val appContext = context.applicationContext
+    private val meBgCamCtrl = MeBgCamCtrl(appContext)
     private val running = AtomicBoolean(false)
     private val stateLock = Any()
     private val sessionChangeLock = Any()
@@ -177,6 +178,10 @@ internal class CameraHttpServer(
                     return
                 }
                 streamFramebuffer(socket, request)
+                return
+            }
+            if (path?.let { meBgCamCtrl.matches(it) } == true) {
+                meBgCamCtrl.handle(socket, request.method, request.uri)
                 return
             }
             if (!cameraEnabled()) {
@@ -1125,7 +1130,12 @@ internal class CameraHttpServer(
     }
 
     private fun writePlayerPage(socket: Socket) {
-        val body = PLAYER_PAGE.toByteArray(HTML_CHARSET)
+        val page = if (meBgCamCtrl.enabled) {
+            PLAYER_PAGE.replace("</body>", "${meBgCamCtrl.playerUi()}\n</body>")
+        } else {
+            PLAYER_PAGE
+        }
+        val body = page.toByteArray(HTML_CHARSET)
         val header = "HTTP/1.0 200 OK\r\n" +
             "Connection: close\r\n" +
             "Cache-Control: no-cache, no-store\r\n" +
