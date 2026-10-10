@@ -45,6 +45,11 @@ internal object FramebufferFrameRenderer {
     private var displayScheduled = false
     private val reusableBitmaps = ArrayDeque<Bitmap>()
     private var decodeConfig: DecodeConfig? = null
+    private var fpsWindowStartNanos = System.nanoTime()
+    private var fpsSubmitted = 0L
+    private var fpsDecoded = 0L
+    private var fpsDisplayed = 0L
+    @Volatile private var fpsLabel = ""
 
     private val displayLatestFrame = Runnable {
         val frame = synchronized(lock) {
@@ -72,6 +77,10 @@ internal object FramebufferFrameRenderer {
         if (target == null || target.isFinishing) {
             FramebufferBitmapReaper.recycle(frame.bitmap)
         } else {
+            synchronized(lock) {
+                fpsDisplayed++
+                logFpsIfDueLocked()
+            }
             FramebufferBitmapReaper.retire(previous) { retired ->
                 recycleOrStoreReusable(retired, frame.generation)
             }
@@ -85,6 +94,8 @@ internal object FramebufferFrameRenderer {
     }
 
     fun isStreaming(): Boolean = synchronized(lock) { streaming }
+
+    fun fpsText(): String = fpsLabel
 
     fun setStreaming(active: Boolean) {
         var discardedFrame: JpegFrame? = null
@@ -103,6 +114,10 @@ internal object FramebufferFrameRenderer {
             nextSequence = 0L
             lastDecodedSequence = 0L
             decodeConfig = null
+            fpsWindowStartNanos = System.nanoTime()
+            fpsSubmitted = 0L
+            fpsDecoded = 0L
+            fpsDisplayed = 0L
             generation
         }
 
@@ -128,6 +143,8 @@ internal object FramebufferFrameRenderer {
                 false
             } else {
                 nextSequence++
+                fpsSubmitted++
+                logFpsIfDueLocked()
                 displacedFrame = latestFrame
                 latestFrame = JpegFrame(nextSequence, jpeg, length)
                 true
@@ -194,6 +211,11 @@ internal object FramebufferFrameRenderer {
 
             val bitmap = decodeForDisplay(request.frame.bytes, request.frame.length, reusable)
             releaseFrame(request.frame)
+
+            synchronized(lock) {
+                if (bitmap != null) fpsDecoded++
+                logFpsIfDueLocked()
+            }
 
             if (reusable !== bitmap && reusable != null) {
                 FramebufferBitmapReaper.recycle(reusable)
@@ -355,6 +377,21 @@ internal object FramebufferFrameRenderer {
         if (buffer != null) {
             FramebufferJpegBufferPool.release(buffer)
         }
+    }
+
+    private fun logFpsIfDueLocked() {
+        val elapsedNanos = System.nanoTime() - fpsWindowStartNanos
+        if (elapsedNanos < 10_000_000_000L) return
+        val elapsedSeconds = elapsedNanos / 1_000_000_000.0
+        val submitted = fpsSubmitted / elapsedSeconds
+        val decoded = fpsDecoded / elapsedSeconds
+        val displayed = fpsDisplayed / elapsedSeconds
+        fpsLabel = "  FPS: ${"%.1f".format(java.util.Locale.US, displayed)}"
+        Log.d(TAG, "framebuffer fps: submitted=%.1f decoded=%.1f displayed=%.1f".format(java.util.Locale.US, submitted, decoded, displayed))
+        fpsWindowStartNanos = System.nanoTime()
+        fpsSubmitted = 0L
+        fpsDecoded = 0L
+        fpsDisplayed = 0L
     }
 
     private fun activeDisplayTarget(): Activity? =

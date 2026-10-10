@@ -474,7 +474,7 @@ class DeskActivity : AppCompatActivity() {
         val playlistItemIndex = items.size
         items += "我的歌单"
         val returnItemIndex = items.size
-        items += "返回"
+        items += "返回${FramebufferFrameRenderer.fpsText()}"
 
         val dialog = AlertDialog.Builder(this)
             .setItems(items.toTypedArray()) { _, which ->
