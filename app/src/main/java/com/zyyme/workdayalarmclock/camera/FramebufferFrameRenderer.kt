@@ -20,7 +20,7 @@ internal object FramebufferFrameRenderer {
     )
 
     private data class DecodeRequest(val frame: JpegFrame, val generation: Long)
-    private data class DecodedFrame(val generation: Long, val bitmap: Bitmap)
+    private data class DecodedFrame(val generation: Long, val bitmap: Bitmap, val decodeStartNanos: Long)
     private data class DecodeConfig(
         val sourceWidth: Int,
         val sourceHeight: Int,
@@ -49,6 +49,15 @@ internal object FramebufferFrameRenderer {
     private var fpsSubmitted = 0L
     private var fpsDecoded = 0L
     private var fpsDisplayed = 0L
+    private var displayCallCount = 0L
+    private var displayCallNanos = 0L
+    private var displayMaxNanos = 0L
+    private var decodeCallCount = 0L
+    private var decodeCallNanos = 0L
+    private var decodeMaxNanos = 0L
+    private var decodeToDisplayCount = 0L
+    private var decodeToDisplayNanos = 0L
+    private var decodeToDisplayMaxNanos = 0L
     @Volatile private var fpsLabel = ""
 
     private val displayLatestFrame = Runnable {
@@ -68,17 +77,26 @@ internal object FramebufferFrameRenderer {
         }
 
         val target = activeDisplayTarget()
+        val displayStartNanos = System.nanoTime()
         val previous = when (target) {
             is ClockActivity -> target.showFramebufferFrame(frame.bitmap)
             is DeskActivity -> target.showFramebufferFrame(frame.bitmap)
             else -> null
         }
+        val displayElapsedNanos = System.nanoTime() - displayStartNanos
 
         if (target == null || target.isFinishing) {
             FramebufferBitmapReaper.recycle(frame.bitmap)
         } else {
             synchronized(lock) {
                 fpsDisplayed++
+                val decodeToDisplayElapsedNanos = System.nanoTime() - frame.decodeStartNanos
+                decodeToDisplayCount++
+                decodeToDisplayNanos += decodeToDisplayElapsedNanos
+                if (decodeToDisplayElapsedNanos > decodeToDisplayMaxNanos) decodeToDisplayMaxNanos = decodeToDisplayElapsedNanos
+                displayCallCount++
+                displayCallNanos += displayElapsedNanos
+                if (displayElapsedNanos > displayMaxNanos) displayMaxNanos = displayElapsedNanos
                 logFpsIfDueLocked()
             }
             FramebufferBitmapReaper.retire(previous) { retired ->
@@ -118,6 +136,15 @@ internal object FramebufferFrameRenderer {
             fpsSubmitted = 0L
             fpsDecoded = 0L
             fpsDisplayed = 0L
+            displayCallCount = 0L
+            displayCallNanos = 0L
+            displayMaxNanos = 0L
+            decodeCallCount = 0L
+            decodeCallNanos = 0L
+            decodeMaxNanos = 0L
+            decodeToDisplayCount = 0L
+            decodeToDisplayNanos = 0L
+            decodeToDisplayMaxNanos = 0L
             generation
         }
 
@@ -172,7 +199,7 @@ internal object FramebufferFrameRenderer {
 
     private fun ensureDecodeScheduled() {
         val schedule = synchronized(lock) {
-            if (!streaming || activeDisplayTarget() == null) {
+            if (!streaming || activeDisplayTarget() == null || pendingDisplay != null) {
                 false
             } else if (decodeScheduled) {
                 false
@@ -192,6 +219,12 @@ internal object FramebufferFrameRenderer {
                 if (!streaming || activeDisplayTarget() == null) {
                     decodeScheduled = false
                     null
+                } else if (pendingDisplay != null) {
+                    // Keep at most one decoded frame waiting for the UI. New
+                    // JPEGs replace the source frame and are decoded after
+                    // the pending bitmap has been displayed.
+                    decodeScheduled = false
+                    null
                 } else {
                     val frame = latestFrame
                     if (frame == null || frame.sequence <= lastDecodedSequence) {
@@ -209,11 +242,16 @@ internal object FramebufferFrameRenderer {
                 if (reusableBitmaps.isEmpty()) null else reusableBitmaps.removeFirst()
             }
 
+            val decodeStartNanos = System.nanoTime()
             val bitmap = decodeForDisplay(request.frame.bytes, request.frame.length, reusable)
+            val decodeElapsedNanos = System.nanoTime() - decodeStartNanos
             releaseFrame(request.frame)
 
             synchronized(lock) {
                 if (bitmap != null) fpsDecoded++
+                decodeCallCount++
+                decodeCallNanos += decodeElapsedNanos
+                if (decodeElapsedNanos > decodeMaxNanos) decodeMaxNanos = decodeElapsedNanos
                 logFpsIfDueLocked()
             }
 
@@ -237,7 +275,7 @@ internal object FramebufferFrameRenderer {
                     false
                 } else {
                     displacedPending = pendingDisplay?.bitmap
-                    pendingDisplay = DecodedFrame(request.generation, bitmap)
+                    pendingDisplay = DecodedFrame(request.generation, bitmap, decodeStartNanos)
                     if (displayScheduled) {
                         false
                     } else {
@@ -386,12 +424,27 @@ internal object FramebufferFrameRenderer {
         val submitted = fpsSubmitted / elapsedSeconds
         val decoded = fpsDecoded / elapsedSeconds
         val displayed = fpsDisplayed / elapsedSeconds
+        val avgDisplayMs = if (displayCallCount == 0L) 0.0 else displayCallNanos / displayCallCount / 1_000_000.0
+        val maxDisplayMs = displayMaxNanos / 1_000_000.0
+        val avgDecodeMs = if (decodeCallCount == 0L) 0.0 else decodeCallNanos / decodeCallCount / 1_000_000.0
+        val maxDecodeMs = decodeMaxNanos / 1_000_000.0
+        val avgDecodeToDisplayMs = if (decodeToDisplayCount == 0L) 0.0 else decodeToDisplayNanos / decodeToDisplayCount / 1_000_000.0
+        val maxDecodeToDisplayMs = decodeToDisplayMaxNanos / 1_000_000.0
         fpsLabel = "  FPS: ${"%.1f".format(java.util.Locale.US, displayed)}"
-        Log.d(TAG, "framebuffer fps: submitted=%.1f decoded=%.1f displayed=%.1f".format(java.util.Locale.US, submitted, decoded, displayed))
+        Log.d(TAG, "framebuffer fps: submitted=%.1f decoded=%.1f displayed=%.1f decode=%.2fms max=%.2fms decodeToDisplay=%.2fms max=%.2fms showImageView=%.2fms max=%.2fms".format(java.util.Locale.US, submitted, decoded, displayed, avgDecodeMs, maxDecodeMs, avgDecodeToDisplayMs, maxDecodeToDisplayMs, avgDisplayMs, maxDisplayMs))
         fpsWindowStartNanos = System.nanoTime()
         fpsSubmitted = 0L
         fpsDecoded = 0L
         fpsDisplayed = 0L
+        displayCallCount = 0L
+        displayCallNanos = 0L
+        displayMaxNanos = 0L
+        decodeCallCount = 0L
+        decodeCallNanos = 0L
+        decodeMaxNanos = 0L
+        decodeToDisplayCount = 0L
+        decodeToDisplayNanos = 0L
+        decodeToDisplayMaxNanos = 0L
     }
 
     private fun activeDisplayTarget(): Activity? =
