@@ -137,6 +137,7 @@ class MeService : Service() {
     private var wakePendingIntent: PendingIntent? = null
     private var udpServerSocket: DatagramSocket? = null
     private var cameraHttpServer: CameraHttpServer? = null
+    @Volatile private var framebufferStreaming = false
     private lateinit var ambientBrightness: AmbientBrightnessController
     private val mainHandler = Handler(Looper.getMainLooper())
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
@@ -539,7 +540,11 @@ class MeService : Service() {
             { MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) },
             { MeSettings.isEnabled(this, MeSettings.KEY_COMPUTER_SPEAKER) },
             { frame, length -> FramebufferFrameRenderer.submit(frame, length) },
-            { active -> FramebufferFrameRenderer.setStreaming(active) }
+            { active ->
+                framebufferStreaming = active
+                FramebufferFrameRenderer.setStreaming(active)
+                mainHandler.post { DeskActivity.me?.setFramebufferStreaming(active) }
+            }
         ).also { cameraHttpServer = it }
         server.start(MeSettings.getCameraPassword(this))
     }
@@ -558,6 +563,53 @@ class MeService : Service() {
     fun ambientBrightnessValue(): Int = ambientBrightness.currentSystemBrightness()
 
     fun ambientFaceStatus(): String = ambientBrightness.faceStatusText()
+
+    private fun shouldKeepScreenOnForAlarm(): Boolean {
+        if (framebufferStreaming) return true
+        val wakeLevel = MeSettings.getInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).coerceIn(1, 4)
+        if (MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS) &&
+            wakeLevel > 0 && ambientBrightness.level >= wakeLevel) return true
+        if (MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_FACE_WAKE) && ambientBrightness.faceStatusText() == "有人") return true
+        return false
+    }
+
+    private fun requestScreenOff() {
+                val devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
+                if (devicePolicyManager.isAdminActive(adminComponentName)) {
+                    try {
+                        Handler(Looper.getMainLooper()).post {
+                            // 取消ALARM给时钟模式的保持亮屏flag
+                            if (ClockActivity.me?.isKeepScreenOn == true) {
+                                ClockActivity.me?.isKeepScreenOn = false
+                                ClockActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            }
+                            if (DeskActivity.me?.isKeepScreenOn == true) {
+                                DeskActivity.me?.isKeepScreenOn = false
+                                DeskActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            }
+                            devicePolicyManager.lockNow()
+                            print2LogView("已锁屏")
+                        }
+                    } catch (e: Exception) {
+                        print2LogView("锁屏失败: ${e.message}")
+                    }
+                } else {
+                    print2LogView("设备管理员未激活，无法锁屏")
+                    Handler(Looper.getMainLooper()).post {
+                        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
+                            putExtra(
+                                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                                "远程锁屏需要这个权限"
+                            )
+                        }
+                        startActivity(intent)
+                        Toast.makeText(this,"请激活设备管理员权限\n远程锁屏需要这个权限\n卸载app需要在这里卸载", Toast.LENGTH_LONG).show()
+                    }
+                }
+    }
 
     fun startAmbientBrightnessPreview() {
         ambientBrightness.beginLivePreview()
@@ -1007,40 +1059,13 @@ class MeService : Service() {
                 }
                 print2LogView("已亮屏")
             } else if (s == "SCREENOFF") {
-                val devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
-                if (devicePolicyManager.isAdminActive(adminComponentName)) {
-                    try {
-                        Handler(Looper.getMainLooper()).post {
-                            // 取消ALARM给时钟模式的保持亮屏flag
-                            if (ClockActivity.me?.isKeepScreenOn == true) {
-                                ClockActivity.me?.isKeepScreenOn = false
-                                ClockActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                            }
-                            if (DeskActivity.me?.isKeepScreenOn == true) {
-                                DeskActivity.me?.isKeepScreenOn = false
-                                DeskActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                            }
-                            devicePolicyManager.lockNow()
-                            print2LogView("已锁屏")
-                        }
-                    } catch (e: Exception) {
-                        print2LogView("锁屏失败: ${e.message}")
-                    }
+                requestScreenOff()
+            } else if (s == "ALARMSTOP") {
+                mainHandler.post { DeskActivity.me?.showAlarmControls(false) }
+                if (shouldKeepScreenOnForAlarm()) {
+                    print2LogView("闹钟停止：当前投屏/摄像头亮屏条件存在，保持亮屏")
                 } else {
-                    print2LogView("设备管理员未激活，无法锁屏")
-                    Handler(Looper.getMainLooper()).post {
-                        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
-                            putExtra(
-                                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                                "远程锁屏需要这个权限"
-                            )
-                        }
-                        startActivity(intent)
-                        Toast.makeText(this,"请激活设备管理员权限\n远程锁屏需要这个权限\n卸载app需要在这里卸载", Toast.LENGTH_LONG).show()
-                    }
+                    requestScreenOff()
                 }
             } else if (s == "EXIT") {
                 stopSelf()

@@ -132,7 +132,7 @@ class DeskActivity : AppCompatActivity() {
     private var framebufferBitmap: Bitmap? = null
     private var framebufferStreaming = false
     private val hideFramebufferControlsRunnable = Runnable {
-        if (framebufferStreaming) overlayContainer.visibility = View.GONE
+        if (framebufferStreaming && !alarmMode) overlayContainer.visibility = View.GONE
     }
     private var pendingWallpaperUri: Uri? = null
     private val autoWallpaperDirectory = File("/sdcard/zyymeWallpaper")
@@ -735,6 +735,7 @@ class DeskActivity : AppCompatActivity() {
             )
         } else {
             applyConfiguredLayout()
+            if (framebufferStreaming) showFramebufferControlsForTenSeconds()
         }
     }
 
@@ -1002,7 +1003,11 @@ class DeskActivity : AppCompatActivity() {
         handler.removeCallbacks(hideFramebufferControlsRunnable)
         if (active) {
             framebufferOverlay.visibility = View.VISIBLE
-            showFramebufferControlsForTenSeconds()
+            if (alarmMode) {
+                overlayContainer.visibility = View.VISIBLE
+            } else {
+                showFramebufferControlsForTenSeconds()
+            }
         } else {
             overlayContainer.visibility = View.VISIBLE
         }
