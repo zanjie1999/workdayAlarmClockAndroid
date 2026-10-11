@@ -212,7 +212,8 @@ internal class MeBgCamCtrl(context: Context) {
     fun playerUi(): String = if (!enabled) "" else """
 <section id="bgcam"><h3>摄像头控制</h3>
 <label class="bgcam-angle">云台角度 <span id="bgcamDegrees">0°</span><input id="bgcamAngle" type="range" min="0" max="360" step="1" value="0"></label>
-<div class="bgcam-actions"><button id="bgcamLed">下方补光灯</button><button id="bgcamTopLed">顶部补光灯</button><button id="bgcamIr">红外灯</button><button id="bgcamPerson">人体传感器</button><button id="bgcamSound">声音传感器</button></div>
+<div class="bgcam-actions"><button id="bgcamLed">下方补光灯</button><button id="bgcamTopLed">顶部补光灯</button><button id="bgcamIr">红外灯</button></div>
+<div class="bgcam-actions"><button id="bgcamPerson">人体传感器</button><button id="bgcamSound">声音传感器</button></div>
 <pre id="bgcamStatus">正在读取设备状态…</pre></section>
 <style>#bgcam{margin-top:22px;padding:14px;border:1px solid #444;border-radius:8px}#bgcam h3{margin:0 0 12px}.bgcam-angle{display:flex;align-items:center;gap:12px;color:#ddd}.bgcam-angle span{min-width:48px;text-align:right}.bgcam-angle input{flex:1;min-width:0}.bgcam-actions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.bgcam-actions button{flex:1 1 130px}#bgcamStatus{white-space:pre-wrap;color:#bbb}</style>
 <script>
