@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity() {
     var mediaSessionCompat: MediaSessionCompat? = null
     var mediaComponentName: ComponentName? = null
     var isActivityVisible = false
+    @Volatile var isActivityStarted = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val logRefreshPending = AtomicBoolean(false)
@@ -136,6 +137,12 @@ class MainActivity : AppCompatActivity() {
         updatePlaybackButton(MeService.me?.shouldShowPauseIcon() == true)
         show2LogView()
     }
+
+    override fun onStart() {
+        super.onStart()
+        isActivityStarted = true
+    }
+
     override fun onPause() {
         super.onPause()
         isActivityVisible = false
@@ -144,6 +151,11 @@ class MainActivity : AppCompatActivity() {
         if (::logScrollView.isInitialized) {
             logScrollView.removeCallbacks(scrollLogToBottom)
         }
+    }
+
+    override fun onStop() {
+        isActivityStarted = false
+        super.onStop()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
