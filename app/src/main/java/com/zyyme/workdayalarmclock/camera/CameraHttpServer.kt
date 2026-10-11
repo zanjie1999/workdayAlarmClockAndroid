@@ -72,6 +72,9 @@ internal class CameraHttpServer(
     private var wifiLock: WifiManager.WifiLock? = null
     private var streamLockUsers = 0
 
+    fun handleSensorKeyEvent(keyCode: Int, isDown: Boolean): Boolean =
+        meBgCamCtrl.handleSensorKeyEvent(keyCode, isDown)
+
     fun start(cameraPassword: String): Boolean {
         val cleanPassword = normalizePassword(cameraPassword)
         if (running.get()) {

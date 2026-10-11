@@ -1834,6 +1834,9 @@ class MeService : Service() {
      * @param isDown true=按下, false=抬起
      */
     fun keyHandle(keyCode: Int, isDown: Boolean): Boolean {
+        if (cameraHttpServer?.handleSensorKeyEvent(keyCode, isDown) == true) {
+            return true
+        }
         if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY
             || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             return handleMediaPlayKey(keyCode, isDown)

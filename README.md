@@ -276,6 +276,11 @@ https://abc.com/api?message=应用A包名是pkg.a发送了标题为标题A内容
 注意这个机器看起来虽然是AOSP但是他内置PCDN！  
 橙色按钮是一键按钮，实际为F11
 
+### BodyGuargz监控
+人在传感器会输入F11，3秒一次，声音传感器会输入Camera键，30秒一次  
+在控制台右上角菜单开启IP摄像头功能后，用浏览器访问设备的8880端口即可查看摄像头画面和控制云台  
+可以通过 `/bgcam/status` 接口获取传感器状态  
+
 ### 协议 咩License
 使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   
 Using this project is deemed to indicate that you have read and agreed to abide by [this LICENSE](https://github.com/zanjie1999/LICENSE)   
