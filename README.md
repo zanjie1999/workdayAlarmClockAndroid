@@ -280,6 +280,8 @@ https://abc.com/api?message=应用A包名是pkg.a发送了标题为标题A内容
 人在传感器会输入F11，3秒一次，声音传感器会输入Camera键，30秒一次  
 在控制台右上角菜单开启IP摄像头功能后，用浏览器访问设备的8880端口即可查看摄像头画面和控制云台  
 可以通过 `/bgcam/status` 接口获取传感器状态  
+<img width="500" alt="image" src="https://github.com/user-attachments/assets/13ec963d-b030-49d5-9f0a-723ac36bb65a" />
+
 
 ### 协议 咩License
 使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   
