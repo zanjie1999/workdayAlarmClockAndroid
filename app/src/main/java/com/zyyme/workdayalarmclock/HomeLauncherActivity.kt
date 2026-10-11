@@ -69,6 +69,19 @@ class HomeLauncherActivity : Activity() {
             }
         }
 
+        if (MeSettings.isEnabled(this, MeSettings.KEY_NO_SCREEN)) {
+            // 无屏设备模式，home键触发1key
+            if (MainActivity.me?.isActivityVisible == true) {
+                MeService.me?.toGo("1key")
+            }
+            val mainIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            startActivity(mainIntent)
+            finish()
+            return
+        }
+
         val returnPackage = findPreviousPackage()
 
         val clockIsVisible = ClockActivity.me?.isActivityStarted == true ||

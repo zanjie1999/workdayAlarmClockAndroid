@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock
 import android.accessibilityservice.AccessibilityService
 import android.os.Build
 import android.util.Log
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -64,6 +65,19 @@ class MeAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        // 辅助功能下 方向键不劫持
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP
+            || event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+            || event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+            || event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+            || event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+            return false
+        }
+
+        return MeService.me?.keyHandle(event.keyCode, event.action == KeyEvent.ACTION_DOWN) == true
     }
 
     override fun onServiceConnected() {

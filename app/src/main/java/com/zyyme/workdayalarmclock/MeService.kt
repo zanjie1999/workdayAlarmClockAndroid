@@ -97,6 +97,11 @@ class MeService : Service() {
         // 大屏时钟模式  默认勾选时钟模式和大屏时钟模式
         //                                  叮咚Play         Sayinfo音箱           国美云音箱
         val deskModeModel = listOf<String>("Intelcht_mrd", "rockchiprk3326_m2g", "rockchipGM800")
+
+        // 无屏设备模式  电源键作为多击键 开机启动回到main 作为桌面时按home键触发1key
+        //                                19元BodyGuargz监控
+        val noScreenMode = listOf<String>("PUBLICTV5701")
+
     }
 
     var meMediaPlaybackManager: MeMediaPlaybackManager? = null
@@ -223,6 +228,9 @@ class MeService : Service() {
         val useDeskClockByModel = deskModeModel.contains(deviceModel)
         if (clockModeModel.contains(deviceModel) || useDeskClockByModel) {
             MeSettings.setEnabled(this, MeSettings.KEY_CLOCK, true)
+        }
+        if (noScreenMode.contains(deviceModel)) {
+            MeSettings.setEnabled(this, MeSettings.KEY_NO_SCREEN, true)
         }
         if (useDeskClockByModel || isLargeLandscapeScreen()) {
             MeSettings.setEnabled(this, MeSettings.KEY_DESK_CLOCK, true)
@@ -1855,7 +1863,8 @@ class MeService : Service() {
             if (ysLedStatus()) 0 else KeyEvent.KEYCODE_FOCUS,
             // 国美云
             KeyEvent.KEYCODE_F11
-        )
+        ) || (keyCode == KeyEvent.KEYCODE_POWER &&
+                MeSettings.isEnabled(this, MeSettings.KEY_NO_SCREEN))
         val isVolKey = keyCode in setOf(
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN
         )

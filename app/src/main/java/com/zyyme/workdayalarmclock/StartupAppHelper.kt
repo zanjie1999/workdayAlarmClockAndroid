@@ -207,7 +207,9 @@ object StartupAppHelper {
      * control console opens.
      */
     fun launchInitialDestination(context: Context, accessibility: Boolean = false) {
-        val intent = if (MeSettings.isEnabled(context, MeSettings.KEY_CLOCK)) {
+        val intent = if (MeSettings.isEnabled(context, MeSettings.KEY_CLOCK) &&
+            !MeSettings.isEnabled(context, MeSettings.KEY_NO_SCREEN)
+        ) {
             MeSettings.applyClockTheme(context)
             MeSettings.createClockIntent(context).apply {
                 putExtra("clockMode", true)

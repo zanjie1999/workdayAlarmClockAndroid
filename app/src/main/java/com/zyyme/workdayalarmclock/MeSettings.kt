@@ -12,6 +12,7 @@ object MeSettings {
     private const val PREFS_NAME = "me_settings"
 
     const val KEY_DISABLE = "disable"
+    const val KEY_NO_SCREEN = "no_screen"
     const val KEY_CLOCK = "clock"
     const val KEY_DESK_CLOCK = "desk_clock"
     const val KEY_TSS = "tss"

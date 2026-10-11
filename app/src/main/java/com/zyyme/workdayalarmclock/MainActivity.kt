@@ -115,6 +115,7 @@ class MainActivity : AppCompatActivity() {
 
     private val settingsMenuItems = listOf(
         SettingMenuItem(MeSettings.KEY_DISABLE, "开机不启动"),
+        SettingMenuItem(MeSettings.KEY_NO_SCREEN, "无屏设备模式"),
         SettingMenuItem(MeSettings.KEY_CLOCK, "时钟模式"),
         SettingMenuItem(MeSettings.KEY_DESK_CLOCK, "使用大屏时钟"),
         SettingMenuItem(MeSettings.KEY_AUTO_BACK_CLOCK, "自动回到时钟"),
@@ -147,7 +148,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         me = this
-        useClockMode = MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
+        useClockMode = MeSettings.isEnabled(this, MeSettings.KEY_CLOCK) &&
+                !MeSettings.isEnabled(this, MeSettings.KEY_NO_SCREEN)
 
         // am start -n com.zyyme.workdayalarmclock/.MainActivity -d http://...
         val amUrl = getIntent().getDataString();
@@ -392,6 +394,10 @@ class MainActivity : AppCompatActivity() {
             if (settingItem != null) {
                 val enabled = !menuItem.isChecked
                 MeSettings.setEnabled(this, settingItem.key, enabled)
+                if (settingItem.key == MeSettings.KEY_NO_SCREEN) {
+                    useClockMode = !enabled &&
+                            MeSettings.isEnabled(this, MeSettings.KEY_CLOCK)
+                }
                 if (settingItem.key == MeSettings.KEY_LYRICS) {
                     MeService.me?.syncLyricsSetting()
                 }
