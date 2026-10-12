@@ -21,6 +21,8 @@ import android.util.DisplayMetrics
 import android.graphics.Point
 import android.view.Surface
 import android.view.WindowManager
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.zyyme.workdayalarmclock.ClockActivity
 import com.zyyme.workdayalarmclock.DeskActivity
 import com.zyyme.workdayalarmclock.MeService
@@ -343,7 +345,18 @@ internal class CameraHttpServer(
         val content = activity.findViewById<android.view.View>(android.R.id.content)
             ?: return null
         if (content.width <= 0 || content.height <= 0) return null
-        return Point(content.width, content.height)
+        val decorView = activity.window.decorView
+        val contentDrawsBehindStatusBar =
+            (decorView.systemUiVisibility and
+                (android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)) != 0
+        val statusBars = WindowInsetsCompat.Type.statusBars()
+        val statusBarInset = if (contentDrawsBehindStatusBar) {
+            0
+        } else {
+            ViewCompat.getRootWindowInsets(decorView)?.getInsets(statusBars)?.top ?: 0
+        }
+        return Point(content.width, content.height + statusBarInset)
     }
 
     private fun streamFramebuffer(socket: Socket, request: HttpRequest) {

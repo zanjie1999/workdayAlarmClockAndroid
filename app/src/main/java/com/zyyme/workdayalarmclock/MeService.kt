@@ -143,6 +143,7 @@ class MeService : Service() {
     private var udpServerSocket: DatagramSocket? = null
     private var cameraHttpServer: CameraHttpServer? = null
     @Volatile private var framebufferStreaming = false
+    @Volatile private var screenOffWhenStreamStop = false
     private lateinit var ambientBrightness: AmbientBrightnessController
     private val mainHandler = Handler(Looper.getMainLooper())
     private val autoBackClockHandler = Handler(Looper.getMainLooper())
@@ -552,6 +553,10 @@ class MeService : Service() {
                 framebufferStreaming = active
                 FramebufferFrameRenderer.setStreaming(active)
                 mainHandler.post { DeskActivity.me?.setFramebufferStreaming(active) }
+                if (screenOffWhenStreamStop && !active && !ambientBrightness.markScreenKeptOnForAlarm()) {
+                    print2LogView("流停止且不满足亮屏条件 熄屏")
+                    requestScreenOff()
+                }
             }
         ).also { cameraHttpServer = it }
         server.start(MeSettings.getCameraPassword(this))
@@ -573,12 +578,30 @@ class MeService : Service() {
     fun ambientFaceStatus(): String = ambientBrightness.faceStatusText()
 
     private fun shouldKeepScreenOnForAlarm(): Boolean {
-        if (framebufferStreaming) return true
-        val wakeLevel = MeSettings.getInt(this, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).coerceIn(1, 4)
-        if (MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS) &&
-            wakeLevel > 0 && ambientBrightness.level >= wakeLevel) return true
-        if (MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_FACE_WAKE) && ambientBrightness.faceStatusText() == "有人") return true
-        return false
+        mainHandler.post {
+            // 取消ALARM给时钟模式的保持亮屏flag
+            if (ClockActivity.me?.isKeepScreenOn == true) {
+                ClockActivity.me?.isKeepScreenOn = false
+                ClockActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+            if (DeskActivity.me?.isKeepScreenOn == true) {
+                DeskActivity.me?.isKeepScreenOn = false
+                DeskActivity.me?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+        // 满足亮屏条件的会标记成因条件而亮
+        if (!ambientBrightness.markScreenKeptOnForAlarm()) {
+            if (framebufferStreaming) {
+                // 流停止且不满足亮屏条件后熄屏
+                screenOffWhenStreamStop = true
+                print2LogView("不满足亮屏条件 但是在串流 不熄屏")
+                return true
+            }
+            print2LogView("不满足亮屏条件 熄屏")
+            return false
+        }
+        print2LogView("满足亮屏条件 不熄屏")
+        return true
     }
 
     private fun requestScreenOff() {
@@ -586,7 +609,7 @@ class MeService : Service() {
                 val adminComponentName = ComponentName(this, MeDeviceAdminReceiver::class.java)
                 if (devicePolicyManager.isAdminActive(adminComponentName)) {
                     try {
-                        Handler(Looper.getMainLooper()).post {
+                        mainHandler.post {
                             // 取消ALARM给时钟模式的保持亮屏flag
                             if (ClockActivity.me?.isKeepScreenOn == true) {
                                 ClockActivity.me?.isKeepScreenOn = false
@@ -1070,9 +1093,7 @@ class MeService : Service() {
                 requestScreenOff()
             } else if (s == "ALARMSTOP") {
                 mainHandler.post { DeskActivity.me?.showAlarmControls(false) }
-                if (shouldKeepScreenOnForAlarm()) {
-                    print2LogView("闹钟停止：当前投屏/摄像头亮屏条件存在，保持亮屏")
-                } else {
+                if (!shouldKeepScreenOnForAlarm()) {
                     requestScreenOff()
                 }
             } else if (s == "EXIT") {

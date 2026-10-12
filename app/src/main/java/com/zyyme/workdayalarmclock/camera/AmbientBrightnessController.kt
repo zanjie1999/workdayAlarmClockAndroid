@@ -9,6 +9,7 @@ import android.os.HandlerThread
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import android.view.Window
 import android.view.WindowManager
 import com.zyyme.workdayalarmclock.ClockActivity
@@ -386,6 +387,24 @@ internal class AmbientBrightnessController(
         !faceDetectionActive -> "检测中"
         hasFace -> "有人"
         else -> "无人"
+    }
+
+    /**
+     * 标记为 摄像头自动亮度 人脸识别 点亮的屏幕
+     * 这样 暗下来 无人 时都能自动关闭
+     */
+    fun markScreenKeptOnForAlarm(): Boolean {
+        var ret = false
+        val wakeLevel = MeSettings.getInt(appContext, MeSettings.KEY_CAMERA_AUTO_WAKE_LEVEL, 0).coerceIn(0, 4)
+        if (enabled && wakeLevel > 0 && level >= wakeLevel) {
+            brightnessWakeArmed = false
+            ret = true
+        }
+        if (faceDetectionEnabled() && hasFace) {
+            faceWasSeen = true
+            ret = true
+        }
+        return ret
     }
 
     private fun timedLog(message: String) {
