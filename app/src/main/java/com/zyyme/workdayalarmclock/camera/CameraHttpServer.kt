@@ -1,6 +1,7 @@
 package com.zyyme.workdayalarmclock.camera
 
 import android.Manifest
+import android.R
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
@@ -20,13 +21,16 @@ import android.util.Log
 import android.util.DisplayMetrics
 import android.graphics.Point
 import android.view.Surface
+import android.view.View
 import android.view.WindowManager
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.zyyme.workdayalarmclock.ClockActivity
 import com.zyyme.workdayalarmclock.DeskActivity
 import com.zyyme.workdayalarmclock.MeService
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.EOFException
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
@@ -312,7 +316,7 @@ internal class CameraHttpServer(
         val height = (displaySize?.y ?: metrics.heightPixels).coerceAtLeast(1)
         val stride = width.toLong() * 4L
         val frameSize = stride * height
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("device", "Android display")
             .put("width", width)
             .put("height", height)
@@ -342,14 +346,14 @@ internal class CameraHttpServer(
         val activity = ClockActivity.me?.takeIf { it.isActivityStarted }
             ?: DeskActivity.me?.takeIf { it.isActivityStarted }
             ?: return null
-        val content = activity.findViewById<android.view.View>(android.R.id.content)
+        val content = activity.findViewById<View>(R.id.content)
             ?: return null
         if (content.width <= 0 || content.height <= 0) return null
         val decorView = activity.window.decorView
         val contentDrawsBehindStatusBar =
             (decorView.systemUiVisibility and
-                (android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)) != 0
+                (View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)) != 0
         val statusBars = WindowInsetsCompat.Type.statusBars()
         val statusBarInset = if (contentDrawsBehindStatusBar) {
             0
@@ -393,7 +397,7 @@ internal class CameraHttpServer(
             val boundaryLine = "--$boundary"
             while (running.get() && !socket.isClosed) {
                 val line = readHttpLine(request.body)
-                    ?: throw java.io.EOFException("missing MJPEG boundary")
+                    ?: throw EOFException("missing MJPEG boundary")
                 if (line == "$boundaryLine--") break
                 if (line != boundaryLine) {
                     throw IllegalArgumentException("invalid MJPEG boundary")
@@ -404,7 +408,7 @@ internal class CameraHttpServer(
                 var headerCount = 0
                 while (true) {
                     val header = readHttpLine(request.body)
-                        ?: throw java.io.EOFException("truncated MJPEG part headers")
+                        ?: throw EOFException("truncated MJPEG part headers")
                     if (header.isEmpty()) break
                     headerCount++
                     if (headerCount > 32) {
@@ -436,7 +440,7 @@ internal class CameraHttpServer(
                     var offset = 0
                     while (offset < frameLength) {
                         val count = request.body.read(jpeg, offset, frameLength - offset)
-                        if (count < 0) throw java.io.EOFException("truncated JPEG frame")
+                        if (count < 0) throw EOFException("truncated JPEG frame")
                         if (count == 0) continue
                         offset += count
                     }
@@ -512,7 +516,7 @@ internal class CameraHttpServer(
         override fun read(): Int {
             if (!ensureChunk()) return -1
             val value = input.read()
-            if (value < 0) throw java.io.EOFException("truncated chunk")
+            if (value < 0) throw EOFException("truncated chunk")
             remaining--
             if (remaining == 0) consumeCrlf()
             return value
@@ -522,7 +526,7 @@ internal class CameraHttpServer(
             if (length == 0) return 0
             if (!ensureChunk()) return -1
             val count = input.read(buffer, offset, minOf(length, remaining))
-            if (count < 0) throw java.io.EOFException("truncated chunk")
+            if (count < 0) throw EOFException("truncated chunk")
             if (count == 0) return 0
             remaining -= count
             if (remaining == 0) consumeCrlf()
@@ -532,13 +536,13 @@ internal class CameraHttpServer(
         private fun ensureChunk(): Boolean {
             if (finished) return false
             if (remaining > 0) return true
-            val line = readLine() ?: throw java.io.EOFException("missing chunk header")
+            val line = readLine() ?: throw EOFException("missing chunk header")
             val sizeText = line.substringBefore(';').trim()
             remaining = sizeText.toIntOrNull(16)
                 ?: throw IllegalArgumentException("invalid chunk size: $line")
             if (remaining == 0) {
                 while (true) {
-                    val trailer = readLine() ?: throw java.io.EOFException("missing chunk trailer")
+                    val trailer = readLine() ?: throw EOFException("missing chunk trailer")
                     if (trailer.isEmpty()) break
                 }
                 finished = true
@@ -651,18 +655,20 @@ internal class CameraHttpServer(
             } else {
                 AudioFormat.CHANNEL_OUT_STEREO
             }
+            var frameBytes = rate * channels * 2 / 1000  // 每 ms 的字节数
             val minBufferFallback = AudioTrack.getMinBufferSize(
                 rate,
                 channelMask,
                 AudioFormat.ENCODING_PCM_16BIT
             )
-            val minBuffer = minBufferFallback / 2
+            // 与 aplay 保持一致：60ms 缓冲，保证低延迟下不出现 buffer underrun
+            val minBuffer = (frameBytes * 60).coerceAtLeast(minBufferFallback)
             if (minBuffer <= 0) {
                 print2LogView("电脑音箱无法获取缓冲区：rate=$rate channels=$channels result=$minBuffer")
                 writeEmptyResponse(socket, 415, "Unsupported Media Type")
                 return
             } else {
-                print2LogView("电脑音箱连接 缓冲：$minBuffer")
+                print2LogView("电脑音箱连接 缓冲：${minBuffer}B (约${minBuffer * 1000 / frameBytes}ms)")
             }
 
             track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -720,7 +726,7 @@ internal class CameraHttpServer(
             )
             socket.getOutputStream().flush()
             track.play()
-            val frameBytes = channels * 2
+            frameBytes = channels * 2
             val buffer = ByteArray(minBuffer.coerceAtLeast(2048) + frameBytes)
             var pending = 0
             while (true) {
