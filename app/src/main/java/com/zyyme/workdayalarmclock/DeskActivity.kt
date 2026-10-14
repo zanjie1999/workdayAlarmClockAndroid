@@ -258,6 +258,11 @@ class DeskActivity : AppCompatActivity() {
             applyConfiguredLayout()
             loadWallpaper()
             handleIntent(intent)
+
+            // 计算一下实际的宽和高存起来
+            val content = findViewById<View>(android.R.id.content)
+            MeService.me?.fbinfoX = content.width
+            MeService.me?.fbinfoY = content.height
         }
         handler.post(nonLyricsRefreshRunnable)
         scheduleHourlyUpdates()

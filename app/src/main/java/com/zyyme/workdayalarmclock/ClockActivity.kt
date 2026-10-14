@@ -379,6 +379,11 @@ class ClockActivity : AppCompatActivity() {
             }
             // 清空
             intent.replaceExtras(Intent())
+
+            // 计算一下实际的宽和高存起来
+            val content = findViewById<View>(android.R.id.content)
+            MeService.me?.fbinfoX = content.width
+            MeService.me?.fbinfoY = content.height
         }
 
 

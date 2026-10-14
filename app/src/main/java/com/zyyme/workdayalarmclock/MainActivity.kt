@@ -16,6 +16,7 @@ import android.text.InputType
 import android.util.Log
 import android.view.KeyEvent
 import android.view.Menu
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.CheckBox
 import android.widget.EditText
@@ -293,8 +294,15 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
             true
         }
-        toolbar.subtitle = MeService.me?.getIp() + "咩咩"
+        toolbar.post {
+            // 稍微晚点，等等MeService
+            toolbar.subtitle = MeService.me?.getIp() + "咩咩"
 
+            // 计算一下实际的宽和高存起来
+            val content = findViewById<View>(android.R.id.content)
+            MeService.me?.fbinfoX = content.width
+            MeService.me?.fbinfoY = content.height
+        }
     }
 
     private fun showSettingsMenu(anchor: ImageView) {

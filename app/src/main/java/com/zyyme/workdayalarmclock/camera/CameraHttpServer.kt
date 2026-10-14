@@ -306,14 +306,16 @@ internal class CameraHttpServer(
     }
 
     private fun writeFramebufferInfo(socket: Socket) {
-        val displaySize = activeActivityDisplaySize()
         val metrics = DisplayMetrics()
-        if (displaySize == null) {
+        var width = MeService.me?.fbinfoX ?: 0
+        var height = MeService.me?.fbinfoY ?: 0
+        if (MeService.me == null || MeService.me!!.fbinfoX == 0 || MeService.me!!.fbinfoY == 0) {
+            // 在正常情况下永远不可能走到这里
             val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             windowManager.defaultDisplay.getMetrics(metrics)
+            width = metrics.widthPixels
+            height = metrics.heightPixels
         }
-        val width = (displaySize?.x ?: metrics.widthPixels).coerceAtLeast(1)
-        val height = (displaySize?.y ?: metrics.heightPixels).coerceAtLeast(1)
         val stride = width.toLong() * 4L
         val frameSize = stride * height
         val body = JSONObject()
@@ -340,27 +342,6 @@ internal class CameraHttpServer(
             .toString()
             .toByteArray(HTML_CHARSET)
         writeJsonResponse(socket, 200, "OK", body)
-    }
-
-    private fun activeActivityDisplaySize(): Point? {
-        val activity = ClockActivity.me?.takeIf { it.isActivityStarted }
-            ?: DeskActivity.me?.takeIf { it.isActivityStarted }
-            ?: return null
-        val content = activity.findViewById<View>(R.id.content)
-            ?: return null
-        if (content.width <= 0 || content.height <= 0) return null
-        val decorView = activity.window.decorView
-        val contentDrawsBehindStatusBar =
-            (decorView.systemUiVisibility and
-                (View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)) != 0
-        val statusBars = WindowInsetsCompat.Type.statusBars()
-        val statusBarInset = if (contentDrawsBehindStatusBar) {
-            0
-        } else {
-            ViewCompat.getRootWindowInsets(decorView)?.getInsets(statusBars)?.top ?: 0
-        }
-        return Point(content.width, content.height + statusBarInset)
     }
 
     private fun streamFramebuffer(socket: Socket, request: HttpRequest) {

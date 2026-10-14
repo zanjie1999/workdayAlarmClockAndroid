@@ -169,6 +169,11 @@ class MeService : Service() {
     @Volatile private var lyricLines = emptyList<LyricLine>()
     @Volatile private var lyricVersion = 0
     @Volatile private var hasPendingSongId = false
+
+    // 存一下真实的屏幕尺寸，给fbinfo用
+    var fbinfoX = 0
+    var fbinfoY = 0
+
     private val playbackCheckpointRunnable = object : Runnable {
         override fun run() {
             if (playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING) {
