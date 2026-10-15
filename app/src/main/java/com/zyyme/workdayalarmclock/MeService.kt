@@ -1579,8 +1579,9 @@ class MeService : Service() {
             }
             if (resumeAfterAudioFocusGain) {
                 requestResumePlayback()
-                scheduleAutoBackToClock()
             }
+            // 无论之前是否在播放，重新获得焦点后都要安排自动回到时钟
+            scheduleAutoBackToClock()
         }
     }
 
