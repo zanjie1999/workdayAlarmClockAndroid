@@ -297,11 +297,6 @@ class MainActivity : AppCompatActivity() {
         toolbar.post {
             // 稍微晚点，等等MeService
             toolbar.subtitle = MeService.me?.getIp() + "咩咩"
-
-            // 计算一下实际的宽和高存起来
-            val content = findViewById<View>(android.R.id.content)
-            MeService.me?.fbinfoX = content.width
-            MeService.me?.fbinfoY = content.height
         }
     }
 
