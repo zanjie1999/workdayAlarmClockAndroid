@@ -19,12 +19,7 @@ object StartupAppHelper {
     const val PREFS_NAME = "app_list"
     const val KEY_PINNED_APPS = "pinned_apps"
     private const val KEY_STARTUP_APPS = "startup_apps"
-    const val STARTUP_APP_DELAY_MILLIS = 5_000L
-    private const val MAX_CLOCK_VISIBILITY_CHECKS = 12
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val visibilityCheckHandler by lazy {
-        Handler(HandlerThread("ClockVisibilityCheck").apply { start() }.looper)
-    }
+    const val STARTUP_APP_DELAY_MILLIS = 10_000L
     private val startupLock = Any()
     private var startupAppLaunching = false
     private var startupAppsHandled = false
