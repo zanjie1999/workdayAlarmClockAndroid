@@ -72,6 +72,7 @@ class ClockActivity : AppCompatActivity() {
     private var showMsgUntil = 0L
 
     var clockMode = false
+    private var enterClockModeAfterLayout = false
 
     private var returnPackage: String? = null
 
@@ -117,6 +118,11 @@ class ClockActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
         returnPackage = intent.getStringExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE)
+        enterClockModeAfterLayout = (lastCustomNonConfigurationInstance as? Boolean)
+            ?: (
+            intent.getBooleanExtra("clockMode", false) ||
+                    intent.action == "android.media.action.STILL_IMAGE_CAMERA"
+            )
 
         // 启动Go服务 如果App以特殊方式启动
         if (MeService.me == null) {
@@ -320,7 +326,7 @@ class ClockActivity : AppCompatActivity() {
 
         tvDate.setOnClickListener {
             if (clockMode) {
-                recreate()
+                exitFullScreenClock()
             } else {
                 // 切换暗色模式
                 if (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) {
@@ -364,12 +370,11 @@ class ClockActivity : AppCompatActivity() {
         val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
         rootLayout.post {
             // 延迟进行字体大小调整  初始化完后延时执行
-            if (intent.getBooleanExtra("clockMode", false) ||
-                intent.action == "android.media.action.STILL_IMAGE_CAMERA"
-            ) {
+            if (enterClockModeAfterLayout) {
                 Log.d("intent", "收到clockMode")
                 // 直接进入全屏时钟模式
                 setFullScreenClock()
+                enterClockModeAfterLayout = false
             }
             // 保持亮屏flag
             if (intent.getBooleanExtra("keepOn", false)) {
@@ -456,6 +461,10 @@ class ClockActivity : AppCompatActivity() {
         FramebufferFrameRenderer.requestLatestFrame()
     }
 
+    override fun onRetainCustomNonConfigurationInstance(): Any {
+        return clockMode || enterClockModeAfterLayout
+    }
+
     override fun onStop() {
         isActivityStarted = false
         super.onStop()
@@ -478,7 +487,7 @@ class ClockActivity : AppCompatActivity() {
     override fun onBackPressed() {
         // 收起的时候按一下回到收起前状态
         if (clockMode) {
-            recreate()
+            exitFullScreenClock()
             return
         }
 
@@ -496,6 +505,12 @@ class ClockActivity : AppCompatActivity() {
         } else {
             super.onBackPressed()
         }
+    }
+
+    private fun exitFullScreenClock() {
+        clockMode = false
+        enterClockModeAfterLayout = false
+        recreate()
     }
 
     private fun setFullScreenClock() {
