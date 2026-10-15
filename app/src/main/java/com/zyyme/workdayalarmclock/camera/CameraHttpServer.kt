@@ -67,7 +67,7 @@ internal class CameraHttpServer(
     private val streamLockState = Any()
     private val clients = LinkedHashMap<Socket, CameraStreamPipeline>()
     private val audioClients = LinkedHashSet<Socket>()
-    private val framebufferStreamActive = AtomicBoolean(false)
+    private val framebufferSessionLock = Any()
     @Volatile private var password = ""
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
@@ -123,9 +123,14 @@ internal class CameraHttpServer(
         } catch (_: Exception) {
         }
         serverSocket = null
-        try {
-            activeFramebufferSocket?.close()
-        } catch (_: Exception) {
+        synchronized(framebufferSessionLock) {
+            val socket = activeFramebufferSocket
+            activeFramebufferSocket = null
+            try {
+                socket?.close()
+            } catch (_: Exception) {
+            }
+            if (socket != null) framebufferStreamState(false)
         }
         closeActiveSession()
         closeActiveAudioSession()
@@ -356,16 +361,22 @@ internal class CameraHttpServer(
             )
             return
         }
-        if (!framebufferStreamActive.compareAndSet(false, true)) {
-            writeEmptyResponse(socket, 503, "Service Unavailable")
-            return
-        }
-        activeFramebufferSocket = socket
-
         var frameCount = 0L
         var jpegBytes = 0L
-        var streamStarted = false
         try {
+            synchronized(framebufferSessionLock) {
+                if (!running.get()) return
+                val previous = activeFramebufferSocket
+                activeFramebufferSocket = socket
+                if (previous != null) {
+                    try {
+                        previous.close()
+                    } catch (_: Exception) {
+                    }
+                    framebufferStreamState(false)
+                }
+                framebufferStreamState(true)
+            }
             if (request.expectContinue) {
                 socket.getOutputStream().write(
                     "HTTP/1.1 100 Continue\r\n\r\n".toByteArray(HTTP_CHARSET)
@@ -373,10 +384,8 @@ internal class CameraHttpServer(
                 socket.getOutputStream().flush()
             }
             socket.soTimeout = 0
-            framebufferStreamState(true)
-            streamStarted = true
             val boundaryLine = "--$boundary"
-            while (running.get() && !socket.isClosed) {
+            while (running.get() && !socket.isClosed && activeFramebufferSocket === socket) {
                 val line = readHttpLine(request.body)
                     ?: throw EOFException("missing MJPEG boundary")
                 if (line == "$boundaryLine--") break
@@ -428,8 +437,12 @@ internal class CameraHttpServer(
                     if (readHttpLine(request.body) != "") {
                         throw IllegalArgumentException("missing MJPEG part terminator")
                     }
-                    framebufferFrame(jpeg, frameLength)
-                    frame = null
+                    synchronized(framebufferSessionLock) {
+                        // A replaced reader may still have a complete frame buffered locally.
+                        if (activeFramebufferSocket !== socket) return
+                        framebufferFrame(jpeg, frameLength)
+                        frame = null
+                    }
                 } finally {
                     frame?.let(FramebufferJpegBufferPool::release)
                 }
@@ -451,9 +464,13 @@ internal class CameraHttpServer(
                 .toByteArray(HTML_CHARSET)
             writeJsonResponse(socket, status, reason, response)
         } finally {
-            if (streamStarted) framebufferStreamState(false)
-            if (activeFramebufferSocket === socket) activeFramebufferSocket = null
-            framebufferStreamActive.set(false)
+            synchronized(framebufferSessionLock) {
+                // The old reader must not clear the replacement session's renderer state.
+                if (activeFramebufferSocket === socket) {
+                    activeFramebufferSocket = null
+                    framebufferStreamState(false)
+                }
+            }
         }
     }
 
