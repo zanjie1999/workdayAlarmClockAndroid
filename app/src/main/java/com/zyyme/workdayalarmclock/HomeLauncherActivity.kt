@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 
 class HomeLauncherActivity : Activity() {
@@ -52,7 +53,8 @@ class HomeLauncherActivity : Activity() {
     }
 
     private fun openHomeDestination(runStartupApps: Boolean) {
-        if (runStartupApps && intent?.action == Intent.ACTION_MAIN &&
+        // 应该不会有设备开机要15分钟吧 开机15分钟后跳过开机启动App 避免更新工作咩闹钟App的时候又把所有开机启动App都拉起来一次
+        if (runStartupApps && SystemClock.elapsedRealtime() < 900000 && intent?.action == Intent.ACTION_MAIN &&
             intent?.hasCategory(Intent.CATEGORY_HOME) == true
         ) {
             val destinationContext = applicationContext
