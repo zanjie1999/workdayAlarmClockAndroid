@@ -18,15 +18,23 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <TextureView
-        android:id="@+id/clock_wallpaper_video"
+    <FrameLayout
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:visibility="gone"
+        android:clipChildren="true"
+        android:clipToPadding="true"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent">
+
+        <com.zyyme.workdayalarmclock.CenterCropVideoSurfaceView
+            android:id="@+id/clock_wallpaper_video"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <View
         android:id="@+id/clock_wallpaper_mask"
@@ -331,7 +339,7 @@
                 android:insetLeft="1dp"
                 android:insetTop="1dp"
                 android:insetBottom="0dp"
-                android:text="收起"
+                android:text="全屏"
                 android:textSize="15sp"
                 app:backgroundTint="@color/clockBtnColor" />
 

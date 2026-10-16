@@ -19,15 +19,23 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <TextureView
-        android:id="@+id/desk_wallpaper_video"
+    <FrameLayout
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="@id/desk_wallpaper"
-        app:layout_constraintEnd_toEndOf="@id/desk_wallpaper"
-        app:layout_constraintStart_toStartOf="@id/desk_wallpaper"
-        app:layout_constraintTop_toTopOf="@id/desk_wallpaper" />
+        android:clipChildren="true"
+        android:clipToPadding="true"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <com.zyyme.workdayalarmclock.CenterCropVideoSurfaceView
+            android:id="@+id/desk_wallpaper_video"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <ImageView
         android:id="@+id/desk_framebuffer"

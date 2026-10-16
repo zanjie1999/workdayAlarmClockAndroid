@@ -10,8 +10,6 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.SurfaceTexture
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.media.AudioManager
@@ -31,8 +29,7 @@ import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.Surface
-import android.view.TextureView
+import android.view.SurfaceHolder
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -107,9 +104,9 @@ class DeskActivity : AppCompatActivity() {
     private val baseIconDrawables = mutableMapOf<Int, Drawable>()
 
     private lateinit var wallpaperView: ImageView
-    private lateinit var wallpaperVideoView: TextureView
+    private lateinit var wallpaperVideoView: CenterCropVideoSurfaceView
     private var wallpaperPlayer: MediaPlayer? = null
-    private var wallpaperSurface: Surface? = null
+    private var wallpaperSurfaceReady = false
     private var videoWallpaperFile: File? = null
     private lateinit var framebufferOverlay: ImageView
     private lateinit var overlayContainer: View
@@ -343,22 +340,19 @@ class DeskActivity : AppCompatActivity() {
     private fun bindViews() {
         wallpaperView = findViewById(R.id.desk_wallpaper)
         wallpaperVideoView = findViewById(R.id.desk_wallpaper_video)
-        wallpaperVideoView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+        wallpaperVideoView.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                wallpaperSurfaceReady = true
                 startVideoWallpaper()
             }
 
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
-                wallpaperPlayer?.let { updateVideoWallpaperTransform(it.videoWidth, it.videoHeight) }
-            }
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
 
-            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                wallpaperSurfaceReady = false
                 releaseWallpaperPlayer()
-                return true
             }
-
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
-        }
+        })
         framebufferOverlay = findViewById(R.id.desk_framebuffer)
         overlayContainer = findViewById(R.id.desk_overlay_container)
         maskView = findViewById(R.id.desk_mask)
@@ -1038,7 +1032,7 @@ class DeskActivity : AppCompatActivity() {
             wallpaperView.setImageDrawable(null)
             wallpaperBitmap?.let { if (!it.isRecycled) it.recycle() }
             wallpaperBitmap = null
-            wallpaperVideoView.visibility = View.VISIBLE
+            wallpaperVideoView.visibility = if (FramebufferFrameRenderer.isStreaming()) View.GONE else View.VISIBLE
             startVideoWallpaper()
             return
         }
@@ -1069,21 +1063,21 @@ class DeskActivity : AppCompatActivity() {
 
     private fun startVideoWallpaper() {
         val file = videoWallpaperFile ?: return
-        if (!isActivityStarted || isFinishing || FramebufferFrameRenderer.isStreaming() ||
-            !wallpaperVideoView.isAvailable || wallpaperPlayer != null) return
+        if (!isActivityStarted || isFinishing || FramebufferFrameRenderer.isStreaming()) return
+        wallpaperVideoView.visibility = View.VISIBLE
+        if (!wallpaperSurfaceReady || wallpaperPlayer != null) return
         try {
             val player = MediaPlayer()
             wallpaperPlayer = player
-            wallpaperSurface = Surface(wallpaperVideoView.surfaceTexture)
-            player.setSurface(wallpaperSurface)
+            player.setDisplay(wallpaperVideoView.holder)
             player.setVolume(0f, 0f)
             player.setOnVideoSizeChangedListener { _, width, height ->
-                updateVideoWallpaperTransform(width, height)
+                updateVideoWallpaperSize(width, height)
             }
             player.setOnPreparedListener {
                 if (wallpaperPlayer === it && isActivityStarted) {
                     it.setVolume(0f, 0f)
-                    updateVideoWallpaperTransform(it.videoWidth, it.videoHeight)
+                    updateVideoWallpaperSize(it.videoWidth, it.videoHeight)
                     it.start()
                 }
             }
@@ -1103,14 +1097,8 @@ class DeskActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateVideoWallpaperTransform(videoWidth: Int, videoHeight: Int) {
-        val width = wallpaperVideoView.width.toFloat()
-        val height = wallpaperVideoView.height.toFloat()
-        if (videoWidth <= 0 || videoHeight <= 0 || width <= 0 || height <= 0) return
-        val scale = maxOf(width / videoWidth, height / videoHeight)
-        wallpaperVideoView.setTransform(Matrix().apply {
-            setScale(videoWidth * scale / width, videoHeight * scale / height, width / 2f, height / 2f)
-        })
+    private fun updateVideoWallpaperSize(videoWidth: Int, videoHeight: Int) {
+        wallpaperVideoView.setVideoSize(videoWidth, videoHeight)
     }
 
     private fun onVideoWallpaperFailed() {
@@ -1131,8 +1119,6 @@ class DeskActivity : AppCompatActivity() {
             release()
         }
         wallpaperPlayer = null
-        wallpaperSurface?.release()
-        wallpaperSurface = null
     }
 
     internal fun showFramebufferFrame(bitmap: Bitmap): Bitmap? {
@@ -1152,6 +1138,7 @@ class DeskActivity : AppCompatActivity() {
         handler.removeCallbacks(hideFramebufferControlsRunnable)
         if (active) {
             releaseWallpaperPlayer()
+            wallpaperVideoView.visibility = View.GONE
             framebufferOverlay.visibility = View.VISIBLE
             if (alarmMode) {
                 overlayContainer.visibility = View.VISIBLE

@@ -10,8 +10,6 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.SurfaceTexture
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
@@ -27,8 +25,7 @@ import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.Surface
-import android.view.TextureView
+import android.view.SurfaceHolder
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -90,9 +87,9 @@ class ClockActivity : AppCompatActivity() {
     private var isUserSeeking = false
 
     private lateinit var wallpaperView: ImageView
-    private lateinit var wallpaperVideoView: TextureView
+    private lateinit var wallpaperVideoView: CenterCropVideoSurfaceView
     private var wallpaperPlayer: MediaPlayer? = null
-    private var wallpaperSurface: Surface? = null
+    private var wallpaperSurfaceReady = false
     private var videoWallpaperFile: File? = null
     private lateinit var wallpaperMaskView: View
     private var wallpaperBitmap: Bitmap? = null
@@ -175,22 +172,19 @@ class ClockActivity : AppCompatActivity() {
         wallpaperView = findViewById(R.id.clock_wallpaper)
         wallpaperMaskView = findViewById(R.id.clock_wallpaper_mask)
         wallpaperVideoView = findViewById(R.id.clock_wallpaper_video)
-        wallpaperVideoView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+        wallpaperVideoView.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                wallpaperSurfaceReady = true
                 startVideoWallpaper()
             }
 
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
-                wallpaperPlayer?.let { updateVideoWallpaperTransform(it.videoWidth, it.videoHeight) }
-            }
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
 
-            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                wallpaperSurfaceReady = false
                 releaseWallpaperPlayer()
-                return true
             }
-
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
-        }
+        })
         val tvTop = findViewById<TextView>(R.id.tv_top)
         val tvTime = findViewById<TextView>(R.id.tv_time)
         val tvDate = findViewById<TextView>(R.id.tv_date)
@@ -722,7 +716,7 @@ class ClockActivity : AppCompatActivity() {
         val selected = auto ?: savedVideo.takeIf { it.isFile } ?: File(filesDir, "desk.jpg")
         if (selected.extension.equals("mp4", ignoreCase = true)) {
             videoWallpaperFile = selected
-            wallpaperVideoView.visibility = View.VISIBLE
+            wallpaperVideoView.visibility = if (FramebufferFrameRenderer.isStreaming()) View.GONE else View.VISIBLE
             wallpaperMaskView.visibility = View.VISIBLE
             startVideoWallpaper()
             return
@@ -766,21 +760,21 @@ class ClockActivity : AppCompatActivity() {
 
     private fun startVideoWallpaper() {
         val file = videoWallpaperFile ?: return
-        if (!clockMode || !isActivityStarted || isFinishing || FramebufferFrameRenderer.isStreaming() ||
-            !wallpaperVideoView.isAvailable || wallpaperPlayer != null) return
+        if (!clockMode || !isActivityStarted || isFinishing || FramebufferFrameRenderer.isStreaming()) return
+        wallpaperVideoView.visibility = View.VISIBLE
+        if (!wallpaperSurfaceReady || wallpaperPlayer != null) return
         try {
             val player = MediaPlayer()
             wallpaperPlayer = player
-            wallpaperSurface = Surface(wallpaperVideoView.surfaceTexture)
-            player.setSurface(wallpaperSurface)
+            player.setDisplay(wallpaperVideoView.holder)
             player.setVolume(0f, 0f)
             player.setOnVideoSizeChangedListener { _, width, height ->
-                updateVideoWallpaperTransform(width, height)
+                updateVideoWallpaperSize(width, height)
             }
             player.setOnPreparedListener {
                 if (wallpaperPlayer === it && clockMode && isActivityStarted) {
                     it.setVolume(0f, 0f)
-                    updateVideoWallpaperTransform(it.videoWidth, it.videoHeight)
+                    updateVideoWallpaperSize(it.videoWidth, it.videoHeight)
                     it.start()
                 }
             }
@@ -799,15 +793,8 @@ class ClockActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateVideoWallpaperTransform(videoWidth: Int, videoHeight: Int) {
-        val width = wallpaperVideoView.width.toFloat()
-        val height = wallpaperVideoView.height.toFloat()
-        if (videoWidth <= 0 || videoHeight <= 0 || width <= 0 || height <= 0) return
-        // 与图片壁纸的 centerCrop 一致：等比铺满，超出部分居中裁剪。
-        val scale = maxOf(width / videoWidth, height / videoHeight)
-        wallpaperVideoView.setTransform(Matrix().apply {
-            setScale(videoWidth * scale / width, videoHeight * scale / height, width / 2f, height / 2f)
-        })
+    private fun updateVideoWallpaperSize(videoWidth: Int, videoHeight: Int) {
+        wallpaperVideoView.setVideoSize(videoWidth, videoHeight)
     }
 
     private fun onVideoWallpaperFailed() {
@@ -826,13 +813,12 @@ class ClockActivity : AppCompatActivity() {
             release()
         }
         wallpaperPlayer = null
-        wallpaperSurface?.release()
-        wallpaperSurface = null
     }
 
     internal fun setFramebufferStreaming(active: Boolean) {
         if (active) {
             releaseWallpaperPlayer()
+            wallpaperVideoView.visibility = View.GONE
         } else {
             startVideoWallpaper()
         }
