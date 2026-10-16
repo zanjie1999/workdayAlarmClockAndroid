@@ -19,6 +19,16 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <TextureView
+        android:id="@+id/desk_wallpaper_video"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/desk_wallpaper"
+        app:layout_constraintEnd_toEndOf="@id/desk_wallpaper"
+        app:layout_constraintStart_toStartOf="@id/desk_wallpaper"
+        app:layout_constraintTop_toTopOf="@id/desk_wallpaper" />
+
     <ImageView
         android:id="@+id/desk_framebuffer"
         android:layout_width="0dp"

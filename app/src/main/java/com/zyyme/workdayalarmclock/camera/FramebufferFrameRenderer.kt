@@ -153,6 +153,8 @@ internal object FramebufferFrameRenderer {
         discardedReusableBitmaps.forEach(FramebufferBitmapReaper::recycle)
 
         mainHandler.post {
+            if (synchronized(lock) { generation != currentGeneration }) return@post
+            ClockActivity.me?.setFramebufferStreaming(active)
             DeskActivity.me?.setFramebufferStreaming(active)
             if (!active) {
                 ClockActivity.me?.hideFramebufferFrame()
