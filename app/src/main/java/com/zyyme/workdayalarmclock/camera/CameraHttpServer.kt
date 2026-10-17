@@ -531,6 +531,9 @@ internal class CameraHttpServer(
             return count
         }
 
+        // 让上层能估算内核里还压着多少没读的音频(跳读要用)
+        override fun available(): Int = remaining + input.available()
+
         private fun ensureChunk(): Boolean {
             if (finished) return false
             if (remaining > 0) return true
@@ -725,12 +728,70 @@ internal class CameraHttpServer(
             socket.getOutputStream().flush()
             track.play()
             frameBytes = channels * 2
-            val buffer = ByteArray(minBuffer.coerceAtLeast(2048) + frameBytes)
+            // 15ms 一块：进程内排队小，跳读的控制粒度也够
+            val buffer = ByteArray(
+                (rate.toLong() * frameBytes * 15 / 1000).toInt().coerceAtLeast(1024) + frameBytes
+            )
+            // 目标是 AudioTrack 自己的缓冲 + 25ms 余量。下位机 CPU 一忙，旧音频
+            // 会攒在 socket 和 AudioTrack 缓冲里(上位机估算不了)，一旦攒下就会
+            // 一直背着；超过目标就从流里直接跳读丢掉，延迟立刻回落。
+            val sinkFrames = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                track.bufferSizeInFrames
+            } else {
+                minBuffer / frameBytes
+            }).coerceAtLeast(1)
+            val bytesPerMs = rate.toLong() * frameBytes / 1000
+            val targetBytes = sinkFrames.toLong() * frameBytes + bytesPerMs * 25
+            val deadbandBytes = bytesPerMs * 12
+            val maxSkipBytes = bytesPerMs * 250
+            val skipBuf = ByteArray(8 * 1024)
             var pending = 0
+            var readBytes = 0L
+            var skippedBytes = 0L
+            var playedFrames = 0L
+            var lastHead = 0
+            var lastLog = 0L
             while (true) {
+                // 先量后排、再读：只有还没进 AudioTrack 的旧音频才丢得掉
+                val head = track.playbackHeadPosition
+                val delta = (head - lastHead).toLong() and 0xFFFFFFFFL
+                // 每轮最多前进 1 秒；异常的跳变(track 被复位)直接忽略，免得计数崩掉
+                if (delta <= rate) {
+                    playedFrames += delta
+                }
+                lastHead = head
+                val available = try {
+                    request.body.available().toLong()
+                } catch (_: Exception) {
+                    0L
+                }
+                var excess = readBytes - playedFrames * frameBytes - skippedBytes + available - targetBytes
+                if (excess >= deadbandBytes) {
+                    if (excess > maxSkipBytes) excess = maxSkipBytes
+                    excess -= excess % frameBytes
+                    var dropped = 0L
+                    while (dropped < excess) {
+                        val want = minOf(excess - dropped, skipBuf.size.toLong()).toInt()
+                        val n = request.body.read(skipBuf, 0, want)
+                        if (n <= 0) break
+                        readBytes += n
+                        skippedBytes += n
+                        dropped += n
+                    }
+                    val now = System.currentTimeMillis()
+                    if (dropped > 0 && now - lastLog >= 10000) {
+                        lastLog = now
+                        print2LogView(
+                            "电脑音箱: 排队 ${(readBytes - playedFrames * frameBytes - skippedBytes) / bytesPerMs}ms " +
+                                "目标 ${targetBytes / bytesPerMs}ms，" +
+                                "跳读 ${dropped / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
+                        )
+                    }
+                }
                 val count = request.body.read(buffer, pending, buffer.size - pending)
                 if (count < 0) break
                 if (count == 0) continue
+                readBytes += count
                 val total = pending + count
                 val writable = total - (total % frameBytes)
                 var offset = 0
