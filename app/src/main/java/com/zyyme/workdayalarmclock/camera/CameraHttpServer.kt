@@ -751,6 +751,9 @@ internal class CameraHttpServer(
             var playedFrames = 0L
             var lastHead = 0
             var lastLog = 0L
+            // 饿读追赶：一次读卡住多久，就说明上游攒了多久的旧音频，
+            // 接下来涌来的数据开头那一段就是那么旧，直接丢掉。
+            var catchUp = 0L
             while (true) {
                 // 先量后排、再读：只有还没进 AudioTrack 的旧音频才丢得掉
                 val head = track.playbackHeadPosition
@@ -788,11 +791,43 @@ internal class CameraHttpServer(
                         )
                     }
                 }
+                val readStart = System.nanoTime()
                 val count = request.body.read(buffer, pending, buffer.size - pending)
                 if (count < 0) break
                 if (count == 0) continue
                 readBytes += count
-                val total = pending + count
+                var total = pending + count
+                // 卡了多久 ≈ 涌来的这坨有多旧，两个数天然相等，不用去猜排队量。
+                // 丢的都是已经读进内存的字节，不会卡在网络上等数据。
+                val gapMs = (System.nanoTime() - readStart) / 1_000_000
+                if (gapMs > 40) {
+                    val owed = minOf(
+                        bytesPerMs * (gapMs - 20),
+                        maxSkipBytes
+                    ).coerceAtLeast(0L)
+                    if (owed > catchUp) catchUp = owed
+                }
+                if (catchUp > 0) {
+                    var drop = minOf(catchUp, total.toLong())
+                    drop -= drop % frameBytes // 帧对齐，别把采样劈开
+                    if (drop > 0) {
+                        // pending 里那点尾巴还在前面，一起往后挪
+                        System.arraycopy(
+                            buffer, drop.toInt(), buffer, 0, (total - drop).toInt()
+                        )
+                        total -= drop.toInt()
+                        catchUp -= drop
+                        skippedBytes += drop
+                        val now = System.currentTimeMillis()
+                        if (now - lastLog >= 10000) {
+                            lastLog = now
+                            print2LogView(
+                                "电脑音箱: 饿读追赶 卡了 ${gapMs}ms，" +
+                                    "丢 ${drop / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
+                            )
+                        }
+                    }
+                }
                 val writable = total - (total % frameBytes)
                 var offset = 0
                 while (offset < writable) {
