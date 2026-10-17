@@ -739,9 +739,12 @@ internal class CameraHttpServer(
                 track.bufferSizeInFrames
             } else {
                 minBuffer / frameBytes
-            }).coerceAtLeast(1)
+            }).coerceAtLeast(1).toLong()
             val bytesPerMs = rate.toLong() * frameBytes / 1000
-            val targetBytes = sinkFrames.toLong() * frameBytes + bytesPerMs * 25
+            // 用 AudioTrack 实际给的缓冲当排队基准：请求 40ms 时设备常常给回
+            // 70-80ms，写死会让目标低于真实地板，跳读永远在触发。
+            val sinkLimitBytes: Long = sinkFrames * frameBytes
+            val targetBytes = sinkLimitBytes + bytesPerMs * 25
             val deadbandBytes = bytesPerMs * 12
             val maxSkipBytes = bytesPerMs * 250
             val skipBuf = ByteArray(8 * 1024)
@@ -756,6 +759,9 @@ internal class CameraHttpServer(
             // 但卡了多久 != 声卡空了多久：缓冲薄时正常等下一批包也要卡 40-60ms，
             // 这期间声卡一直在放，所以要先减掉声卡当时还剩的积压。
             var catchUp = 0L
+            // 一次追赶事件里累计丢了多少，只用来打日志：
+            // catchUp 会跨多次读延续，打单轮的量会严重低估。
+            var eventBytes = 0L
             var armed = true
             val rearmBytes = bytesPerMs * 30
             while (true) {
@@ -772,7 +778,10 @@ internal class CameraHttpServer(
                 } catch (_: Exception) {
                     0L
                 }
-                var excess = readBytes - playedFrames * frameBytes - skippedBytes + available - targetBytes
+                // 播放头在欠载时会停住，这里推算出来的积压会大于缓冲本身，必须夹住
+                val sinkNow = (readBytes - playedFrames * frameBytes - skippedBytes)
+                    .coerceIn(0L, sinkLimitBytes)
+                var excess = sinkNow + available - targetBytes
                 if (excess >= deadbandBytes) {
                     if (excess > maxSkipBytes) excess = maxSkipBytes
                     excess -= excess % frameBytes
@@ -789,7 +798,7 @@ internal class CameraHttpServer(
                     if (dropped > 0 && now - lastLog >= 10000) {
                         lastLog = now
                         print2LogView(
-                            "电脑音箱: 排队 ${(readBytes - playedFrames * frameBytes - skippedBytes) / bytesPerMs}ms " +
+                            "电脑音箱: 排队 ${sinkNow / bytesPerMs}ms " +
                                 "目标 ${targetBytes / bytesPerMs}ms，" +
                                 "跳读 ${dropped / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
                         )
@@ -801,18 +810,23 @@ internal class CameraHttpServer(
                 if (count == 0) continue
                 readBytes += count
                 var total = pending + count
-                // 读之前声卡还剩多少没播(字节)，用来区分"正常等包"和"真的断粮"
-                val sinkBytes = readBytes - count - playedFrames * frameBytes - skippedBytes
+                // 读之前声卡还剩多少没播(字节)，用来区分"正常等包"和"真的断粮"。
+                // 播放头欠载时会停住导致推算偏大，夹到缓冲上限。
+                val sinkBefore = (readBytes - count - playedFrames * frameBytes - skippedBytes)
+                    .coerceIn(0L, sinkLimitBytes)
                 val gapMs = (System.nanoTime() - readStart) / 1_000_000
                 if (!armed) {
                     // 上一轮刚丢过，等声卡积压回血再重新武装，避免丢完就饿、饿了又丢
-                    if (sinkBytes >= rearmBytes) armed = true
+                    if (sinkBefore >= rearmBytes) armed = true
                 } else if (gapMs > 40) {
                     // 卡住的时间减去声卡当时还能放的时间 = 真正断粮的时长
-                    val starvedMs = gapMs - sinkBytes / bytesPerMs - 20
+                    val starvedMs = gapMs - sinkBefore / bytesPerMs - 20
                     val owed = minOf(bytesPerMs * starvedMs, maxSkipBytes)
                         .coerceAtLeast(0L)
-                    if (owed > catchUp) catchUp = owed
+                    if (owed > catchUp) {
+                        catchUp = owed
+                        eventBytes = 0L // 新一轮事件，重新计总量
+                    }
                 }
                 if (catchUp > 0) {
                     var drop = minOf(catchUp, total.toLong())
@@ -825,13 +839,14 @@ internal class CameraHttpServer(
                         total -= drop.toInt()
                         catchUp -= drop
                         skippedBytes += drop
+                        eventBytes += drop
                         if (catchUp == 0L) armed = false // 丢完了，等声卡回血
                         val now = System.currentTimeMillis()
                         if (now - lastLog >= 10000) {
                             lastLog = now
                             print2LogView(
-                                "电脑音箱: 饿读追赶 卡了 ${gapMs}ms 声卡剩 ${sinkBytes / bytesPerMs}ms，" +
-                                    "丢 ${drop / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
+                                "电脑音箱: 饿读追赶 卡了 ${gapMs}ms 声卡剩 ${sinkBefore / bytesPerMs}ms，" +
+                                    "本次共丢 ${eventBytes / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
                             )
                         }
                     }
