@@ -81,8 +81,12 @@ class ClockActivity : AppCompatActivity() {
     var enableTop = false
 
     private var showLyrics = false
-    private val lyricsOnTop get() = showLyrics && clockMode
     private var isVerticalLayout = false
+
+    // 全屏布局计算出的内容高度，以及顶部歌词条的占位高度（tvTime 高度的四分之一）
+    private var clockContentHeight = 0
+    private var lyricsBarHeight = 0
+    private var isRoundScreen = false
 
     private var isUserSeeking = false
 
@@ -111,12 +115,63 @@ class ClockActivity : AppCompatActivity() {
     fun showMsg(msg: String) {
         runOnUiThread {
             showMsgUntil = SystemClock.elapsedRealtime() + 3000
-            if (enableTop && !lyricsOnTop) {
+            if (enableTop && !lyricsBarActive()) {
                 findViewById<TextView>(R.id.tv_top).text = msg
             } else {
                 findViewById<TextView>(R.id.tv_date).text = msg
             }
         }
+    }
+
+    /**
+     * 顶部歌词条的内容：这首歌有歌词就一直走歌词（当前这句没字就空着），
+     * 只有这首歌完全没有歌词时才显示天气预警信息。
+     */
+    private fun lyricsBarText(position: Int?): String {
+        val service = MeService.me ?: return ""
+        if (showLyrics && service.hasLyrics()) {
+            return service.getCurrentLyric(position).orEmpty()
+        }
+        return service.weatherAlText
+    }
+
+    /**
+     * 这首歌有歌词（哪怕当前这句没字），或者有天气预警信息时，顶部歌词条才占位。
+     */
+    private fun lyricsBarWanted(): Boolean {
+        if (!clockMode) return false
+        val service = MeService.me ?: return false
+        return (showLyrics && service.hasLyrics()) || service.weatherAlText.isNotEmpty()
+    }
+
+    /**
+     * 顶部这一条现在是不是由歌词条在用（用来决定 tvTop 放歌词还是电池信息）。
+     * 竖屏/圆屏顶部条一直都在，横屏时只有歌词条要占位时才在。
+     */
+    private fun lyricsBarActive(): Boolean {
+        if (!clockMode) return false
+        return lyricsBarWanted()
+    }
+
+    /**
+     * 全屏时顶部条是否显示：圆屏/竖屏一直有，横屏只有在要显示歌词或天气预警时才有。
+     * 收起时把占位还给 tvTime（tvTime 用两份高度切换）。
+     */
+    private fun applyClockTopBarLayout(force: Boolean = false) {
+        if (!clockMode || clockContentHeight <= 0) return
+        val showTop = isRoundScreen || isVerticalLayout || lyricsBarWanted()
+        if (!force && showTop == enableTop) return
+        val tvTop = findViewById<TextView>(R.id.tv_top)
+        val tvTime = findViewById<TextView>(R.id.tv_time)
+        val tvDate = findViewById<TextView>(R.id.tv_date)
+        enableTop = showTop
+        tvTop.visibility = if (showTop) View.VISIBLE else View.GONE
+        tvTop.layoutParams.height = if (showTop) lyricsBarHeight else 0
+        tvTime.layoutParams.height = (clockContentHeight * (if (showTop) 0.5 else 0.75)).toInt()
+        tvDate.layoutParams.height = (clockContentHeight * 0.25).toInt()
+        tvTop.requestLayout()
+        tvTime.requestLayout()
+        tvDate.requestLayout()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -423,10 +478,16 @@ class ClockActivity : AppCompatActivity() {
                 updateMusicProgress(musicSeekBar, tvMusicPosition, tvMusicDuration, millis, duration)
                 circularMusicProgress.setProgress(millis, duration)
                 val lyric = if (showLyrics) service?.getCurrentLyric(millis) else null
-                if (lyricsOnTop) {
-                    if (tvTop.text.toString() != lyric.orEmpty()) {
-                        tvTop.text = lyric.orEmpty()
+                if (clockMode) {
+                    // 这首歌有歌词（或来了天气预警）时这条常驻占位，里面有没有字按下面的刷新逻辑
+                    if (lyricsBarActive()) {
+                        val text = lyricsBarText(millis)
+                        if (tvTop.text.toString() != text) tvTop.text = text
+                    } else if (tvTop.text.isNotEmpty()) {
+                        tvTop.text = ""
                     }
+                    // 切歌后歌词是异步加载的，加载完/清空时高度要跟着切换
+                    applyClockTopBarLayout()
                 }
                 if (SystemClock.elapsedRealtime() >= showMsgUntil) {
                     val batInfo = service?.batInfo.orEmpty()
@@ -438,7 +499,7 @@ class ClockActivity : AppCompatActivity() {
                             tvDate,
                             if (millis != null && lyric != null) lyric else batInfo + hmsmde[1]
                         )
-                    } else if (lyricsOnTop) {
+                    } else if (lyricsBarActive()) {
                         if (isVerticalLayout) {
                             val secondLine = (batInfo + (playTime?.let { "▷$it" } ?: "")).trimEnd()
                             setTextIfChanged(
@@ -455,7 +516,7 @@ class ClockActivity : AppCompatActivity() {
                         setTextIfChanged(tvDate, batInfo + hmsmde[1] + (playTime?.let { " ▷$it" } ?: ""))
                     }
                 }
-                if (showLyrics && millis != null) {
+                if ((showLyrics && millis != null) || service?.weatherAlText?.isNotEmpty() == true) {
                     timeHandler.postDelayed(this, 250)
                 } else {
                     timeHandler.postDelayed(this, 1000 - System.currentTimeMillis() % 1000)
@@ -498,6 +559,8 @@ class ClockActivity : AppCompatActivity() {
         setFullscreen()
         AmbientBrightnessController.applyLatestTo(window)
         if (clockMode) {
+            // 歌词开关、这首歌有没有歌词都可能在这期间变过，重算一次顶部条
+            applyClockTopBarLayout(true)
             wallpaperView.post {
                 loadClockWallpaper()
                 scheduleHourlyWallpaperUpdates()
@@ -581,17 +644,23 @@ class ClockActivity : AppCompatActivity() {
             tvDate.setPadding(edgeHorizontalPadding, tvDate.paddingTop, edgeHorizontalPadding, tvDate.paddingBottom)
             realHeightPixels -= topPadding + bottomPadding
         }
-        if (isRound || isVerticalLayout || showLyrics) {
-            // 圆屏、竖屏或歌词模式启用顶部框
+        if (isRound || isVerticalLayout) {
+            // 圆屏、竖屏：顶部一直有这一条
             tvTime.layoutParams.height = (realHeightPixels * 0.5).toInt()
             tvTop.layoutParams.height = (realHeightPixels * 0.25).toInt()
+            tvTop.visibility = View.VISIBLE
             enableTop = true
         } else {
+            // 横屏：顶部条按需显示，收起时 tvTime 用两份高度
             tvTime.layoutParams.height = (realHeightPixels * 0.75).toInt()
             tvTop.layoutParams.height = 0
+            tvTop.visibility = View.GONE
             enableTop = false
         }
         tvDate.layoutParams.height = (realHeightPixels * 0.25).toInt()
+        clockContentHeight = realHeightPixels
+        lyricsBarHeight = (realHeightPixels * 0.25).toInt()
+        isRoundScreen = isRound
 
         if (isVerticalLayout) {
             // 竖屏秒换行
@@ -609,6 +678,8 @@ class ClockActivity : AppCompatActivity() {
             isVerticalLayout = true
         }
         setupClockTextAutoSize(tvTop, tvTime, tvDate)
+        // 顶部条是否显示取决于这首歌有没有歌词/天气预警，可能和上面按方向算出来的不一样
+        applyClockTopBarLayout()
     }
 
     private fun scheduleHourlyWallpaperUpdates() {

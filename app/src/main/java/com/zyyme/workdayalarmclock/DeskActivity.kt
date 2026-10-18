@@ -170,15 +170,11 @@ class DeskActivity : AppCompatActivity() {
             val service = MeService.me
             val position = service?.getPlaybackPosition()
             if (lyricsEnabled && position != null) {
-                // 双语歌词在服务解析歌词文本时已经用换行拼接；单语歌词保持原样。
-                val lyric = service?.getCurrentLyric(position).orEmpty()
-                if (lyricsView.text.toString() != lyric) lyricsView.text = lyric
+                applyLyricsBarText(position)
                 handler.postDelayed(this, 250L)
             } else {
                 lyricsRefreshScheduled = false
-                if (lyricsView.text.isNotEmpty()) {
-                    lyricsView.text = ""
-                }
+                applyLyricsBarText(position)
             }
         }
     }
@@ -189,13 +185,42 @@ class DeskActivity : AppCompatActivity() {
                 lyricsRefreshScheduled = true
                 handler.post(refreshRunnable)
             }
-        } else if (lyricsRefreshScheduled) {
-            lyricsRefreshScheduled = false
-            handler.removeCallbacks(refreshRunnable)
-            if (lyricsView.text.isNotEmpty()) {
-                lyricsView.text = ""
+        } else {
+            if (lyricsRefreshScheduled) {
+                lyricsRefreshScheduled = false
+                handler.removeCallbacks(refreshRunnable)
             }
+            // 没有在播放时也要刷新，天气预警信息才能按“有字就显示”的逻辑显示/收起
+            applyLyricsBarText(position)
         }
+    }
+
+    /**
+     * 歌词条的内容：这首歌有歌词就一直走歌词（当前这句没字就空着），
+     * 只有这首歌完全没有歌词时才显示天气预警信息。
+     * 双语歌词在服务解析歌词文本时已经用换行拼接；单语歌词保持原样。
+     */
+    private fun lyricsBarText(position: Int?): String {
+        val service = MeService.me ?: return ""
+        if (lyricsEnabled && service.hasLyrics()) {
+            return service.getCurrentLyric(position).orEmpty()
+        }
+        return service.weatherAlText
+    }
+
+    /**
+     * 歌词条是否常驻占位：这首歌有歌词（哪怕当前这句没字），或者有天气预警信息。
+     */
+    private fun lyricsBarWanted(): Boolean {
+        val service = MeService.me ?: return false
+        return (lyricsEnabled && service.hasLyrics()) || service.weatherAlText.isNotEmpty()
+    }
+
+    private fun applyLyricsBarText(position: Int?) {
+        val text = lyricsBarText(position)
+        if (lyricsView.text.toString() != text) lyricsView.text = text
+        // 常驻占位与否只看这首歌有没有歌词，跟当前这句有没有字无关，所以主动刷新一次布局
+        updateLyricsLayout()
     }
 
     private val nonLyricsRefreshRunnable = object : Runnable {
@@ -325,6 +350,16 @@ class DeskActivity : AppCompatActivity() {
     fun showEcho(message: String) {
         runOnUiThread {
             if (::echoView.isInitialized) echoView.text = message
+        }
+    }
+
+    /**
+     * 天气预警信息变了，歌词条要重新按“有字就显示”的逻辑展开或收起。
+     */
+    fun refreshLyricsBar() {
+        runOnUiThread {
+            if (!::lyricsView.isInitialized) return@runOnUiThread
+            applyLyricsBarText(MeService.me?.getPlaybackPosition())
         }
     }
 
@@ -686,12 +721,14 @@ class DeskActivity : AppCompatActivity() {
             return
         }
 
-        val height = if (lyricsView.text.isEmpty()) {
-            0
-        } else {
+        // 这首歌有歌词（或有天气预警信息）就常驻占位，里面有没有字按刷新逻辑来
+        val wanted = lyricsBarWanted()
+        val height = if (wanted) {
             (resources.displayMetrics.heightPixels * 0.1875f).toInt()
+        } else {
+            0
         }
-        lyricsView.visibility = if (height > 0) View.VISIBLE else View.GONE
+        lyricsView.visibility = if (wanted) View.VISIBLE else View.GONE
         val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
         val index = if (position == LYRICS_TOP) 0 else grid.childCount
         grid.addView(lyricsView, index, params)
@@ -699,17 +736,21 @@ class DeskActivity : AppCompatActivity() {
 
     private fun updateLyricsLayout() {
         if (!::grid.isInitialized || !::lyricsView.isInitialized) return
+        val wanted = lyricsBarWanted()
         val parent = lyricsView.parent
         if (parent == null) {
-            if (loadLyricsPosition() != LYRICS_NONE && lyricsView.text.isNotEmpty()) {
+            if (loadLyricsPosition() != LYRICS_NONE && wanted) {
                 applyConfiguredLayout()
             }
             return
         }
-        val hasText = lyricsView.text.isNotEmpty()
-        lyricsView.visibility = if (hasText) View.VISIBLE else View.GONE
+        if (loadLyricsPosition() == LYRICS_NONE) {
+            lyricsView.visibility = View.GONE
+            return
+        }
+        lyricsView.visibility = if (wanted) View.VISIBLE else View.GONE
         val params = lyricsView.layoutParams as? LinearLayout.LayoutParams ?: return
-        val desiredHeight = if (hasText) {
+        val desiredHeight = if (wanted) {
             (resources.displayMetrics.heightPixels * 0.1875f).toInt()
         } else {
             0

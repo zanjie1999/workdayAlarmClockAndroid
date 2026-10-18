@@ -126,6 +126,8 @@ class MeService : Service() {
     var batLevel = -1
     @Volatile var lastEcho = ""
     @Volatile var weatherText = ""
+    // 天气预警信息，显示在歌词条的位置
+    @Volatile var weatherAlText = ""
     @Volatile var todoText = ""
     @Volatile private var lastWeatherRequestAt = 0L
     @Volatile private var lastTodoRequestAt = 0L
@@ -964,9 +966,10 @@ class MeService : Service() {
             } else if (s.startsWith("WEATHER ")) {
                 weatherText = s.substring(8).trim()
             } else if (s == "WEATHERAL" || s.startsWith("WEATHERAL ")) {
-                // 这个地方本来是显示歌词的，就随缘显示一下吧
+                // 和歌词共用一条显示位置，空内容时两个界面都会收起这条
+                weatherAlText = s.substring(9).trim()
                 mainHandler.post {
-                    DeskActivity.me?.lyricsView?.text = s.substring(9).trim()
+                    DeskActivity.me?.refreshLyricsBar()
                 }
             } else if (s.startsWith("ECHO ")) {
                 var msg = s.substring(5)
@@ -1633,6 +1636,13 @@ class MeService : Service() {
         val result = lines.binarySearchBy(positionMs + 200) { it.timeMs }
         val index = if (result >= 0) result else -result - 2
         return if (index >= 0) lines[index].text else ""
+    }
+
+    /**
+     * 当前这首歌有没有歌词（与播到哪一句无关），用于让歌词条常驻占位。
+     */
+    fun hasLyrics(): Boolean {
+        return MeSettings.isEnabled(this, MeSettings.KEY_LYRICS) && lyricLines.isNotEmpty()
     }
 
     @Synchronized
