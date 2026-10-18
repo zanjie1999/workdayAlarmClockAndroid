@@ -406,9 +406,8 @@ class ClockActivity : AppCompatActivity() {
             intent.replaceExtras(Intent())
 
             // 计算一下实际的宽和高存起来
-            val content = findViewById<View>(R.id.root_layout)
-            MeService.me?.fbinfoX = content.width
-            MeService.me?.fbinfoY = content.height
+            MeService.me?.fbinfoX = rootLayout.width
+            MeService.me?.fbinfoY = rootLayout.height
         }
 
 
@@ -562,6 +561,8 @@ class ClockActivity : AppCompatActivity() {
                 realHeightPixels += resources.getDimensionPixelSize(statusBarId)
             }
         }
+        MeService.me?.fbinfoX = realWidthPixels
+        MeService.me?.fbinfoY = realHeightPixels
         isVerticalLayout = displayMetrics.heightPixels / displayMetrics.widthPixels.toFloat() > 1.15 ||  MeSettings.isEnabled(this, MeSettings.KEY_VERTICAL)
         val isRound = rootLayout.height == rootLayout.width || MeSettings.isEnabled(this, MeSettings.KEY_ROUND)
         circularMusicProgress.visibility = if (isRound) View.VISIBLE else View.GONE
