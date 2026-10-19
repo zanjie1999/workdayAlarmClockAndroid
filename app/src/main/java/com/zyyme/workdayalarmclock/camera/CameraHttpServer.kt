@@ -681,7 +681,8 @@ internal class CameraHttpServer(
                 writeEmptyResponse(socket, 415, "Unsupported Media Type")
                 return
             } else {
-                print2LogView("电脑音箱连接 缓冲：${minBuffer}B (约${minBuffer * 1000 / frameBytes}ms)")
+                // frameBytes 是每毫秒的字节数，minBuffer/frameBytes 已经是毫秒了
+                print2LogView("电脑音箱连接 缓冲：${minBuffer}B (约${minBuffer / frameBytes}ms)")
             }
 
             track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -754,9 +755,8 @@ internal class CameraHttpServer(
             }).coerceAtLeast(1).toLong()
             val bytesPerMs = rate.toLong() * frameBytes / 1000
             // 用 AudioTrack 实际给的缓冲当排队基准：请求 40ms 时设备常常给回
-            // 70-80ms，写死会让目标低于真实地板，跳读永远在触发。
+            // 70-90ms，写死会让目标低于真实地板，跳读永远在触发。
             val sinkLimitBytes: Long = sinkFrames * frameBytes
-            val targetBytes = sinkLimitBytes + bytesPerMs * 25
             val deadbandBytes = bytesPerMs * 12
             val maxSkipBytes = bytesPerMs * 250
             val skipBuf = ByteArray(8 * 1024)
@@ -766,19 +766,6 @@ internal class CameraHttpServer(
             var playedFrames = 0L
             var lastHead = 0
             var lastLog = 0L
-            // 饿读追赶：一次读卡住多久，就说明上游攒了多久的旧音频，
-            // 接下来涌来的数据开头那一段就是那么旧，直接丢掉。
-            // 但卡了多久 != 声卡空了多久：缓冲薄时正常等下一批包也要卡 40-60ms，
-            // 这期间声卡一直在放，所以要先减掉声卡当时还剩的积压。
-            var catchUp = 0L
-            // 一次追赶事件里累计丢了多少，只用来打日志：
-            // catchUp 会跨多次读延续，打单轮的量会严重低估。
-            var eventBytes = 0L
-            var armed = true
-            // 冷却到什么时候才重新允许触发。原来靠"等声卡积压回到 30ms"做迟滞，
-            // 但稳态积压只有 0~15ms，永远补不到，等于只生效一次，所以改成按时间冷却。
-            var rearmAt = 0L
-            val cooldownMs = 800L
             while (true) {
                 // 先量后排、再读：只有还没进 AudioTrack 的旧音频才丢得掉
                 val head = track.playbackHeadPosition
@@ -796,6 +783,9 @@ internal class CameraHttpServer(
                 // 播放头在欠载时会停住，这里推算出来的积压会大于缓冲本身，必须夹住
                 val sinkNow = (readBytes - playedFrames * frameBytes - skippedBytes)
                     .coerceIn(0L, sinkLimitBytes)
+                // 声卡里那部分丢不掉，不参与判断：目标 = 当前积压 + 余量。
+                // 用缓冲上限当目标会白留一大截在 socket 里，越同步越慢。
+                val targetBytes = sinkNow + bytesPerMs * 25
                 var excess = sinkNow + available - targetBytes
                 if (excess >= deadbandBytes) {
                     if (excess > maxSkipBytes) excess = maxSkipBytes
@@ -826,30 +816,15 @@ internal class CameraHttpServer(
                 readBytes += count
                 var total = pending + count
                 // 读之前声卡还剩多少没播(字节)，用来区分"正常等包"和"真的断粮"。
-                // 播放头这一轮没动 = 欠载，此时声卡里什么都不剩，按 0 算；
-                // 否则欠载时 playbackHeadPosition 会停住，推算值偏大会把欠账算小。
-                val sinkBefore = if (delta == 0L) {
-                    0L
-                } else {
-                    (readBytes - count - playedFrames * frameBytes - skippedBytes)
-                        .coerceIn(0L, sinkLimitBytes)
-                }
+                // 只处理"明显卡住"这种网络事故：平时上位机每 10-60ms 送一批，
+                // 缓冲薄的时候正常等包也会卡 40-60ms，这期间声卡一直在放，不该丢；
+                // 超过正常间隔一个身位才动手。只丢这一轮已经读到的字节，绝不额外读
+                // ——额外读会阻塞，阻塞多久声卡就饿多久，那就是一次卡顿。
                 val gapMs = (System.nanoTime() - readStart) / 1_000_000
-                if (!armed) {
-                    // 上一轮刚丢过，冷却结束才重新武装，避免丢完就饿、饿了又丢
-                    if (System.currentTimeMillis() >= rearmAt) armed = true
-                } else if (gapMs > 40) {
-                    // 卡住的时间减去声卡当时还能放的时间 = 真正断粮的时长
-                    val starvedMs = gapMs - sinkBefore / bytesPerMs - 20
-                    val owed = minOf(bytesPerMs * starvedMs, maxSkipBytes)
+                if (gapMs > 80) {
+                    var drop = minOf(bytesPerMs * (gapMs - 20), maxSkipBytes)
                         .coerceAtLeast(0L)
-                    if (owed > catchUp) {
-                        catchUp = owed
-                        eventBytes = 0L // 新一轮事件，重新计总量
-                    }
-                }
-                if (catchUp > 0) {
-                    var drop = minOf(catchUp, total.toLong())
+                    if (drop > total) drop = total.toLong()
                     drop -= drop % frameBytes // 帧对齐，别把采样劈开
                     if (drop > 0) {
                         // pending 里那点尾巴还在前面，一起往后挪
@@ -857,34 +832,15 @@ internal class CameraHttpServer(
                             buffer, drop.toInt(), buffer, 0, (total - drop).toInt()
                         )
                         total -= drop.toInt()
-                        catchUp -= drop
                         skippedBytes += drop
-                        eventBytes += drop
-                    }
-                    // 欠账比这一轮读到的多：接着从流里读着丢，别等下一轮。
-                    // 一次 read 只回来 7-15ms，靠它慢慢还的话，几百毫秒的欠账
-                    // 要还几十轮，中途冷却一到期就再也追不上，延迟就是这么攒起来的。
-                    while (catchUp > 0) {
-                        val want = minOf(catchUp, skipBuf.size.toLong()).toInt()
-                        val n = request.body.read(skipBuf, 0, want)
-                        if (n <= 0) break
-                        readBytes += n
-                        skippedBytes += n
-                        eventBytes += n
-                        catchUp -= n
-                    }
-                    if (catchUp <= 0L) {
-                        // 丢完了，静默一段时间，避免连续剪切
-                        armed = false
-                        rearmAt = System.currentTimeMillis() + cooldownMs
-                    }
-                    val now = System.currentTimeMillis()
-                    if (now - lastLog >= 10000) {
-                        lastLog = now
-                        print2LogView(
-                            "电脑音箱: 饿读追赶 卡了 ${gapMs}ms 声卡剩 ${sinkBefore / bytesPerMs}ms，" +
-                                "本次共丢 ${eventBytes / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
-                        )
+                        val now = System.currentTimeMillis()
+                        if (now - lastLog >= 10000) {
+                            lastLog = now
+                            print2LogView(
+                                "电脑音箱: 饿读追赶 卡了 ${gapMs}ms，" +
+                                    "丢 ${drop / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
+                            )
+                        }
                     }
                 }
                 val writable = total - (total % frameBytes)
