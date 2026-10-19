@@ -763,7 +763,10 @@ internal class CameraHttpServer(
             // catchUp 会跨多次读延续，打单轮的量会严重低估。
             var eventBytes = 0L
             var armed = true
-            val rearmBytes = bytesPerMs * 30
+            // 冷却到什么时候才重新允许触发。原来靠"等声卡积压回到 30ms"做迟滞，
+            // 但稳态积压只有 0~15ms，永远补不到，等于只生效一次，所以改成按时间冷却。
+            var rearmAt = 0L
+            val cooldownMs = 800L
             while (true) {
                 // 先量后排、再读：只有还没进 AudioTrack 的旧音频才丢得掉
                 val head = track.playbackHeadPosition
@@ -811,13 +814,18 @@ internal class CameraHttpServer(
                 readBytes += count
                 var total = pending + count
                 // 读之前声卡还剩多少没播(字节)，用来区分"正常等包"和"真的断粮"。
-                // 播放头欠载时会停住导致推算偏大，夹到缓冲上限。
-                val sinkBefore = (readBytes - count - playedFrames * frameBytes - skippedBytes)
-                    .coerceIn(0L, sinkLimitBytes)
+                // 播放头这一轮没动 = 欠载，此时声卡里什么都不剩，按 0 算；
+                // 否则欠载时 playbackHeadPosition 会停住，推算值偏大会把欠账算小。
+                val sinkBefore = if (delta == 0L) {
+                    0L
+                } else {
+                    (readBytes - count - playedFrames * frameBytes - skippedBytes)
+                        .coerceIn(0L, sinkLimitBytes)
+                }
                 val gapMs = (System.nanoTime() - readStart) / 1_000_000
                 if (!armed) {
-                    // 上一轮刚丢过，等声卡积压回血再重新武装，避免丢完就饿、饿了又丢
-                    if (sinkBefore >= rearmBytes) armed = true
+                    // 上一轮刚丢过，冷却结束才重新武装，避免丢完就饿、饿了又丢
+                    if (System.currentTimeMillis() >= rearmAt) armed = true
                 } else if (gapMs > 40) {
                     // 卡住的时间减去声卡当时还能放的时间 = 真正断粮的时长
                     val starvedMs = gapMs - sinkBefore / bytesPerMs - 20
@@ -840,15 +848,31 @@ internal class CameraHttpServer(
                         catchUp -= drop
                         skippedBytes += drop
                         eventBytes += drop
-                        if (catchUp == 0L) armed = false // 丢完了，等声卡回血
-                        val now = System.currentTimeMillis()
-                        if (now - lastLog >= 10000) {
-                            lastLog = now
-                            print2LogView(
-                                "电脑音箱: 饿读追赶 卡了 ${gapMs}ms 声卡剩 ${sinkBefore / bytesPerMs}ms，" +
-                                    "本次共丢 ${eventBytes / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
-                            )
-                        }
+                    }
+                    // 欠账比这一轮读到的多：接着从流里读着丢，别等下一轮。
+                    // 一次 read 只回来 7-15ms，靠它慢慢还的话，几百毫秒的欠账
+                    // 要还几十轮，中途冷却一到期就再也追不上，延迟就是这么攒起来的。
+                    while (catchUp > 0) {
+                        val want = minOf(catchUp, skipBuf.size.toLong()).toInt()
+                        val n = request.body.read(skipBuf, 0, want)
+                        if (n <= 0) break
+                        readBytes += n
+                        skippedBytes += n
+                        eventBytes += n
+                        catchUp -= n
+                    }
+                    if (catchUp <= 0L) {
+                        // 丢完了，静默一段时间，避免连续剪切
+                        armed = false
+                        rearmAt = System.currentTimeMillis() + cooldownMs
+                    }
+                    val now = System.currentTimeMillis()
+                    if (now - lastLog >= 10000) {
+                        lastLog = now
+                        print2LogView(
+                            "电脑音箱: 饿读追赶 卡了 ${gapMs}ms 声卡剩 ${sinkBefore / bytesPerMs}ms，" +
+                                "本次共丢 ${eventBytes / bytesPerMs}ms(累计 ${skippedBytes / bytesPerMs}ms)"
+                        )
                     }
                 }
                 val writable = total - (total % frameBytes)
