@@ -270,7 +270,7 @@ internal class AvcCameraPipeline(
                 MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
             )
-            setInteger(MediaFormat.KEY_BIT_RATE, max(128_000, selectedWidth * selectedHeight * 2))
+            setInteger(MediaFormat.KEY_BIT_RATE, key.bitrateBps ?: max(128_000, selectedWidth * selectedHeight * 2))
             setInteger(MediaFormat.KEY_FRAME_RATE, selectedFps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
         }

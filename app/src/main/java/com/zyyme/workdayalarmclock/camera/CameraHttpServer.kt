@@ -228,10 +228,22 @@ internal class CameraHttpServer(
                 streamAac(socket, audioPipeline)
                 return
             }
-            val route = path?.let { parseRoute(it) }
+            var route = path?.let { parseRoute(it) }
             if (route == null || !cameraExists(route)) {
                 writeEmptyResponse(socket, 404, "Not Found")
                 return
+            }
+
+            if (route.format == CameraStreamFormat.AVC) {
+                val bitrateValues = request.uri.getQueryParameters("b")
+                if (bitrateValues.isNotEmpty()) {
+                    val kbps = bitrateValues.singleOrNull()?.let { parseOneBasedIndex(it) }
+                    if (kbps == null || kbps > Int.MAX_VALUE / 1000) {
+                        writeEmptyResponse(socket, 400, "Bad Request")
+                        return
+                    }
+                    route = route.copy(bitrateBps = kbps * 1000)
+                }
             }
 
             pipeline = acquirePipeline(route, socket)
@@ -1394,28 +1406,53 @@ let videoAbort=null,videoRetry=null,videoUrl=null,audioAbort=null,audioRetry=nul
 function setVideoStatus(value){videoStatus.textContent=value;}
 function setAudioStatus(value){audioStatus.textContent=value;}
 function setPlaybackState(active){playbackActive=active;playStopButton.textContent=active?'停止':'播放';}
-function waitEvent(target,event){return new Promise(resolve=>target.addEventListener(event,resolve,{once:true}));}
-async function appendChunk(media,sourceBuffer,data){
+function waitEvent(target,event,signal){
+  return new Promise((resolve,reject)=>{
+    let timer;
+    const cleanup=()=>{clearTimeout(timer);target.removeEventListener(event,done);target.removeEventListener('error',failed);if(signal)signal.removeEventListener('abort',aborted);};
+    const done=()=>{cleanup();resolve();},failed=()=>{cleanup();reject(new Error('媒体数据解析失败'));};
+    const aborted=()=>{cleanup();reject(signal.reason||new DOMException('已停止','AbortError'));};
+    target.addEventListener(event,done,{once:true});target.addEventListener('error',failed,{once:true});
+    if(signal){signal.addEventListener('abort',aborted,{once:true});if(signal.aborted){aborted();return;}}
+    timer=setTimeout(()=>{cleanup();reject(new Error('等待 '+event+' 超时'));},15000);
+  });
+}
+function mediaSourceClass(){return window.ManagedMediaSource||window.MediaSource;}
+function requestPlayback(media,id,setStatus){
+  media.play().catch(error=>{
+    if(id!==runId||error.name==='AbortError')return;
+    setStatus(error.name==='NotAllowedError'?'浏览器阻止了自动播放，请点击下方播放器的播放按钮':'播放失败：'+error.message);
+  });
+}
+function openMediaSource(media,Source,signal){
+  media.disableRemotePlayback=true;
+  const source=new Source(),url=URL.createObjectURL(source);
+  const opened=waitEvent(source,'sourceopen',signal);
+  media.src=url;
+  return {source,url,opened};
+}
+async function appendChunk(media,sourceBuffer,data,signal){
   if(!data||!data.byteLength)return;
-  while(sourceBuffer.updating)await waitEvent(sourceBuffer,'updateend');
+  while(sourceBuffer.updating)await waitEvent(sourceBuffer,'updateend',signal);
+  if(signal.aborted)throw signal.reason||new DOMException('已停止','AbortError');
   sourceBuffer.appendBuffer(data);
-  await waitEvent(sourceBuffer,'updateend');
+  await waitEvent(sourceBuffer,'updateend',signal);
   if(media.buffered.length&&media.currentTime>10&&!sourceBuffer.updating){
     const removeEnd=media.currentTime-10;
-    if(removeEnd>media.buffered.start(0)){sourceBuffer.remove(0,removeEnd);await waitEvent(sourceBuffer,'updateend');}
+    if(removeEnd>media.buffered.start(0)){sourceBuffer.remove(0,removeEnd);await waitEvent(sourceBuffer,'updateend',signal);}
   }
 }
 function clearVideo(){
   if(videoRetry){clearTimeout(videoRetry);videoRetry=null;}
   if(videoAbort){videoAbort.abort();videoAbort=null;}
   if(mjpegImage){mjpegImage.remove();mjpegImage=null;}
-  video.onerror=null;video.removeAttribute('src');video.load();video.style.display='block';
+  video.onerror=null;video.onplaying=null;video.pause();video.removeAttribute('src');video.load();video.style.display='block';
   if(videoUrl){URL.revokeObjectURL(videoUrl);videoUrl=null;}
 }
 function clearAudio(){
   if(audioRetry){clearTimeout(audioRetry);audioRetry=null;}
   if(audioAbort){audioAbort.abort();audioAbort=null;}
-  audio.onerror=null;audio.removeAttribute('src');audio.load();
+  audio.onerror=null;audio.onplaying=null;audio.pause();audio.removeAttribute('src');audio.load();
   if(audioUrl){URL.revokeObjectURL(audioUrl);audioUrl=null;}
 }
 function stopPlayback(showStatus){
@@ -1429,68 +1466,81 @@ function updateVideoShape(){
   video.style.height=rotated?(height/width*100)+'%':'100%';
   video.style.transform='rotate('+rotation+'deg)';rotateButton.textContent='旋转 '+rotation+'°';
 }
-function showMjpegFallback(id,password,camera,resolution){
+function showMjpegFallback(id,password,camera,resolution,reason){
   if(id!==runId)return;clearVideo();video.style.display='none';
   const prefix=password?encodeURIComponent(password)+'/':'',resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
   mjpegImage=document.createElement('img');mjpegImage.id='mjpeg';mjpegImage.alt='MJPEG摄像头画面';
   mjpegImage.src='/'+prefix+encodeURIComponent(camera)+resolutionPath;
-  mjpegImage.onload=()=>setVideoStatus('正在使用MJPEG播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution));
+  const detail=reason?'（'+reason+'）':'';
+  mjpegImage.onload=()=>setVideoStatus('正在使用MJPEG播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution)+detail);
   mjpegImage.onerror=()=>setVideoStatus('MJPEG连接失败');videoFrame.appendChild(mjpegImage);
-  setVideoStatus('正在切换到MJPEG ...');
+  setVideoStatus('正在切换到MJPEG ...'+detail);
 }
-async function getAvcCapability(password){
+async function getAvcCapability(password,signal){
   const prefix=password?encodeURIComponent(password)+'/':'';
-  try{
-    const response=await fetch('/'+prefix+'avc/capability',{cache:'no-store'});
-    if(response.status===404)return 'password-error';if(!response.ok)return 'unsupported';
-    const result=await response.json();return result&&result.supported===true?'supported':'unsupported';
-  }catch(error){return 'unsupported';}
+  const response=await fetch('/'+prefix+'avc/capability',{cache:'no-store',signal});
+  if(response.status===404)return 'password-error';
+  if(!response.ok)throw new Error('能力检测 HTTP '+response.status);
+  const result=await response.json();return result&&result.supported===true?'supported':'unsupported';
 }
 async function connectVideo(id,password,camera,resolution){
   if(id!==runId)return;
-  const capability=await getAvcCapability(password);if(id!==runId)return;
-  if(capability==='password-error'){setVideoStatus('密码错误');return;}
-  if(capability!=='supported'){showMjpegFallback(id,password,camera,resolution);return;}
-  const prefix=password?encodeURIComponent(password)+'/':'',resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
-  const path='/'+prefix+'avc/'+encodeURIComponent(camera)+resolutionPath;
-  if(!window.MediaSource){
-    video.onerror=()=>showMjpegFallback(id,password,camera,resolution);video.src=path;video.load();
-    setVideoStatus('正在播放摄像头 '+camera+' ...');video.play().catch(()=>{});return;
-  }
-  clearVideo();const mediaSource=new MediaSource();videoUrl=URL.createObjectURL(mediaSource);video.src=videoUrl;video.play().catch(()=>{});
+  clearVideo();const controller=new AbortController();videoAbort=controller;
+  const signal=controller.signal;
+  setVideoStatus('正在连接 AVC 摄像头 ...');
   try{
-    await waitEvent(mediaSource,'sourceopen');if(id!==runId)return;
-    videoAbort=new AbortController();const response=await fetch(path,{cache:'no-store',signal:videoAbort.signal});
+    const capability=await getAvcCapability(password,signal);if(id!==runId)return;
+    if(capability==='password-error'){setVideoStatus('密码错误');return;}
+    if(capability!=='supported'){showMjpegFallback(id,password,camera,resolution,'设备 AVC 编码器不可用');return;}
+    const Source=mediaSourceClass();
+    if(!Source){showMjpegFallback(id,password,camera,resolution,'浏览器不支持 MediaSource / ManagedMediaSource');return;}
+    const prefix=password?encodeURIComponent(password)+'/':'',resolutionPath=resolution===null?'':'/'+encodeURIComponent(resolution);
+    const path='/'+prefix+'avc/'+encodeURIComponent(camera)+resolutionPath;
+    const session=openMediaSource(video,Source,signal);videoUrl=session.url;
+    video.onerror=()=>controller.abort(new Error('视频解码失败：'+(video.error?video.error.code:'未知错误')));
+    video.onplaying=()=>{if(id===runId)setVideoStatus('正在播放 AVC 摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution));};
+    requestPlayback(video,id,setVideoStatus);
+    await session.opened;if(id!==runId)return;
+    const response=await fetch(path,{cache:'no-store',signal});
     if(!response.ok){const error=new Error('HTTP '+response.status);error.status=response.status;throw error;}
     const codec=response.headers.get('X-Video-Codec'),mime='video/mp4; codecs="'+codec+'"';
-    if(!codec||!MediaSource.isTypeSupported(mime))throw new Error('浏览器不支持视频编码');
-    const sourceBuffer=mediaSource.addSourceBuffer(mime),reader=response.body.getReader();
-    setVideoStatus('正在播放摄像头 '+camera+(resolution===null?' 自动':' 档位'+resolution)+' ...');
-    while(id===runId){const item=await reader.read();if(item.done)throw new Error('视频连接已结束');await appendChunk(video,sourceBuffer,item.value);if(video.paused)video.play().catch(()=>{});}
+    if(!codec||!Source.isTypeSupported(mime))throw new Error('浏览器不支持视频编码 '+codec);
+    const sourceBuffer=session.source.addSourceBuffer(mime),reader=response.body.getReader();
+    while(id===runId){const item=await reader.read();if(item.done)throw new Error('视频连接已结束');await appendChunk(video,sourceBuffer,item.value,signal);if(video.paused)requestPlayback(video,id,setVideoStatus);}
   }catch(error){
     if(id!==runId||error.name==='AbortError')return;
-    if(error.status===404||error.status===503||String(error.message||'').indexOf('不支持视频编码')>=0){showMjpegFallback(id,password,camera,resolution);return;}
-    setVideoStatus('视频连接失败，2秒后重试：'+error.message);videoRetry=setTimeout(()=>connectVideo(id,password,camera,resolution),2000);
+    if(error.status===404){clearVideo();setVideoStatus('摄像头路径无效或密码错误');return;}
+    if(error.status===503||String(error.message||'').indexOf('不支持视频编码')>=0){showMjpegFallback(id,password,camera,resolution,error.message);return;}
+    clearVideo();setVideoStatus('视频连接失败，2秒后重试：'+error.message);videoRetry=setTimeout(()=>connectVideo(id,password,camera,resolution),2000);
   }
 }
 async function connectAudio(id,password){
   if(id!==runId)return;
+  clearAudio();const Source=mediaSourceClass();
+  if(!Source){setAudioStatus('浏览器不支持 MediaSource / ManagedMediaSource，无法播放 AAC 实时音频');return;}
+  const controller=new AbortController();audioAbort=controller;const signal=controller.signal;
   const prefix=password?encodeURIComponent(password)+'/':'',path='/'+prefix+'aac';
-  if(!window.MediaSource){audio.src=path;audio.load();audio.play().catch(()=>{});setAudioStatus('正在连接麦克风 ...');return;}
-  clearAudio();const mediaSource=new MediaSource();audioUrl=URL.createObjectURL(mediaSource);audio.src=audioUrl;audio.play().catch(()=>{});
+  setAudioStatus('正在连接 AAC 麦克风 ...');
   try{
-    await waitEvent(mediaSource,'sourceopen');if(id!==runId)return;
-    audioAbort=new AbortController();const response=await fetch(path,{cache:'no-store',signal:audioAbort.signal});
+    const session=openMediaSource(audio,Source,signal);audioUrl=session.url;
+    audio.onerror=()=>controller.abort(new Error('音频解码失败：'+(audio.error?audio.error.code:'未知错误')));
+    audio.onplaying=()=>{if(id===runId)setAudioStatus('正在播放 AAC 麦克风声音');};
+    // 首次 play 保留在用户点击的同步调用栈中，避免丢失 Safari 的播放授权。
+    requestPlayback(audio,id,setAudioStatus);
+    await session.opened;if(id!==runId)return;
+    const response=await fetch(path,{cache:'no-store',signal});
     if(response.status===204){clearAudio();setAudioStatus('麦克风未授权，当前无声音');return;}
     if(!response.ok){const error=new Error('HTTP '+response.status);error.status=response.status;throw error;}
     const codec=response.headers.get('X-Audio-Codec')||'mp4a.40.2',mime='audio/mp4; codecs="'+codec+'"';
-    if(!MediaSource.isTypeSupported(mime))throw new Error('浏览器不支持 '+mime);
-    const sourceBuffer=mediaSource.addSourceBuffer(mime),reader=response.body.getReader();setAudioStatus('正在播放麦克风声音 ...');
-    while(id===runId){const item=await reader.read();if(item.done)throw new Error('音频连接已结束');await appendChunk(audio,sourceBuffer,item.value);if(audio.paused)audio.play().catch(()=>{});}
+    if(!Source.isTypeSupported(mime))throw new Error('浏览器不支持 '+mime);
+    const sourceBuffer=session.source.addSourceBuffer(mime),reader=response.body.getReader();
+    while(id===runId){const item=await reader.read();if(item.done)throw new Error('音频连接已结束');await appendChunk(audio,sourceBuffer,item.value,signal);if(audio.paused)requestPlayback(audio,id,setAudioStatus);}
   }catch(error){
     if(id!==runId||error.name==='AbortError')return;
+    clearAudio();
     if(error.status===404){setAudioStatus('密码错误');return;}
     if(error.status===503){setAudioStatus('麦克风暂时不可用');return;}
+    if(String(error.message||'').indexOf('浏览器不支持')>=0){setAudioStatus(error.message);return;}
     setAudioStatus('音频连接失败，2秒后重试：'+error.message);audioRetry=setTimeout(()=>connectAudio(id,password),2000);
   }
 }
