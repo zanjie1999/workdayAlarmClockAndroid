@@ -10,7 +10,6 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.SurfaceTexture
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
@@ -27,7 +26,6 @@ import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
-import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -102,7 +100,7 @@ class ClockActivity : AppCompatActivity() {
     private var wallpaperBitmap: Bitmap? = null
     private var framebufferOverlay: ImageView? = null
     private var framebufferBitmap: Bitmap? = null
-    private var framebufferVideoView: TextureView? = null
+    private var framebufferVideoView: FramebufferVideoSurfaceView? = null
     private var framebufferVideoContainer: FrameLayout? = null
     private val autoWallpaperDirectory = File("/sdcard/zyymeWallpaper")
     private var autoWallpaperFiles = emptyList<File>()
@@ -906,7 +904,7 @@ class ClockActivity : AppCompatActivity() {
     internal fun showFramebufferVideoView() {
         if (isFinishing) return
         val content = findViewById<FrameLayout>(android.R.id.content)
-        // TextureView 不允许设置背景，黑色留边由外层容器负责。
+        // 黑色留边由外层容器负责，SurfaceView 只负责画面本身。
         val container = framebufferVideoContainer ?: FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             layoutParams = FrameLayout.LayoutParams(
@@ -915,45 +913,38 @@ class ClockActivity : AppCompatActivity() {
             )
             content.addView(this)
         }.also { framebufferVideoContainer = it }
-        val view = framebufferVideoView ?: TextureView(this).apply {
+        val view = framebufferVideoView ?: FramebufferVideoSurfaceView(this).apply {
             val self = this
             contentDescription = "电脑屏幕串流"
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
-            )
-            surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(
-                    surfaceTexture: SurfaceTexture,
+            ).apply { gravity = android.view.Gravity.CENTER }
+            holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {
+                    FramebufferVideoRenderer.onSurfaceCreated(holder, self)
+                }
+
+                override fun surfaceChanged(
+                    holder: SurfaceHolder,
+                    format: Int,
                     width: Int,
                     height: Int
-                ) {
-                    FramebufferVideoRenderer.onSurfaceAvailable(surfaceTexture, self)
-                }
+                ) = Unit
 
-                override fun onSurfaceTextureSizeChanged(
-                    surfaceTexture: SurfaceTexture,
-                    width: Int,
-                    height: Int
-                ) {
-                    FramebufferVideoRenderer.onViewSizeChanged(self)
+                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                    FramebufferVideoRenderer.onSurfaceDestroyed(holder, self)
                 }
-
-                override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                    FramebufferVideoRenderer.onSurfaceDestroyed(surfaceTexture)
-                    return true
-                }
-
-                override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
-            }
+            })
             container.addView(this)
         }
         framebufferVideoView = view
         container.visibility = View.VISIBLE
         view.visibility = View.VISIBLE
-        if (FramebufferVideoRenderer.isActive() && view.isAvailable) {
-            view.surfaceTexture?.let { surfaceTexture ->
-                FramebufferVideoRenderer.onSurfaceAvailable(surfaceTexture, view)
+        view.post {
+            val holder = view.holder
+            if (FramebufferVideoRenderer.isActive() && holder.surface.isValid) {
+                FramebufferVideoRenderer.onSurfaceCreated(holder, view)
             }
         }
     }

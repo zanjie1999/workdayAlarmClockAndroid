@@ -10,7 +10,6 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.SurfaceTexture
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.media.AudioManager
@@ -31,7 +30,6 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
-import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -140,7 +138,7 @@ class DeskActivity : AppCompatActivity() {
 
     private var wallpaperBitmap: Bitmap? = null
     private var framebufferBitmap: Bitmap? = null
-    private lateinit var framebufferVideoView: TextureView
+    private lateinit var framebufferVideoView: FramebufferVideoSurfaceView
     private lateinit var framebufferVideoContainer: FrameLayout
     private var framebufferStreaming = false
     private val hideFramebufferControlsRunnable = Runnable {
@@ -1207,48 +1205,36 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private fun setupFramebufferVideoView() {
-        framebufferVideoView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(
-                surfaceTexture: SurfaceTexture,
-                width: Int,
-                height: Int
-            ) {
-                FramebufferVideoRenderer.onSurfaceAvailable(surfaceTexture, framebufferVideoView)
+        framebufferVideoView.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                FramebufferVideoRenderer.onSurfaceCreated(holder, framebufferVideoView)
             }
 
-            override fun onSurfaceTextureSizeChanged(
-                surfaceTexture: SurfaceTexture,
-                width: Int,
-                height: Int
-            ) {
-                FramebufferVideoRenderer.onViewSizeChanged(framebufferVideoView)
-            }
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
 
-            override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                FramebufferVideoRenderer.onSurfaceDestroyed(surfaceTexture)
-                return true
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                FramebufferVideoRenderer.onSurfaceDestroyed(holder, framebufferVideoView)
             }
-
-            override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
-        }
+        })
     }
 
     internal fun showFramebufferVideoView() {
         if (isFinishing || !::framebufferVideoContainer.isInitialized) return
         framebufferVideoContainer.visibility = View.VISIBLE
         if (framebufferVideoView.parent == null) {
-            // 重新挂回容器，让 TextureView 生成新的 SurfaceTexture。
+            // 重新挂回容器，让 SurfaceView 重建 Surface 并在回调里挂上解码器。
             framebufferVideoContainer.addView(
                 framebufferVideoView,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT
-                )
+                ).apply { gravity = Gravity.CENTER }
             )
         }
-        if (FramebufferVideoRenderer.isActive() && framebufferVideoView.isAvailable) {
-            framebufferVideoView.surfaceTexture?.let { surfaceTexture ->
-                FramebufferVideoRenderer.onSurfaceAvailable(surfaceTexture, framebufferVideoView)
+        framebufferVideoView.post {
+            val holder = framebufferVideoView.holder
+            if (FramebufferVideoRenderer.isActive() && holder.surface.isValid) {
+                FramebufferVideoRenderer.onSurfaceCreated(holder, framebufferVideoView)
             }
         }
     }

@@ -49,7 +49,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- /fb264 和 /fb265 的硬解输出；TextureView 不能有背景，黑边由这层负责 -->
+    <!-- /fb264 和 /fb265 的硬解输出；SurfaceView 独立图层硬件合成，黑边由这层负责 -->
     <FrameLayout
         android:id="@+id/desk_framebuffer_video"
         android:layout_width="0dp"
@@ -61,10 +61,11 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
-        <TextureView
+        <com.zyyme.workdayalarmclock.FramebufferVideoSurfaceView
             android:id="@+id/desk_framebuffer_texture"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="match_parent"
+            android:layout_gravity="center" />
     </FrameLayout>
 
     <androidx.constraintlayout.widget.ConstraintLayout
