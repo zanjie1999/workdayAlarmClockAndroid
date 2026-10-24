@@ -1118,6 +1118,10 @@ class MeService : Service() {
                 Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))
             } else if (s == "STARTAP") {
                 startAp()
+            } else if (s == "HASUPDATE" || s.startsWith("HASUPDATE ")) {
+                // go检测到有新版本，在菜单里「立即更新」的显示
+                MeUpdater.onHasUpdate()
+                print2LogView("点击右上角菜单「立即更新」")
             } else if (s == "Segmentation fault") {
                 print2LogView("出现系统错误，进行重启")
                 Thread {

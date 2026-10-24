@@ -3,4 +3,10 @@
     <cache-path
         name="desk_crop_jpeg"
         path="." />
+    <external-path
+        name="download"
+        path="Download/" />
+    <external-files-path
+        name="update"
+        path="update/" />
 </paths>

@@ -61,6 +61,7 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_TODO_URL = 13
         private const val OPEN_DESK = 14
         private const val TOGGLE_COMPUTER_SPEAKER = 15
+        private const val MENU_CHECK_UPDATE = 16
         private const val MENU_SETTING_START = 100
         private const val REQUEST_MEDIA_SERVER_PERMISSIONS = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
@@ -137,6 +138,8 @@ class MainActivity : AppCompatActivity() {
         isActivityVisible = true
         updatePlaybackButton(MeService.me?.shouldShowPauseIcon() == true)
         show2LogView()
+        // 授权「安装未知应用」后回到前台继续安装
+        MeUpdater.resumePendingInstall(this)
     }
 
     override fun onStart() {
@@ -310,6 +313,8 @@ class MainActivity : AppCompatActivity() {
             popupMenu.menu.findItem(MENU_SETTING_START + index)?.isChecked =
                 item.key in enabledSettings
         }
+        // 只有 go 发了 HASUPDATE 才显示「立即更新」
+        popupMenu.menu.findItem(MENU_CHECK_UPDATE)?.isVisible = MeUpdater.hasUpdate
         popupMenu.menu.findItem(TOGGLE_CAMERA_SERVER)?.isChecked =
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
         popupMenu.menu.findItem(TOGGLE_COMPUTER_SPEAKER)?.isChecked =
@@ -325,15 +330,16 @@ class MainActivity : AppCompatActivity() {
 
         val popupMenu = PopupMenu(this, anchor)
         popupMenu.menu.add(Menu.NONE, MENU_EXIT, 0, "退出${getString(R.string.app_name)}")
-        popupMenu.menu.add(Menu.NONE, OPEN_WEB, 1, "打开Web控制台")
-        popupMenu.menu.add(Menu.NONE, OPEN_CLOCK, 2, "打开小屏时钟模式")
-        popupMenu.menu.add(Menu.NONE, OPEN_DESK, 3, "打开大屏时钟模式")
-        popupMenu.menu.add(Menu.NONE, OPEN_APPLIST, 4, "打开应用列表")
-        popupMenu.menu.add(Menu.NONE, TOGGLE_HOME_LAUNCHER, 5, "作为桌面").apply {
+        popupMenu.menu.add(Menu.NONE, MENU_CHECK_UPDATE, 1, "立即更新")
+        popupMenu.menu.add(Menu.NONE, OPEN_WEB, 2, "打开Web控制台")
+        popupMenu.menu.add(Menu.NONE, OPEN_CLOCK, 3, "打开小屏时钟模式")
+        popupMenu.menu.add(Menu.NONE, OPEN_DESK, 4, "打开大屏时钟模式")
+        popupMenu.menu.add(Menu.NONE, OPEN_APPLIST, 5, "打开应用列表")
+        popupMenu.menu.add(Menu.NONE, TOGGLE_HOME_LAUNCHER, 6, "作为桌面").apply {
             isCheckable = true
         }
         settingsMenuItems.forEachIndexed { index, item ->
-            popupMenu.menu.add(Menu.NONE, MENU_SETTING_START + index, index + 6, item.label).apply {
+            popupMenu.menu.add(Menu.NONE, MENU_SETTING_START + index, index + 7, item.label).apply {
                 isCheckable = true
             }
         }
@@ -356,6 +362,9 @@ class MainActivity : AppCompatActivity() {
         popupMenu.setOnMenuItemClickListener { menuItem ->
             if (menuItem.itemId == MENU_EXIT) {
                 exitApp()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == MENU_CHECK_UPDATE) {
+                MeUpdater.checkAndUpdate(this)
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_WEB) {
                 startActivity(Intent(this, WebActivity::class.java))
