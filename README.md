@@ -87,14 +87,14 @@ Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPos
 默认的 `/fb` 是 MJPEG（每帧 JPEG 由手机 CPU 软解）。Android 5.0 及以上还可以把 H.264/H.265 裸流直接推到 `8880`，手机会交给系统解码器（一般就是硬解）并直接输出到屏幕，不需要先解成 Bitmap：
 
 ```cmd
-:: H.264
-ffmpeg -f gdigrab -framerate 30 -i desktop -c:v libx264 -preset ultrafast -tune zerolatency -bf 0 -g 60 -x264-params aud=1 -f h264 - | curl.exe -T - "http://192.168.1.147:8880/fb264"
-
-:: H.265（需要设备有 HEVC 解码器）
+:: H.264（这里-2:800就是高度缩放到800宽度自动）
+ffmpeg -f gdigrab -framerate 30 -i desktop -vf scale=-2:800 -pix_fmt yuv420p -c:v libx264 -preset ultrafast -tune zerolatency -bf 0 -g 60 -profile:v high -x264-params aud=1 -f h264 - | curl.exe -T - "http://192.168.2.217:8880/fb264"
+:: H.265（需要设备有 HEVC 解码器 如果解码器不支持需要像上面那样加参数限制）
 ffmpeg -f gdigrab -framerate 30 -i desktop -c:v libx265 -preset ultrafast -tune zerolatency -g 60 -x265-params aud=1 -f hevc - | curl.exe -T - "http://192.168.1.147:8880/fb265"
 ```
 
-码流要是 Annex-B，每次连接从 SPS/PPS（H.265 还有 VPS）和 IDR 开始，GOP 建议 1～2 秒；`fb264`/`fb265` 与 `/fb` 互斥，同一个时间只能有一个画面串流。设备解不了或解码器初始化失败时会在手机上弹 Toast 并断开连接。
+码流要是 Annex-B，每次连接从 SPS/PPS（H.265 还有 VPS）和 IDR 开始，GOP 建议 1～2 秒；`fb264`/`fb265` 与 `/fb` 互斥，同一个时间只能有一个画面串流。设备解不了或解码器初始化失败时会在手机上弹 Toast 并断开连接。  
+至于上位机？Windows的硬件编码太复杂了，我不会写，所以没有hhhh  
 
 ## IP摄像头服务
 在右上角菜单中打开“IP摄像头”，第一次开启时可授权摄像头和麦克风权限。只授权其中一个也可以启动服务，未授权的设备不会输出对应的流。服务监听 `8880` 端口，摄像头编号从 `1` 开始  
