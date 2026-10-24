@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.SurfaceTexture
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
@@ -26,6 +27,7 @@ import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
+import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -44,6 +46,7 @@ import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.camera.FramebufferBitmapReaper
 import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
+import com.zyyme.workdayalarmclock.camera.FramebufferVideoRenderer
 
 import java.io.File
 import java.text.SimpleDateFormat
@@ -99,6 +102,8 @@ class ClockActivity : AppCompatActivity() {
     private var wallpaperBitmap: Bitmap? = null
     private var framebufferOverlay: ImageView? = null
     private var framebufferBitmap: Bitmap? = null
+    private var framebufferVideoView: TextureView? = null
+    private var framebufferVideoContainer: FrameLayout? = null
     private val autoWallpaperDirectory = File("/sdcard/zyymeWallpaper")
     private var autoWallpaperFiles = emptyList<File>()
     private var autoWallpaperIndex = -1
@@ -891,12 +896,80 @@ class ClockActivity : AppCompatActivity() {
         if (active) {
             releaseWallpaperPlayer()
             wallpaperVideoView.visibility = View.GONE
+            if (FramebufferVideoRenderer.isActive()) showFramebufferVideoView()
         } else {
+            hideFramebufferVideoView()
             startVideoWallpaper()
         }
     }
 
+    internal fun showFramebufferVideoView() {
+        if (isFinishing) return
+        val content = findViewById<FrameLayout>(android.R.id.content)
+        // TextureView 不允许设置背景，黑色留边由外层容器负责。
+        val container = framebufferVideoContainer ?: FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            content.addView(this)
+        }.also { framebufferVideoContainer = it }
+        val view = framebufferVideoView ?: TextureView(this).apply {
+            val self = this
+            contentDescription = "电脑屏幕串流"
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(
+                    surfaceTexture: SurfaceTexture,
+                    width: Int,
+                    height: Int
+                ) {
+                    FramebufferVideoRenderer.onSurfaceAvailable(surfaceTexture, self)
+                }
+
+                override fun onSurfaceTextureSizeChanged(
+                    surfaceTexture: SurfaceTexture,
+                    width: Int,
+                    height: Int
+                ) {
+                    FramebufferVideoRenderer.onViewSizeChanged(self)
+                }
+
+                override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                    FramebufferVideoRenderer.onSurfaceDestroyed(surfaceTexture)
+                    return true
+                }
+
+                override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
+            }
+            container.addView(this)
+        }
+        framebufferVideoView = view
+        container.visibility = View.VISIBLE
+        view.visibility = View.VISIBLE
+        if (FramebufferVideoRenderer.isActive() && view.isAvailable) {
+            view.surfaceTexture?.let { surfaceTexture ->
+                FramebufferVideoRenderer.onSurfaceAvailable(surfaceTexture, view)
+            }
+        }
+    }
+
+    internal fun hideFramebufferVideoView() {
+        val container = framebufferVideoContainer
+        framebufferVideoContainer = null
+        framebufferVideoView = null
+        (container?.parent as? android.view.ViewGroup)?.removeView(container)
+    }
+
     internal fun showFramebufferFrame(bitmap: Bitmap): Bitmap? {
+        if (FramebufferVideoRenderer.isActive()) {
+            if (!bitmap.isRecycled) bitmap.recycle()
+            return null
+        }
         if (isFinishing) {
             if (!bitmap.isRecycled) bitmap.recycle()
             return null
@@ -919,6 +992,7 @@ class ClockActivity : AppCompatActivity() {
     }
 
     internal fun hideFramebufferFrame() {
+        hideFramebufferVideoView()
         framebufferOverlay?.let { overlay ->
             (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
             overlay.setImageDrawable(null)

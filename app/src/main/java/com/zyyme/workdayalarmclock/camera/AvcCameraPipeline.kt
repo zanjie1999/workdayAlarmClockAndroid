@@ -28,7 +28,6 @@ import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.floor
-import kotlin.math.max
 import kotlin.math.min
 
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
@@ -41,7 +40,34 @@ internal class AvcCameraPipeline(
         private const val TARGET_FPS = 30
         private const val MAX_PREFERRED_WIDTH = 2048
         private const val START_TIMEOUT_SECONDS = 10L
+        private const val DEFAULT_BITS_PER_PIXEL = 3L
+        private const val MIN_BITRATE_BPS = 128_000
+        private const val MAX_BITRATE_BPS = 20_000_000
+        private const val BITRATE_LOG_INTERVAL_MS = 5_000L
         private val START_CODE = byteArrayOf(0, 0, 0, 1)
+
+        private val AVC_LEVEL_NAMES = mapOf(
+            MediaCodecInfo.CodecProfileLevel.AVCLevel1 to "1",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel1b to "1b",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel11 to "1.1",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel12 to "1.2",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel13 to "1.3",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel2 to "2",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel21 to "2.1",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel22 to "2.2",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel3 to "3",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel31 to "3.1",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel32 to "3.2",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel4 to "4",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel41 to "4.1",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel42 to "4.2",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel5 to "5",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel51 to "5.1",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel52 to "5.2",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel6 to "6",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel61 to "6.1",
+            MediaCodecInfo.CodecProfileLevel.AVCLevel62 to "6.2"
+        )
 
         private data class CameraTarget(
             val logicalCameraId: String,
@@ -108,6 +134,8 @@ internal class AvcCameraPipeline(
     private var selectedWidth = 0
     private var selectedHeight = 0
     private var selectedFps = 0
+    private var configuredBitrateBps = 0
+    private var encoderParameterSummary = ""
 
     override val description: String
         get() = "H.264 ${selectedWidth}x${selectedHeight} ${selectedFps}fps"
@@ -121,7 +149,7 @@ internal class AvcCameraPipeline(
             cameraHandler = Handler(cameraThread!!.looper)
 
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            var encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             codec = encoder
             val selection = selectConfiguration(cameraManager, encoder)
                 ?: throw IllegalStateException("没有可用的H.264输出规格")
@@ -129,12 +157,10 @@ internal class AvcCameraPipeline(
             selectedHeight = selection.size.height
             selectedFps = selection.fps
 
-            encoder.configure(
-                createEncoderFormat(),
-                null,
-                null,
-                MediaCodec.CONFIGURE_FLAG_ENCODE
-            )
+            val bitrate = resolveBitrate(encoder)
+            encoder = configureEncoder(encoder, bitrate)
+            codec = encoder
+            log("H.264编码参数：$encoderParameterSummary")
             codecSurface = encoder.createInputSurface()
             encoder.start()
             startDrainThread(encoder)
@@ -260,8 +286,64 @@ internal class AvcCameraPipeline(
         )
     }
 
-    private fun createEncoderFormat(): MediaFormat {
-        return MediaFormat.createVideoFormat(
+    private fun resolveBitrate(encoder: MediaCodec): Int {
+        val requested = key.bitrateBps ?: defaultBitrate(selectedWidth, selectedHeight)
+        val range = try {
+            encoder.codecInfo
+                .getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                .videoCapabilities?.bitrateRange
+        } catch (_: Exception) {
+            null
+        }
+        val resolved = if (range != null) {
+            requested.coerceIn(range.lower, range.upper)
+        } else {
+            requested
+        }
+        if (resolved != requested) {
+            log("H.264码率 ${requested / 1000} kbps 超出编码器范围，调整为 ${resolved / 1000} kbps")
+        }
+        configuredBitrateBps = resolved
+        return resolved
+    }
+
+    private fun defaultBitrate(width: Int, height: Int): Int {
+        val bps = width.toLong() * height * DEFAULT_BITS_PER_PIXEL
+        return bps.coerceIn(MIN_BITRATE_BPS.toLong(), MAX_BITRATE_BPS.toLong()).toInt()
+    }
+
+    private fun configureEncoder(encoder: MediaCodec, bitrate: Int): MediaCodec {
+        try {
+            encoder.configure(
+                createEncoderFormat(encoder, true, bitrate),
+                null,
+                null,
+                MediaCodec.CONFIGURE_FLAG_ENCODE
+            )
+            return encoder
+        } catch (e: Exception) {
+            log("H.264编码器不接受增强参数，回退默认配置：${e.message}")
+            try {
+                encoder.release()
+            } catch (_: Exception) {
+            }
+        }
+        val fallback = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        fallback.configure(
+            createEncoderFormat(fallback, false, bitrate),
+            null,
+            null,
+            MediaCodec.CONFIGURE_FLAG_ENCODE
+        )
+        return fallback
+    }
+
+    private fun createEncoderFormat(
+        encoder: MediaCodec,
+        tuned: Boolean,
+        bitrate: Int
+    ): MediaFormat {
+        val format = MediaFormat.createVideoFormat(
             MediaFormat.MIMETYPE_VIDEO_AVC,
             selectedWidth,
             selectedHeight
@@ -270,10 +352,106 @@ internal class AvcCameraPipeline(
                 MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
             )
-            setInteger(MediaFormat.KEY_BIT_RATE, key.bitrateBps ?: max(128_000, selectedWidth * selectedHeight * 2))
+            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
             setInteger(MediaFormat.KEY_FRAME_RATE, selectedFps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
         }
+        val tuning = if (tuned) applyTuning(format, encoder, bitrate) else ""
+        encoderParameterSummary =
+            "H.264 ${selectedWidth}x${selectedHeight} ${selectedFps}fps " +
+                "${bitrate / 1000}kbps$tuning"
+        return format
+    }
+
+    private fun applyTuning(
+        format: MediaFormat,
+        encoder: MediaCodec,
+        bitrate: Int
+    ): String {
+        val caps = try {
+            encoder.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        } catch (_: Exception) {
+            return ""
+        }
+        val suffix = StringBuilder()
+
+        val vbrSupported = try {
+            caps.encoderCapabilities?.isBitrateModeSupported(
+                MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
+            ) == true
+        } catch (_: Exception) {
+            false
+        }
+        if (vbrSupported) {
+            format.setInteger(
+                MediaFormat.KEY_BITRATE_MODE,
+                MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
+            )
+            suffix.append(" VBR")
+        }
+
+        val profileLevel = selectHighProfileLevel(caps, bitrate)
+        if (profileLevel != null) {
+            format.setInteger(MediaFormat.KEY_PROFILE, profileLevel.first)
+            format.setInteger(MediaFormat.KEY_LEVEL, profileLevel.second)
+            suffix.append(" High@").append(avcLevelName(profileLevel.second))
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            format.setInteger(MediaFormat.KEY_PRIORITY, 0)
+            suffix.append(" realtime")
+        }
+        return suffix.toString()
+    }
+
+    private fun selectHighProfileLevel(
+        caps: MediaCodecInfo.CodecCapabilities,
+        bitrate: Int
+    ): Pair<Int, Int>? {
+        val combos = try {
+            caps.profileLevels
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val high = MediaCodecInfo.CodecProfileLevel.AVCProfileHigh
+        if (combos.none { it.profile == high }) return null
+        val required = requiredAvcLevel(bitrate)
+        val level = combos
+            .filter { it.profile == high && it.level >= required }
+            .map { it.level }
+            .minOrNull() ?: return null
+        return Pair(high, level)
+    }
+
+    private fun requiredAvcLevel(bitrate: Int): Int {
+        val mbWidth = (selectedWidth + 15) / 16
+        val mbHeight = (selectedHeight + 15) / 16
+        val frameMacroblocks = mbWidth * mbHeight
+        val macroblocksPerSecond = frameMacroblocks.toLong() * selectedFps
+        val kbps = bitrate / 1000
+        // MaxFS / MaxMBPS / MaxBR (High profile) per H.264 Annex A.
+        val limits = arrayOf(
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel31, 3600, 108_000, 14_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel32, 5120, 216_000, 20_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel4, 8192, 245_760, 20_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel41, 8192, 245_760, 50_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel42, 8704, 522_240, 50_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel5, 22_080, 589_824, 135_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel51, 36_864, 983_040, 240_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel52, 36_864, 2_073_600, 240_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel6, 139_264, 4_177_920, 240_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel61, 139_264, 8_355_840, 480_000),
+            intArrayOf(MediaCodecInfo.CodecProfileLevel.AVCLevel62, 139_264, 16_711_680, 800_000)
+        )
+        return limits.firstOrNull {
+            frameMacroblocks <= it[1] &&
+                macroblocksPerSecond <= it[2] &&
+                kbps <= it[3]
+        }?.get(0) ?: MediaCodecInfo.CodecProfileLevel.AVCLevel62
+    }
+
+    private fun avcLevelName(level: Int): String {
+        return AVC_LEVEL_NAMES[level] ?: level.toString()
     }
 
     private fun largestSize(sizes: List<Size>): Size {
@@ -428,6 +606,9 @@ internal class AvcCameraPipeline(
     private fun startDrainThread(encoder: MediaCodec) {
         drainThread = Thread({
             val bufferInfo = MediaCodec.BufferInfo()
+            var windowStartMs = SystemClock.elapsedRealtime()
+            var windowBytes = 0L
+            var windowFrames = 0
             try {
                 while (running.get()) {
                     when (val outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000L)) {
@@ -456,9 +637,23 @@ internal class AvcCameraPipeline(
                                         keyFrame,
                                         bufferInfo.presentationTimeUs
                                     )
+                                    windowBytes += bufferInfo.size
+                                    windowFrames++
                                 }
                             }
                             encoder.releaseOutputBuffer(outputIndex, false)
+                            val now = SystemClock.elapsedRealtime()
+                            val elapsed = now - windowStartMs
+                            if (elapsed >= BITRATE_LOG_INTERVAL_MS) {
+                                val kbps = windowBytes * 8_000L / elapsed
+                                log(
+                                    "H.264实际码率：$kbps kbps（目标 ${configuredBitrateBps / 1000} kbps，" +
+                                        "$windowFrames 帧/$elapsed ms）"
+                                )
+                                windowStartMs = now
+                                windowBytes = 0L
+                                windowFrames = 0
+                            }
                         }
                     }
                 }

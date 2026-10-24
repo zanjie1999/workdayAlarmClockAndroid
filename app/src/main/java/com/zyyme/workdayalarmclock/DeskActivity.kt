@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.SurfaceTexture
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.media.AudioManager
@@ -30,6 +31,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
+import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -52,6 +54,7 @@ import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.camera.FramebufferBitmapReaper
 import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
+import com.zyyme.workdayalarmclock.camera.FramebufferVideoRenderer
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -137,6 +140,8 @@ class DeskActivity : AppCompatActivity() {
 
     private var wallpaperBitmap: Bitmap? = null
     private var framebufferBitmap: Bitmap? = null
+    private lateinit var framebufferVideoView: TextureView
+    private lateinit var framebufferVideoContainer: FrameLayout
     private var framebufferStreaming = false
     private val hideFramebufferControlsRunnable = Runnable {
         if (framebufferStreaming && !alarmMode) overlayContainer.visibility = View.GONE
@@ -389,6 +394,9 @@ class DeskActivity : AppCompatActivity() {
             }
         })
         framebufferOverlay = findViewById(R.id.desk_framebuffer)
+        framebufferVideoContainer = findViewById(R.id.desk_framebuffer_video)
+        framebufferVideoView = findViewById(R.id.desk_framebuffer_texture)
+        setupFramebufferVideoView()
         overlayContainer = findViewById(R.id.desk_overlay_container)
         maskView = findViewById(R.id.desk_mask)
         grid = findViewById(R.id.desk_grid)
@@ -1163,6 +1171,10 @@ class DeskActivity : AppCompatActivity() {
     }
 
     internal fun showFramebufferFrame(bitmap: Bitmap): Bitmap? {
+        if (FramebufferVideoRenderer.isActive()) {
+            if (!bitmap.isRecycled) bitmap.recycle()
+            return null
+        }
         if (isFinishing) {
             if (!bitmap.isRecycled) bitmap.recycle()
             return null
@@ -1181,15 +1193,72 @@ class DeskActivity : AppCompatActivity() {
             releaseWallpaperPlayer()
             wallpaperVideoView.visibility = View.GONE
             framebufferOverlay.visibility = View.VISIBLE
+            if (FramebufferVideoRenderer.isActive()) showFramebufferVideoView()
             if (alarmMode) {
                 overlayContainer.visibility = View.VISIBLE
             } else {
                 showFramebufferControlsForTenSeconds()
             }
         } else {
+            hideFramebufferVideoView()
             overlayContainer.visibility = View.VISIBLE
             startVideoWallpaper()
         }
+    }
+
+    private fun setupFramebufferVideoView() {
+        framebufferVideoView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(
+                surfaceTexture: SurfaceTexture,
+                width: Int,
+                height: Int
+            ) {
+                FramebufferVideoRenderer.onSurfaceAvailable(surfaceTexture, framebufferVideoView)
+            }
+
+            override fun onSurfaceTextureSizeChanged(
+                surfaceTexture: SurfaceTexture,
+                width: Int,
+                height: Int
+            ) {
+                FramebufferVideoRenderer.onViewSizeChanged(framebufferVideoView)
+            }
+
+            override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                FramebufferVideoRenderer.onSurfaceDestroyed(surfaceTexture)
+                return true
+            }
+
+            override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
+        }
+    }
+
+    internal fun showFramebufferVideoView() {
+        if (isFinishing || !::framebufferVideoContainer.isInitialized) return
+        framebufferVideoContainer.visibility = View.VISIBLE
+        if (framebufferVideoView.parent == null) {
+            // 重新挂回容器，让 TextureView 生成新的 SurfaceTexture。
+            framebufferVideoContainer.addView(
+                framebufferVideoView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
+        if (FramebufferVideoRenderer.isActive() && framebufferVideoView.isAvailable) {
+            framebufferVideoView.surfaceTexture?.let { surfaceTexture ->
+                FramebufferVideoRenderer.onSurfaceAvailable(surfaceTexture, framebufferVideoView)
+            }
+        }
+    }
+
+    internal fun hideFramebufferVideoView() {
+        if (!::framebufferVideoContainer.isInitialized) return
+        if (framebufferVideoView.parent === framebufferVideoContainer) {
+            framebufferVideoContainer.removeView(framebufferVideoView)
+        }
+        framebufferVideoContainer.visibility = View.GONE
     }
 
     private fun showFramebufferControlsForTenSeconds() {

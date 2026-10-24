@@ -78,6 +78,10 @@ internal class CameraHttpServer(
     private var wifiLock: WifiManager.WifiLock? = null
     private var streamLockUsers = 0
 
+    init {
+        FramebufferVideoRenderer.initialize(appContext)
+    }
+
     fun handleSensorKeyEvent(keyCode: Int, isDown: Boolean): Boolean =
         meBgCamCtrl.handleSensorKeyEvent(keyCode, isDown)
 
@@ -132,6 +136,7 @@ internal class CameraHttpServer(
             }
             if (socket != null) framebufferStreamState(false)
         }
+        FramebufferVideoRenderer.stop()
         closeActiveSession()
         closeActiveAudioSession()
         acceptThread?.interrupt()
@@ -184,6 +189,14 @@ internal class CameraHttpServer(
                 } else {
                     writeEmptyResponse(socket, 405, "Method Not Allowed")
                 }
+                return
+            }
+            if (path == "/fb264" || path == "/fb265") {
+                if (request.method != "POST" && request.method != "PUT") {
+                    writeEmptyResponse(socket, 405, "Method Not Allowed")
+                    return
+                }
+                streamFramebufferVideo(socket, request, path == "/fb265")
                 return
             }
             if (path == "/fb") {
@@ -387,6 +400,7 @@ internal class CameraHttpServer(
                     }
                     framebufferStreamState(false)
                 }
+                FramebufferVideoRenderer.stop()
                 framebufferStreamState(true)
             }
             if (request.expectContinue) {
@@ -482,6 +496,91 @@ internal class CameraHttpServer(
                     activeFramebufferSocket = null
                     framebufferStreamState(false)
                 }
+            }
+        }
+    }
+
+    private fun streamFramebufferVideo(socket: Socket, request: HttpRequest, hevc: Boolean) {
+        val codec = if (hevc) FramebufferVideoCodec.HEVC else FramebufferVideoCodec.AVC
+        val codecName = if (hevc) "H.265" else "H.264"
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            FramebufferVideoRenderer.notifyUnsupported(codec)
+            writeEmptyResponse(socket, 501, "Not Implemented")
+            return
+        }
+        if (!FramebufferVideoRenderer.canDecode(codec)) {
+            FramebufferVideoRenderer.notifyUnsupported(codec)
+            writeEmptyResponse(socket, 415, "Unsupported Media Type")
+            return
+        }
+
+        var streamStateStarted = false
+        var totalBytes = 0L
+        try {
+            synchronized(framebufferSessionLock) {
+                if (!running.get()) return
+                val previous = activeFramebufferSocket
+                activeFramebufferSocket = socket
+                try {
+                    previous?.close()
+                } catch (_: Exception) {
+                }
+            }
+            if (!FramebufferVideoRenderer.start(codec)) {
+                FramebufferVideoRenderer.notifyUnsupported(codec)
+                writeEmptyResponse(socket, 415, "Unsupported Media Type")
+                return
+            }
+            framebufferStreamState(true)
+            streamStateStarted = true
+            if (request.expectContinue) {
+                socket.getOutputStream().write(
+                    "HTTP/1.1 100 Continue\r\n\r\n".toByteArray(HTTP_CHARSET)
+                )
+                socket.getOutputStream().flush()
+            }
+            socket.soTimeout = 5_000
+            val buffer = ByteArray(64 * 1024)
+            while (running.get() && !socket.isClosed && activeFramebufferSocket === socket) {
+                if (FramebufferVideoRenderer.isFailed()) {
+                    throw IllegalStateException("$codecName 解码器已停止")
+                }
+                val count = try {
+                    request.body.read(buffer)
+                } catch (_: java.net.SocketTimeoutException) {
+                    continue
+                }
+                if (count < 0) break
+                if (count == 0) continue
+                FramebufferVideoRenderer.feed(buffer, count)
+                totalBytes += count
+            }
+            if (totalBytes == 0L) throw IllegalArgumentException("empty video stream")
+            val response = """{"ok":true,"codec":"$codecName","bytes":$totalBytes}"""
+                .toByteArray(HTML_CHARSET)
+            writeJsonResponse(socket, 200, "OK", response)
+            log("$codecName 视频串流已结束：$totalBytes 字节")
+        } catch (e: Exception) {
+            val status = if (totalBytes == 0L) 400 else 502
+            val reason = if (status == 400) "Bad Request" else "Bad Gateway"
+            log("$codecName 视频串流失败：${e.javaClass.simpleName}: ${e.message ?: "无错误信息"}")
+            val response = """{"error":"$codecName stream failed","bytes":$totalBytes}"""
+                .toByteArray(HTML_CHARSET)
+            try {
+                writeJsonResponse(socket, status, reason, response)
+            } catch (_: Exception) {
+            }
+        } finally {
+            var ownsSession = false
+            synchronized(framebufferSessionLock) {
+                if (activeFramebufferSocket === socket) {
+                    activeFramebufferSocket = null
+                    ownsSession = true
+                }
+            }
+            if (ownsSession) {
+                FramebufferVideoRenderer.stop()
+                if (streamStateStarted) framebufferStreamState(false)
             }
         }
     }

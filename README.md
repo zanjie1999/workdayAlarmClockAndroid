@@ -84,6 +84,18 @@ ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acod
 
 Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPost)  
 
+默认的 `/fb` 是 MJPEG（每帧 JPEG 由手机 CPU 软解）。Android 5.0 及以上还可以把 H.264/H.265 裸流直接推到 `8880`，手机会交给系统解码器（一般就是硬解）并直接输出到屏幕，不需要先解成 Bitmap：
+
+```cmd
+:: H.264
+ffmpeg -f gdigrab -framerate 30 -i desktop -c:v libx264 -preset ultrafast -tune zerolatency -bf 0 -g 60 -x264-params aud=1 -f h264 - | curl.exe -T - "http://192.168.1.147:8880/fb264"
+
+:: H.265（需要设备有 HEVC 解码器）
+ffmpeg -f gdigrab -framerate 30 -i desktop -c:v libx265 -preset ultrafast -tune zerolatency -g 60 -x265-params aud=1 -f hevc - | curl.exe -T - "http://192.168.1.147:8880/fb265"
+```
+
+码流要是 Annex-B，每次连接从 SPS/PPS（H.265 还有 VPS）和 IDR 开始，GOP 建议 1～2 秒；`fb264`/`fb265` 与 `/fb` 互斥，同一个时间只能有一个画面串流。设备解不了或解码器初始化失败时会在手机上弹 Toast 并断开连接。
+
 ## IP摄像头服务
 在右上角菜单中打开“IP摄像头”，第一次开启时可授权摄像头和麦克风权限。只授权其中一个也可以启动服务，未授权的设备不会输出对应的流。服务监听 `8880` 端口，摄像头编号从 `1` 开始  
 可以在“摄像头密码”设置访问密码，留空则没有密码  
@@ -114,7 +126,7 @@ AVC 路由可通过查询参数 `b` 覆盖默认视频码率，单位为 kbps。
 http://设备IP:8880/avc/1?b=2000
 http://设备IP:8880/abc/avc/1/1?b=2000
 ```
-不传 `b` 时自动计算码率；`b` 必须是正整数，具体能多大取决于设备硬件编码器
+不传 `b` 时按 `宽 × 高 × 3` bps 自动计算（约 0.1 bit/像素/帧，1080p 约 6 Mbps），限制在 128 kbps～20 Mbps；`b` 必须是正整数，最终码率会被限制在硬件编码器支持范围内
 
 麦克风提供 AAC-LC fMP4 音频流，可以脱离摄像头单独播放。没有麦克风权限时该接口返回空内容：  
 ```
