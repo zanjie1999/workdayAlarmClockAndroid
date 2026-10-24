@@ -91,6 +91,8 @@ Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPos
 ffmpeg -f lavfi -i "ddagrab=output_idx=1:framerate=60:draw_mouse=1" -vf "hwdownload,format=bgra,format=yuv420p" -c:v libx264 -preset ultrafast -tune zerolatency -bf 0 -g 60 -profile:v high -x264-params aud=1 -f h264 - | curl.exe -T - "http://192.168.2.217:8880/fb264"
 :: H.265（需要设备有 HEVC 解码器）
 ffmpeg -f lavfi -i "ddagrab=output_idx=1:framerate=60:draw_mouse=1" -vf "hwdownload,format=bgra,format=yuv420p" -c:v libx265 -preset ultrafast -tune zerolatency -bf 0 -g 60 -profile:v main -x265-params aud=1 -f hevc - | curl.exe -T - "http://192.168.2.217:8880/fb265"
+:: h265 nvenc 1280 表现跟咩moonlight差不多了
+ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=60:draw_mouse=1" -vf "hwdownload,format=bgra,scale=1280:-2,format=yuv420p" -c:v hevc_nvenc -preset p1 -tune ull -zerolatency 1 -delay 0 -bf 0 -g 60 -profile:v main -aud 1 -f hevc - | curl.exe -T - "http://192.168.1.152:8880/fb265"
 ```
 
 码流要是 Annex-B，每次连接从 SPS/PPS（H.265 还有 VPS）和 IDR 开始，GOP 建议 1～2 秒；`fb264`/`fb265` 与 `/fb` 互斥，同一个时间只能有一个画面串流。设备解不了或解码器初始化失败时会在手机上弹 Toast 并断开连接。  
