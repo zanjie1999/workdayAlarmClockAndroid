@@ -77,6 +77,8 @@ internal class CameraHttpServer(
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var streamLockUsers = 0
+    private var highPerfWifiLock: WifiManager.WifiLock? = null
+    private var highPerfLockUsers = 0
 
     init {
         FramebufferVideoRenderer.initialize(appContext)
@@ -386,6 +388,7 @@ internal class CameraHttpServer(
             )
             return
         }
+        acquireHighPerfWifiLock()
         var frameCount = 0L
         var jpegBytes = 0L
         try {
@@ -490,6 +493,7 @@ internal class CameraHttpServer(
                 .toByteArray(HTML_CHARSET)
             writeJsonResponse(socket, status, reason, response)
         } finally {
+            releaseHighPerfWifiLock()
             synchronized(framebufferSessionLock) {
                 // The old reader must not clear the replacement session's renderer state.
                 if (activeFramebufferSocket === socket) {
@@ -514,6 +518,7 @@ internal class CameraHttpServer(
             return
         }
 
+        acquireHighPerfWifiLock()
         var streamStateStarted = false
         var totalBytes = 0L
         try {
@@ -571,6 +576,7 @@ internal class CameraHttpServer(
             } catch (_: Exception) {
             }
         } finally {
+            releaseHighPerfWifiLock()
             var ownsSession = false
             synchronized(framebufferSessionLock) {
                 if (activeFramebufferSocket === socket) {
@@ -753,6 +759,7 @@ internal class CameraHttpServer(
 
     private fun streamPcm(socket: Socket, request: HttpRequest) {
         var track: AudioTrack? = null
+        acquireHighPerfWifiLock()
         try {
             val rate = request.uri.getQueryParameter("rate")?.toIntOrNull() ?: 44100
             val channels = request.uri.getQueryParameter("channels")?.toIntOrNull() ?: 2
@@ -970,6 +977,7 @@ internal class CameraHttpServer(
             print2LogView("电脑音箱播放失败：${e.javaClass.simpleName}: ${e.message ?: "无错误信息"}")
             throw e
         } finally {
+            releaseHighPerfWifiLock()
             // 每个 Socket 都只回收自己的 AudioTrack。
             // 因此多个设备可以同时播放；旧连接即使晚于新连接退出，
             // 也只会释放旧连接自己的 Track，不会碰新连接。
@@ -1436,6 +1444,41 @@ internal class CameraHttpServer(
             } catch (_: Exception) {
             }
             wifiLock = null
+        }
+    }
+
+    @SuppressLint("WakelockTimeout")
+    private fun acquireHighPerfWifiLock() {
+        synchronized(streamLockState) {
+            highPerfLockUsers++
+            if (highPerfLockUsers > 1) return
+            if (highPerfWifiLock == null) {
+                try {
+                    highPerfWifiLock = (appContext.getSystemService(Context.WIFI_SERVICE) as WifiManager)
+                        .createWifiLock(
+                            WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                            "workDayAlarmClock:HighPerfWifi"
+                        ).apply {
+                            setReferenceCounted(false)
+                            acquire()
+                        }
+                } catch (e: Exception) {
+                    log("高性能Wi-Fi锁获取失败：${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun releaseHighPerfWifiLock() {
+        synchronized(streamLockState) {
+            if (highPerfLockUsers == 0) return
+            highPerfLockUsers--
+            if (highPerfLockUsers > 0) return
+            try {
+                if (highPerfWifiLock?.isHeld == true) highPerfWifiLock?.release()
+            } catch (_: Exception) {
+            }
+            highPerfWifiLock = null
         }
     }
 
