@@ -215,6 +215,15 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
         }
 
+        // root 设备：文件检测到 su 且未授权时，申请一次 root 授权并提示（用于自动静默更新）
+        if (MeUpdater.hasSuBinary() && !MeUpdater.isRootGranted(this)) {
+            Toast.makeText(this, "授予ROOT权限可以自动安装更新", Toast.LENGTH_LONG).show()
+            val appContext = applicationContext
+            Thread {
+                MeUpdater.requestRootPermission(appContext)
+            }.start()
+        }
+
         // 检查二进制文件更新  lib不可写入 写入了重启也会恢复 于是没有热更新了
 //        try {
 //            val updateFile = File(Environment.getExternalStorageDirectory().absolutePath + "/libWorkdayAlarmClock.so")

@@ -38,7 +38,25 @@ object MeUpdater {
     private const val BUFFER_SIZE = 64 * 1024
     private const val PROGRESS_MIN_INTERVAL_MS = 500L
 
+    // root 静默更新相关
+    private const val KEY_ROOT_GRANTED = "root_granted"
+    private const val ROOT_CHECK_TIMEOUT_MS = 60_000L
+    private const val ROOT_INSTALL_TIMEOUT_MS = 120_000L
+    private const val SILENT_INSTALL_TMP_PATH = "/data/local/tmp/workdayalarmclock_update.apk"
+    private const val APP_MAIN_ACTIVITY = "com.zyyme.workdayalarmclock/.MainActivity"
+
     private data class ReleaseInfo(val version: String, val apkUrl: String, val apkName: String)
+
+    // 常见 su 路径，存在即认为可能已 root（文件检测不弹框）
+    private val SU_PATHS = arrayOf(
+        "/system/bin/su",
+        "/system/xbin/su",
+        "/sbin/su",
+        "/su/bin/su",
+        "/data/adb/magisk"
+    )
+
+    private data class RootResult(val exitCode: Int, val output: String)
 
     @Volatile
     private var updating = false
@@ -57,6 +75,88 @@ object MeUpdater {
      */
     fun onHasUpdate() {
         hasUpdate = true
+    }
+
+    /**
+     * 文件检测 su 是否存在（不执行 su，不弹授权框）
+     */
+    fun hasSuBinary(): Boolean = SU_PATHS.any { File(it).exists() }
+
+    /**
+     * 是否已成功申请到 root 授权（持久化标记）
+     */
+    fun isRootGranted(context: Context): Boolean =
+        MeSettings.isEnabled(context, KEY_ROOT_GRANTED)
+
+    /**
+     * 执行一次 su 申请 root 授权，成功后写标记；未授权设备会弹授权框
+     */
+    fun requestRootPermission(context: Context): Boolean {
+        val result = runAsRoot("id", ROOT_CHECK_TIMEOUT_MS)
+        if (result.exitCode == 0) {
+            MeSettings.setEnabled(context, KEY_ROOT_GRANTED, true)
+            return true
+        }
+        return false
+    }
+
+    /**
+     * 用 su 执行命令，返回退出码与输出；带超时（用轮询避免依赖 Java8 的 waitFor(timeout)，兼容 Android4.0）
+     */
+    private fun runAsRoot(command: String, timeoutMs: Long): RootResult {
+        return try {
+            val process = ProcessBuilder("su", "-c", command)
+                .redirectErrorStream(true)
+                .start()
+            val output = StringBuilder()
+            val reader = Thread {
+                try {
+                    process.inputStream.bufferedReader().use { br ->
+                        br.forEachLine { output.appendLine(it) }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            reader.start()
+
+            var exitCode = -1
+            var exited = false
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                try {
+                    exitCode = process.exitValue()
+                    exited = true
+                    break
+                } catch (_: IllegalThreadStateException) {
+                    Thread.sleep(50)
+                }
+            }
+            if (!exited) {
+                process.destroy()
+            }
+            try {
+                reader.join(2000)
+            } catch (_: InterruptedException) {
+            }
+            RootResult(if (exited) exitCode else -1, output.toString())
+        } catch (e: Exception) {
+            RootResult(-1, e.message ?: "")
+        }
+    }
+
+    /**
+     * 复制到 /data/local/tmp 后静默安装，成功后拉起 MainActivity
+     */
+    private fun silentInstallAndRestart(apk: File): Boolean {
+        val command = "cp '${apk.absolutePath}' $SILENT_INSTALL_TMP_PATH" +
+            " && chmod 644 $SILENT_INSTALL_TMP_PATH" +
+            " && pm install -r -d -g $SILENT_INSTALL_TMP_PATH" +
+            " && am start -n $APP_MAIN_ACTIVITY"
+        log("开始静默安装 ${apk.name}")
+        val result = runAsRoot(command, ROOT_INSTALL_TIMEOUT_MS)
+        val success = result.exitCode == 0
+        log(if (success) "静默安装成功，正在重启" else "静默安装失败：${result.output.trim()}")
+        return success
     }
 
     fun log(msg: String) {
@@ -91,12 +191,39 @@ object MeUpdater {
         }.start()
     }
 
-    private fun doUpdate(context: Context) {
+    private fun doUpdate(context: Context, silent: Boolean = false) {
         val currentVersion = versionName(context)
         val info = resolveReleaseInfo(currentVersion) ?: return
         val apk = download(context, info) ?: return
         log("下载完成 ${apk.absolutePath}")
-        install(context, apk)
+        if (silent) {
+            silentInstallAndRestart(apk)
+        } else {
+            install(context, apk)
+        }
+    }
+
+    /**
+     * root 设备收到 HASUPDATE 后自动静默更新：下载→静默安装→重启，无需用户操作
+     */
+    fun autoSilentUpdate(context: Context) {
+        if (!hasSuBinary()) return
+        if (updating) {
+            log("正在更新中，请稍候…")
+            return
+        }
+        updating = true
+        val appContext = context.applicationContext
+        Thread {
+            try {
+                doUpdate(appContext, silent = true)
+            } catch (e: Exception) {
+                log("静默更新出错：$e")
+                e.printStackTrace()
+            } finally {
+                updating = false
+            }
+        }.start()
     }
 
     /**
