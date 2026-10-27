@@ -39,7 +39,6 @@ object MeUpdater {
     private const val PROGRESS_MIN_INTERVAL_MS = 500L
 
     // root 静默更新相关
-    private const val KEY_ROOT_GRANTED = "root_granted"
     private const val ROOT_CHECK_TIMEOUT_MS = 60_000L
     private const val ROOT_INSTALL_TIMEOUT_MS = 120_000L
     private const val SILENT_INSTALL_TMP_PATH = "/data/local/tmp/workdayalarmclock_update.apk"
@@ -53,7 +52,9 @@ object MeUpdater {
         "/system/xbin/su",
         "/sbin/su",
         "/su/bin/su",
-        "/data/adb/magisk"
+        "/data/adb/magisk",
+        "/data/adb/ksu",
+        "/data/adb/modules"
     )
 
     private data class RootResult(val exitCode: Int, val output: String)
@@ -83,21 +84,11 @@ object MeUpdater {
     fun hasSuBinary(): Boolean = SU_PATHS.any { File(it).exists() }
 
     /**
-     * 是否已成功申请到 root 授权（持久化标记）
+     * 执行一次 su 确认 root 授权；未授权设备会弹授权框
      */
-    fun isRootGranted(context: Context): Boolean =
-        MeSettings.isEnabled(context, KEY_ROOT_GRANTED)
-
-    /**
-     * 执行一次 su 申请 root 授权，成功后写标记；未授权设备会弹授权框
-     */
-    fun requestRootPermission(context: Context): Boolean {
+    fun requestRootPermission(): Boolean {
         val result = runAsRoot("id", ROOT_CHECK_TIMEOUT_MS)
-        if (result.exitCode == 0) {
-            MeSettings.setEnabled(context, KEY_ROOT_GRANTED, true)
-            return true
-        }
-        return false
+        return result.exitCode == 0
     }
 
     /**
@@ -204,10 +195,9 @@ object MeUpdater {
     }
 
     /**
-     * root 设备收到 HASUPDATE 后自动静默更新：下载→静默安装→重启，无需用户操作
+     * 收到 HASUPDATE 后：运行一次 su 确认 root 授权，授权成功才自动静默更新
      */
     fun autoSilentUpdate(context: Context) {
-        if (!hasSuBinary()) return
         if (updating) {
             log("正在更新中，请稍候…")
             return
@@ -216,6 +206,11 @@ object MeUpdater {
         val appContext = context.applicationContext
         Thread {
             try {
+                // 运行一次 su 检查 root 授权，没授权就不自动下载
+                if (!requestRootPermission()) {
+                    log("未获得 root 授权，不自动更新")
+                    return@Thread
+                }
                 doUpdate(appContext, silent = true)
             } catch (e: Exception) {
                 log("静默更新出错：$e")

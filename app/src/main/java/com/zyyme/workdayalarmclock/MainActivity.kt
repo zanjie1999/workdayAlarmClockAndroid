@@ -215,12 +215,11 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
         }
 
-        // root 设备：文件检测到 su 且未授权时，申请一次 root 授权并提示（用于自动静默更新）
-        if (MeUpdater.hasSuBinary() && !MeUpdater.isRootGranted(this)) {
+        // 检测到 su 文件就申请一次 root 授权（授权成功才会自动静默更新）
+        if (MeUpdater.hasSuBinary()) {
             Toast.makeText(this, "授予ROOT权限可以自动安装更新", Toast.LENGTH_LONG).show()
-            val appContext = applicationContext
             Thread {
-                MeUpdater.requestRootPermission(appContext)
+                MeUpdater.requestRootPermission()
             }.start()
         }
 
