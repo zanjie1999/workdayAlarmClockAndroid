@@ -261,6 +261,10 @@ https://abc.com/api?message=应用A包名是pkg.a发送了标题为标题A内容
 按下鼻子为停止播放，顶部播放控制按钮也可以使用
 
 ### 叮咚Play
+为了解决Wi-Fi可能会自动断开的问题，需要运行一下
+```
+adb shell settings put global wifi_suspend_optimizations_enabled 0
+```
 请安装app-x86的apk  
 关闭了一些硬件加速避免频繁更新布局导致Intel的GPU驱动崩溃  
 勿扰模式的按键：  
