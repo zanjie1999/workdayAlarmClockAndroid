@@ -96,6 +96,10 @@ ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=60:draw_mouse=1" -vf "hwdownl
 :: 如果你要配开机启动，那就这样写，cmd是程序，后面是参数，在新窗口打开那就前面这样写start "名字" cmd...
 cmd /c "ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,scale=1280:-2,format=yuv420p" -c:v hevc_nvenc -preset p1 -tune ull -zerolatency 1 -delay 0 -bf 0 -g 60 -profile:v main -aud 1 -f hevc - | curl.exe -T - "http://192.168.1.152:8880/fb265""
 ```
+```bash
+# 比如在mac上使用硬件编码，有延迟是正常的，因为avfoundation采集就是有延迟，分辨率越大越慢 我的显示器是设备4
+ffmpeg -re -f avfoundation -framerate 30 -capture_cursor 1 -i "4:none" -vf "fps=30,scale=1280:-2" -c:v hevc_videotoolbox -b:v 4M -realtime 1 -bf 0 -g 60 -pix_fmt yuv420p -f hevc - | curl -T - "http://192.168.1.152:8880/fb265"
+```
 
 码流要是 Annex-B，每次连接从 SPS/PPS（H.265 还有 VPS）和 IDR 开始，GOP 建议 1～2 秒；`fb264`/`fb265` 与 `/fb` 互斥，同一个时间只能有一个画面串流。设备解不了或解码器初始化失败时会在手机上弹 Toast 并断开连接。  
 至于上位机？Windows的硬件编码太复杂了，我不会写，所以没有hhhh  
