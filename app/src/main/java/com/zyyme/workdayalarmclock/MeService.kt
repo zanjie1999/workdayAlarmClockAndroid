@@ -1016,8 +1016,9 @@ class MeService : Service() {
                     seekPlaybackTo(defaultSeek)
                 }
             } else if (s == "PAUSE") {
+                // Go 端已经置了 IsPaused，这里只做本地暂停，不能再回传 pause1
                 print2LogView("暂停播放")
-                requestPausePlayback()
+                requestPausePlayback(notifyGo = false)
             } else if (s == "RESUME") {
                 print2LogView("恢复播放")
                 if (!isStop) {
@@ -1544,8 +1545,15 @@ class MeService : Service() {
 
     fun shouldShowPauseIcon(): Boolean = playWhenReady
 
-    private fun requestPausePlayback(resumeAfterFocusGain: Boolean = false) {
-        toGo("pause1")
+    private fun requestPausePlayback(
+        resumeAfterFocusGain: Boolean = false,
+        // Go 自己发来的 PAUSE 不能再回传 pause1，否则这条命令会在
+        // 下一次 PlayUrl 之后才被 Go 读到，把 IsPaused 永久置为 true
+        notifyGo: Boolean = true
+    ) {
+        if (notifyGo) {
+            toGo("pause1")
+        }
         runOnPlaybackThread {
             this.resumeAfterAudioFocusGain = resumeAfterFocusGain && playWhenReady
             playWhenReady = false

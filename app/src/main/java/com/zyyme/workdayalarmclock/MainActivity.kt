@@ -216,10 +216,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 检测到 su 文件就申请一次 root 授权（授权成功才会自动静默更新）
+        // 授权成功就不打扰，只有被拒绝（su 返回非 0 或超时）时才提示
         if (MeUpdater.hasSuBinary()) {
-            Toast.makeText(this, "授予ROOT权限可以自动安装更新", Toast.LENGTH_LONG).show()
             Thread {
-                MeUpdater.requestRootPermission()
+                if (!MeUpdater.requestRootPermission()) {
+                    runOnUiThread {
+                        if (!isFinishing) {
+                            Toast.makeText(
+                                applicationContext,
+                                "授予ROOT权限可以自动安装更新",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
             }.start()
         }
 
