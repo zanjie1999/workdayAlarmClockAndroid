@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.net.Uri
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
@@ -87,6 +88,8 @@ class MeService : Service() {
         private const val MEDIA_TRACK_LONG_PRESS_DELAY_MS = 900L
         private const val MEDIA_TRACK_SEEK_INTERVAL_MS = 500L
         private const val MEDIA_TRACK_SEEK_STEP_MS = 5000
+        // 在线播放与歌词请求共用，部分 CDN 会拒绝 MediaPlayer 默认的 stagefright UA
+        private const val HTTP_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
 
         // 这些设备将默认启用时钟模式  两个拼起来
         // getprop ro.product.manufacturer
@@ -1263,6 +1266,13 @@ class MeService : Service() {
 
             if (url.startsWith("./")) {
                 mediaPlayer.setDataSource(filesDir.absolutePath + "/" + url)
+            } else if (url.startsWith("http://") || url.startsWith("https://")) {
+                // 带个UA
+                mediaPlayer.setDataSource(
+                    applicationContext,
+                    Uri.parse(url),
+                    mapOf("User-Agent" to HTTP_USER_AGENT)
+                )
             } else {
                 mediaPlayer.setDataSource(url)
             }
@@ -1697,7 +1707,7 @@ class MeService : Service() {
                 UnsafeHttps.configure(connection)
                 connection.connectTimeout = 8000
                 connection.readTimeout = 8000
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
+                connection.setRequestProperty("User-Agent", HTTP_USER_AGENT)
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                     throw IOException("HTTP ${connection.responseCode}")
                 }
