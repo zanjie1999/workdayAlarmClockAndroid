@@ -29,7 +29,7 @@ object MeUpdater {
     private const val REPO = "zanjie1999/workdayAlarmClockAndroid"
     private const val LATEST_RELEASE_API = "https://api.github.com/repos/$REPO/releases/latest"
     // 加速下载，拼在完整的 github 地址前面
-    private const val ACCELERATE_PREFIX = "https://ghproxy.net/"
+    private const val ACCELERATE_PREFIX = "https://gh-proxy.com/"
     // 下载用浏览器的UA，部分镜像会按UA分流
     private const val BROWSER_USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
