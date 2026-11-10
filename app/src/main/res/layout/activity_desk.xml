@@ -282,23 +282,16 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="2"
-                android:autoSizeMaxTextSize="18sp"
-                android:autoSizeMinTextSize="7sp"
-                android:autoSizeStepGranularity="1sp"
-                android:autoSizeTextType="uniform"
+                android:textSize="18sp"
+                android:maxLines="1"
                 android:ellipsize="end"
                 android:gravity="center_horizontal|bottom"
                 android:includeFontPadding="false"
-                android:maxLines="1"
                 android:shadowColor="#CC000000"
                 android:shadowDx="1"
                 android:shadowDy="1"
                 android:shadowRadius="3"
-                android:textColor="@color/white"
-                app:autoSizeMaxTextSize="18sp"
-                app:autoSizeMinTextSize="7sp"
-                app:autoSizeStepGranularity="1sp"
-                app:autoSizeTextType="uniform" />
+                android:textColor="@color/white" />
 
             <FrameLayout
                 android:id="@+id/desk_volume_control"
