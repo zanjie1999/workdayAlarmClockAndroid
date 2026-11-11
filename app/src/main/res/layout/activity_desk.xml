@@ -88,6 +88,21 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- 长按出菜单、双击锁屏的区域：只占屏幕中间，避开握持时容易碰到的边缘。
+         放在 desk_grid 下面，四个角的组件都在它上面：组件自己要的触摸归组件，
+         没人要的（空白处、时间日期这类不可点的）才落到这里 -->
+    <View
+        android:id="@+id/desk_menu_trigger"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@android:color/transparent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHeight_percent="0.30"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintWidth_percent="0.70" />
+
     <LinearLayout
         android:id="@+id/desk_grid"
         android:layout_width="0dp"
@@ -148,18 +163,6 @@
             </LinearLayout>
         </FrameLayout>
     </LinearLayout>
-
-    <View
-        android:id="@+id/desk_menu_trigger"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:background="@android:color/transparent"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHeight_percent="0.30"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintWidth_percent="0.70" />
 
     <LinearLayout
         android:id="@+id/desk_time_panel"
@@ -261,6 +264,21 @@
         app:autoSizeMinTextSize="12sp"
         app:autoSizeStepGranularity="1sp"
         app:autoSizeTextType="uniform" />
+
+    <!-- 应用列表里置顶的应用：一行，从左到右平铺，放不下时可以横向滑动 -->
+    <HorizontalScrollView
+        android:id="@+id/desk_pinned_apps"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/desk_pinned_apps_row"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
 
     <LinearLayout
         android:id="@+id/desk_player_panel"

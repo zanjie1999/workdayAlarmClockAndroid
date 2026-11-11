@@ -23,11 +23,13 @@ import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.text.Editable
+import android.text.TextUtils
 import android.text.TextWatcher
 import android.text.method.ScrollingMovementMethod
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.View
@@ -36,6 +38,7 @@ import android.view.Window
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -79,6 +82,7 @@ class DeskActivity : AppCompatActivity() {
         private const val CONTENT_PLAYER = 2
         private const val LEGACY_CONTENT_LYRICS = 3
         private const val CONTENT_TODO = 4
+        private const val CONTENT_PINNED_APPS = 5
 
         private const val LYRICS_TOP = 0
         private const val LYRICS_BOTTOM = 1
@@ -117,6 +121,11 @@ class DeskActivity : AppCompatActivity() {
     private lateinit var playerPanel: LinearLayout
     lateinit var lyricsView: TextView
     private lateinit var todoView: TextView
+    private lateinit var pinnedAppsView: HorizontalScrollView
+    private lateinit var pinnedAppsRow: LinearLayout
+    /** 当前已经画出来的置顶应用，没变化就不重建，避免每次回到桌面都闪一下 */
+    private var pinnedAppsKey: List<String>? = null
+    private var pinnedAppsLoadGeneration = 0
     private lateinit var timeView: TextView
     private lateinit var dateView: TextView
     private lateinit var echoRowView: View
@@ -335,6 +344,8 @@ class DeskActivity : AppCompatActivity() {
         loadSlotSettings()
         applyMask()
         applyTextStyle()
+        // 从应用列表回来时置顶可能变了
+        refreshPinnedApps()
         updatePlaybackButton(MeService.me?.shouldShowPauseIcon() == true)
         grid.post {
             sizePanels()
@@ -403,6 +414,10 @@ class DeskActivity : AppCompatActivity() {
         lyricsView = findViewById(R.id.desk_lyrics)
         todoView = findViewById(R.id.desk_todo)
         todoView.movementMethod = ScrollingMovementMethod()
+        pinnedAppsView = findViewById(R.id.desk_pinned_apps)
+        pinnedAppsRow = findViewById(R.id.desk_pinned_apps_row)
+        // 确认键在 desk 上是播放控制，图标只走触摸，不参与按键焦点（滚动容器默认会抢焦点，只能在代码里关）
+        pinnedAppsView.isFocusable = false
         lyricsView.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -517,9 +532,15 @@ class DeskActivity : AppCompatActivity() {
         }
     }
 
+    private fun openAppList() {
+        startActivity(Intent(this, AppListActivity::class.java).apply {
+            putExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE, returnPackage)
+        })
+    }
+
     private fun showDeskMenu() {
         val slotNames = arrayOf("↖左上角", "↗右上角", "↙左下角", "↘右下角")
-        val slotContentNames = arrayOf("不显示", "时间日期", "播放控制", "待办事项")
+        val slotContentNames = arrayOf("不显示", "时间日期", "播放控制", "待办事项", "置顶应用")
         val lyricsPositionNames = arrayOf("顶部", "底部", "不显示")
         val lyricsPosition = loadLyricsPosition()
         val maskEnabled = MeSettings.isEnabled(this, MeSettings.KEY_DESK_MASK)
@@ -548,9 +569,7 @@ class DeskActivity : AppCompatActivity() {
         val dialog = AlertDialog.Builder(this)
             .setItems(items.toTypedArray()) { _, which ->
                 when {
-                    which == 0 -> startActivity(Intent(this, AppListActivity::class.java).apply {
-                        putExtra(HomeLauncherActivity.EXTRA_RETURN_PACKAGE, returnPackage)
-                    })
+                    which == 0 -> openAppList()
                     which == 1 -> chooseWallpaper()
                     which == 2 -> {
                         MeSettings.setEnabled(this, MeSettings.KEY_DESK_MASK, !maskEnabled)
@@ -617,7 +636,9 @@ class DeskActivity : AppCompatActivity() {
     }
 
     private fun setSlotContent(slot: Int, content: Int) {
-        if (slot !in slotValues.indices || content !in setOf(CONTENT_NONE, CONTENT_TIME, CONTENT_PLAYER, CONTENT_TODO)) return
+        if (slot !in slotValues.indices ||
+            content !in setOf(CONTENT_NONE, CONTENT_TIME, CONTENT_PLAYER, CONTENT_TODO, CONTENT_PINNED_APPS)
+        ) return
 
         if (content != CONTENT_NONE) {
             slotValues.indices.filter { it != slot && slotValues[it] == content }
@@ -626,6 +647,7 @@ class DeskActivity : AppCompatActivity() {
         slotValues[slot] = content
         saveSlotSettings()
         applyConfiguredLayout()
+        refreshPinnedApps()
     }
 
     private fun loadSlotSettings() {
@@ -636,14 +658,14 @@ class DeskActivity : AppCompatActivity() {
             slotValues[index] = if (stored == LEGACY_CONTENT_LYRICS) {
                 CONTENT_NONE
             } else {
-                stored.coerceIn(CONTENT_NONE, CONTENT_TODO)
+                stored.coerceIn(CONTENT_NONE, CONTENT_PINNED_APPS)
             }
         }
         normalizeSlots()
     }
 
     private fun normalizeSlots() {
-        for (content in listOf(CONTENT_TIME, CONTENT_PLAYER, CONTENT_TODO)) {
+        for (content in listOf(CONTENT_TIME, CONTENT_PLAYER, CONTENT_TODO, CONTENT_PINNED_APPS)) {
             val matches = slotValues.indices.filter { slotValues[it] == content }
             matches.drop(1).forEach { slotValues[it] = CONTENT_NONE }
         }
@@ -659,6 +681,7 @@ class DeskActivity : AppCompatActivity() {
         removeFromParent(playerPanel)
         removeFromParent(lyricsView)
         removeFromParent(todoView)
+        removeFromParent(pinnedAppsView)
 
         applyLyricsLayout()
 
@@ -667,6 +690,7 @@ class DeskActivity : AppCompatActivity() {
                 CONTENT_TIME -> addPanelToSlot(timePanel, slot, false, true)
                 CONTENT_PLAYER -> addPanelToSlot(playerPanel, slot, true)
                 CONTENT_TODO -> addPanelToSlot(todoView, slot, false)
+                CONTENT_PINNED_APPS -> addPinnedAppsToSlot(slot)
             }
         }
     }
@@ -680,6 +704,7 @@ class DeskActivity : AppCompatActivity() {
             CONTENT_TIME -> 1
             CONTENT_PLAYER -> 2
             CONTENT_TODO -> 3
+            CONTENT_PINNED_APPS -> 4
             else -> 0
         }
     }
@@ -689,7 +714,138 @@ class DeskActivity : AppCompatActivity() {
             1 -> CONTENT_TIME
             2 -> CONTENT_PLAYER
             3 -> CONTENT_TODO
+            4 -> CONTENT_PINNED_APPS
             else -> CONTENT_NONE
+        }
+    }
+
+    private class PinnedApp(val packageName: String, val name: String, val icon: Drawable)
+
+    /**
+     * 置顶应用小组件：大小跟着内容走（图标和名称区域是固定大小的），贴着所在的角，
+     * 最宽占满这个角的格子，再多就横向滑动。
+     */
+    private fun addPinnedAppsToSlot(slot: Int) {
+        slotFrames()[slot].addView(
+            pinnedAppsView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                panelGravity(slot)
+            )
+        )
+    }
+
+    /**
+     * 直接读应用列表的置顶记录，不另外维护一份列表。
+     */
+    private fun refreshPinnedApps() {
+        if (CONTENT_PINNED_APPS !in slotValues) return
+        val generation = ++pinnedAppsLoadGeneration
+        val pinned = getSharedPreferences(StartupAppHelper.PREFS_NAME, MODE_PRIVATE)
+            .getStringSet(StartupAppHelper.KEY_PINNED_APPS, emptySet())
+            .orEmpty()
+            .toSet()
+        // 读图标比较慢，放到后台线程
+        Thread {
+            val apps = try {
+                loadPinnedApps(pinned)
+            } catch (_: Exception) {
+                emptyList<PinnedApp>()
+            }
+            handler.post {
+                if (generation == pinnedAppsLoadGeneration && !isFinishing) showPinnedApps(apps)
+            }
+        }.start()
+    }
+
+    private fun loadPinnedApps(pinned: Set<String>): List<PinnedApp> {
+        if (pinned.isEmpty()) return emptyList()
+        val intent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+        // 和应用列表一样按名称排序；打开时是按包名打开的，所以同一个包只留一个入口
+        return packageManager.queryIntentActivities(intent, 0)
+            .filter { it.activityInfo.packageName in pinned }
+            .map { it to it.loadLabel(packageManager).toString() }
+            .sortedBy { it.second }
+            .distinctBy { it.first.activityInfo.packageName }
+            .map { (info, name) ->
+                val icon = try {
+                    info.loadIcon(packageManager)
+                } catch (_: RuntimeException) {
+                    packageManager.defaultActivityIcon
+                }
+                PinnedApp(info.activityInfo.packageName, name, icon)
+            }
+    }
+
+    private fun showPinnedApps(apps: List<PinnedApp>) {
+        val key = apps.map { "${it.packageName}\n${it.name}" }
+        if (key == pinnedAppsKey) return
+        pinnedAppsKey = key
+
+        pinnedAppsRow.removeAllViews()
+        val appListLongClickListener = View.OnLongClickListener {
+            openAppList()
+            true
+        }
+        if (apps.isEmpty()) {
+            val padding = (resources.displayMetrics.density * 8f).toInt()
+            pinnedAppsRow.addView(TextView(this).apply {
+                text = "应用列表里还没有置顶应用"
+                textSize = 14f
+                setSingleLine(true)
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(padding, padding, padding, padding)
+                setOnClickListener { openAppList() }
+                setOnLongClickListener(appListLongClickListener)
+                isFocusable = false
+            })
+        } else {
+            val inflater = LayoutInflater.from(this)
+            apps.forEach { app ->
+                val item = inflater.inflate(R.layout.item_desk_pinned_app, pinnedAppsRow, false)
+                item.findViewById<ImageView>(R.id.desk_pinned_app_icon).setImageDrawable(app.icon)
+                item.findViewById<TextView>(R.id.desk_pinned_app_name).text = app.name
+                item.contentDescription = app.name
+                item.setOnClickListener { openPinnedApp(app.packageName) }
+                item.setOnLongClickListener(appListLongClickListener)
+                pinnedAppsRow.addView(item)
+            }
+        }
+        pinnedAppsView.scrollTo(0, 0)
+        applyPinnedAppsTextStyle()
+    }
+
+    private fun openPinnedApp(packageName: String) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        if (launchIntent == null) {
+            Toast.makeText(this, "应用无法打开", Toast.LENGTH_SHORT).show()
+            // 多半是被卸载了，重新读一遍
+            refreshPinnedApps()
+            return
+        }
+        try {
+            startActivity(launchIntent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "应用打开失败：${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun applyPinnedAppsTextStyle() {
+        if (!::pinnedAppsRow.isInitialized) return
+        val light = MeSettings.isEnabled(this, MeSettings.KEY_DESK_LIGHT_TEXT, true)
+        val color = if (light) Color.WHITE else Color.BLACK
+        for (index in 0 until pinnedAppsRow.childCount) {
+            val child = pinnedAppsRow.getChildAt(index)
+            val label = child as? TextView
+                ?: child.findViewById<TextView>(R.id.desk_pinned_app_name)
+                ?: continue
+            label.setTextColor(color)
+            if (light) {
+                label.setShadowLayer(4f, 1f, 1f, Color.argb(210, 0, 0, 0))
+            } else {
+                label.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
+            }
         }
     }
 
@@ -1359,6 +1515,7 @@ class DeskActivity : AppCompatActivity() {
             }
         }
         applyProgressFillColor(color)
+        applyPinnedAppsTextStyle()
         alarmStopButton.setTextColor(color)
         if (light) {
             alarmStopButton.setShadowLayer(4f, 1f, 1f, shadow)
