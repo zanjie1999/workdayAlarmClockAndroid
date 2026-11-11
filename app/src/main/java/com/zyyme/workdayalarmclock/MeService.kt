@@ -220,6 +220,8 @@ class MeService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // 尽早放宽 HTTPS 校验并打开 TLS1.2，老系统才能访问更新/歌词这些接口
+        UnsafeHttps.install()
         ambientBrightness = AmbientBrightnessController(this) { message ->
             print2LogView(message)
         }

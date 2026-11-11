@@ -172,6 +172,7 @@ object MeUpdater {
         val appContext = context.applicationContext
         Thread {
             try {
+                log("TLS：${UnsafeHttps.capabilityText()}")
                 doUpdate(appContext)
             } catch (e: Exception) {
                 log("更新出错：$e")
@@ -239,8 +240,7 @@ object MeUpdater {
      * 获取最新的release信息
      */
     private fun fetchLatestRelease(): ReleaseInfo {
-        val json = httpGetString(LATEST_RELEASE_API)
-        val obj = JSONObject(json)
+        val obj = JSONObject(httpGetString(LATEST_RELEASE_API))
         val version = obj.optString("tag_name").trim()
             .ifEmpty { obj.optString("name").trim() }
             .removePrefix("v")

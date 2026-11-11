@@ -2,11 +2,13 @@ package com.zyyme.workdayalarmclock
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.net.http.SslError
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -101,6 +103,18 @@ class WebActivity : AppCompatActivity() {
                 failingUrl: String?
             ) {
                 Toast.makeText(this@WebActivity, "Web控制台打开失败", Toast.LENGTH_SHORT).show()
+            }
+
+            /**
+             * 4.4 这类老系统的根证书太旧，证书链验证不过就直接放行，
+             * 和 UnsafeHttps 里的处理保持一致。
+             */
+            override fun onReceivedSslError(
+                view: WebView?,
+                handler: SslErrorHandler?,
+                error: SslError?
+            ) {
+                handler?.proceed()
             }
         }
         webView.webChromeClient = object : WebChromeClient() {

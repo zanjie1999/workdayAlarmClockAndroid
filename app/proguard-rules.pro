@@ -20,3 +20,8 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 -keep class com.zyyme.workdayalarmclock.MeDeviceAdminReceiver { *; }
+
+# Conscrypt 会反射探测平台自带的 JSSE 实现（4.4 与 4.3 及以下是两个不同的类），
+# 编译期在 android.jar 里看不到，运行期存在，忽略即可
+-dontwarn com.android.org.conscrypt.SSLParametersImpl
+-dontwarn org.apache.harmony.xnet.provider.jsse.SSLParametersImpl

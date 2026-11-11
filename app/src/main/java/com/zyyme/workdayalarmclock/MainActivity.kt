@@ -164,6 +164,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         me = this
+        UnsafeHttps.install()
         useClockMode = MeSettings.isEnabled(this, MeSettings.KEY_CLOCK) &&
                 !MeSettings.isEnabled(this, MeSettings.KEY_NO_SCREEN)
 
