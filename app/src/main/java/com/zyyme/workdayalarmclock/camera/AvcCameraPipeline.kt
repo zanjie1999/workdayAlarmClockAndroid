@@ -83,6 +83,50 @@ internal class AvcCameraPipeline(
             }
         }
 
+        /**
+         * 探测这台机器能不能做 AVC，以及该摄像头的全部档位。
+         * 只 create + 读 capabilities，不 configure/start，比 isAvcEncoderUsable() 轻得多。
+         * 返回 (是否支持 AVC, 档位列表)。
+         */
+        fun probeAvc(context: Context, cameraIndex: Int): Pair<Boolean, List<Pair<Int, Int>>> {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return Pair(false, emptyList())
+            var codec: MediaCodec? = null
+            return try {
+                codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                val capabilities = codec.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                val surfaceSupported = capabilities.colorFormats
+                    .contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                val videoCapabilities = if (surfaceSupported) capabilities.videoCapabilities else null
+                if (videoCapabilities == null) return Pair(false, emptyList())
+
+                val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val target = enumerateTargets(manager).getOrNull(cameraIndex)
+                    ?: return Pair(true, emptyList())
+                val characteristics = manager.getCameraCharacteristics(
+                    target.physicalCameraId ?: target.logicalCameraId
+                )
+                val sizes = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                    ?.getOutputSizes(ImageFormat.PRIVATE)
+                    ?.toList()
+                    .orEmpty()
+                val usable = sizes.filter {
+                    try {
+                        videoCapabilities.isSizeSupported(it.width, it.height)
+                    } catch (_: Exception) {
+                        false
+                    }
+                }.map { it.width to it.height }
+                Pair(true, CameraSizes.sort(usable))
+            } catch (_: Exception) {
+                Pair(false, emptyList())
+            } finally {
+                try {
+                    codec?.release()
+                } catch (_: Exception) {
+                }
+            }
+        }
+
         private fun enumerateTargets(manager: CameraManager): List<CameraTarget> {
             return manager.cameraIdList.flatMap { logicalId ->
                 val targets = mutableListOf(CameraTarget(logicalId, null))
@@ -459,10 +503,7 @@ internal class AvcCameraPipeline(
     }
 
     private fun sortedSizes(sizes: List<Size>): List<Size> {
-        return sizes.sortedWith(
-            compareByDescending<Size> { it.width.toLong() * it.height }
-                .thenByDescending { it.width }
-        )
+        return sizes.sortedWith(compareBy(CameraSizes.ORDER) { it.width to it.height })
     }
 
     private fun selectFpsRange(ranges: List<Range<Int>>, targetFps: Int): Range<Int>? {

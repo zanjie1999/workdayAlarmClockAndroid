@@ -26,6 +26,27 @@ internal class MjpegCameraPipeline(
         private const val MAX_PREFERRED_WIDTH = 2048
         private const val JPEG_QUALITY = 80
         private const val MIN_JPEG_QUALITY = 50
+
+        /**
+         * 预览分辨率档位：第一次调用 open 一次读 supportedPreviewSizes 并缓存，
+         * 之后全部走内存，不再碰相机（播放期间再 open 会把正在推的流踢掉）。
+         */
+        fun supportedResolutions(cameraIndex: Int): List<Pair<Int, Int>> {
+            CameraSizes.cachedMjpeg(cameraIndex)?.let { return it }
+            return try {
+                val opened = Camera.open(cameraIndex)
+                try {
+                    val sizes = opened.parameters.supportedPreviewSizes.orEmpty()
+                        .map { it.width to it.height }
+                    CameraSizes.cacheMjpeg(cameraIndex, sizes)
+                    CameraSizes.sort(sizes)
+                } finally {
+                    opened.release()
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
     }
 
     private val frameHub = CameraFrameHub(maxPackets = 1, keepLatestOnly = true)
@@ -57,6 +78,10 @@ internal class MjpegCameraPipeline(
                 val openedCamera = Camera.open(key.cameraIndex)
                 camera = openedCamera
                 val parameters = openedCamera.parameters
+                CameraSizes.cacheMjpeg(
+                    key.cameraIndex,
+                    parameters.supportedPreviewSizes.orEmpty().map { it.width to it.height }
+                )
                 val previewFormats = parameters.supportedPreviewFormats.orEmpty()
                 if (!previewFormats.contains(ImageFormat.NV21)) {
                     throw IllegalStateException("摄像头不支持NV21预览")
@@ -225,10 +250,7 @@ internal class MjpegCameraPipeline(
     }
 
     private fun sortedSizes(sizes: List<Camera.Size>): List<Camera.Size> {
-        return sizes.sortedWith(
-            compareByDescending<Camera.Size> { it.width.toLong() * it.height }
-                .thenByDescending { it.width }
-        )
+        return sizes.sortedWith(compareBy(CameraSizes.ORDER) { it.width to it.height })
     }
 
     private fun balancedLuma(data: ByteArray): Int {

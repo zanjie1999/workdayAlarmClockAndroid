@@ -21,6 +21,25 @@ internal data class CameraStreamPacket(
     val presentationTimeUs: Long = 0L
 )
 
+/** 分辨率档位的唯一来源：MJPEG、AVC、caminfo 三处都走这里，保证档位号含义一致。 */
+internal object CameraSizes {
+    private val mjpegCache = java.util.concurrent.ConcurrentHashMap<Int, List<Pair<Int, Int>>>()
+
+    /** 面积降序 → 宽降序 → 高降序。保留重复项，不要在这里去重，否则旧档位号会整体漂移。 */
+    val ORDER: Comparator<Pair<Int, Int>> =
+        compareByDescending<Pair<Int, Int>> { it.first.toLong() * it.second }
+            .thenByDescending { it.first }
+            .thenByDescending { it.second }
+
+    fun sort(sizes: List<Pair<Int, Int>>): List<Pair<Int, Int>> = sizes.sortedWith(ORDER)
+
+    fun cacheMjpeg(cameraIndex: Int, sizes: List<Pair<Int, Int>>) {
+        if (sizes.isNotEmpty()) mjpegCache[cameraIndex] = sort(sizes)
+    }
+
+    fun cachedMjpeg(cameraIndex: Int): List<Pair<Int, Int>>? = mjpegCache[cameraIndex]
+}
+
 internal data class AvcStreamConfig(
     val sps: ByteArray,
     val pps: ByteArray,
