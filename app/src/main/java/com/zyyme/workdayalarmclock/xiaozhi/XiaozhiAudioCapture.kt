@@ -18,7 +18,6 @@ class XiaozhiAudioCapture(
     private val onPacket: (ByteArray) -> Unit,
     private val onLevel: (Double) -> Unit = {},
     private val onError: (String) -> Unit = {},
-    private val onRecordingChanged: (Boolean) -> Unit = {},
     private val log: (String) -> Unit = {}
 ) {
 
@@ -86,7 +85,6 @@ class XiaozhiAudioCapture(
             return false
         }
         recording = true
-        onRecordingChanged(true)
         thread = Thread({ loop(recorder) }, "xiaozhi-capture").apply { start() }
         return true
     }
@@ -94,7 +92,6 @@ class XiaozhiAudioCapture(
     fun stop() {
         if (!running.getAndSet(false)) return
         recording = false
-        onRecordingChanged(false)
         try {
             record?.stop()
         } catch (ignored: Exception) {

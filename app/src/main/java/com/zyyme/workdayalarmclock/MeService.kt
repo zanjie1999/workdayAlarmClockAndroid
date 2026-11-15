@@ -1558,7 +1558,7 @@ class MeService : Service() {
             mediaPlayer.start()
             playerState = PlayerState.PLAYING
             playWhenReady = true
-            // 小智正在录音时，中途起播的新歌也要立刻压到 duck 音量
+            // 小智会话中，中途起播的新歌也要立刻压到 duck 音量
             if (voiceDuckActive) {
                 try {
                     mediaPlayer.setVolume(VOICE_DUCK_VOLUME, VOICE_DUCK_VOLUME)
@@ -1648,7 +1648,8 @@ class MeService : Service() {
     fun isMediaIdle(): Boolean = isStop
 
     /**
-     * 录音期间压低音乐音量（等同 AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK 的处理），停止录音即还原。
+     * 小智会话期间压低音乐音量（等同 AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK 的处理），
+     * 从开始对话一直压到会话结束（WS 断开）才还原。
      * 刻意不做"拦截 Go 起播"：它想播就播，只是这段时间声音小一点。
      */
     fun setVoiceDuck(on: Boolean) {

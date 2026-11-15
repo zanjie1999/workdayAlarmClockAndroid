@@ -249,6 +249,8 @@ object XiaozhiAssistant {
         sessionActive = true
         reconnectCount = 0
         turnLead.setLength(0)
+        // 整个会话期间都把音乐压低（等同"丢掉焦点"），直到会话结束/断线才还原
+        host?.setVoiceDuck(true)
         stateMachine.reset()
         dispatch(XiaozhiStateMachine.Event.Start)
         resolveEndpointAndConnect()
@@ -289,6 +291,7 @@ object XiaozhiAssistant {
         player = null
         closeTransport()
         XiaozhiCaption.clear()
+        host?.setVoiceDuck(false)
         host?.releaseMicrophone()
         sendAudio = false
     }
@@ -618,7 +621,6 @@ object XiaozhiAssistant {
             onPacket = { packet -> if (sendAudio) transport?.sendBinary(packet) },
             onLevel = { rms -> onVoiceLevel(rms) },
             onError = { message -> post { failSession(message) } },
-            onRecordingChanged = { recording -> host?.setVoiceDuck(recording) },
             log = { message -> log(message) }
         )
         if (created.start()) {
@@ -640,7 +642,6 @@ object XiaozhiAssistant {
             current.stop()
             log("停止录音")
         }
-        host?.setVoiceDuck(false)
     }
 
     private fun onVoiceLevel(rms: Double) {

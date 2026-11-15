@@ -39,10 +39,10 @@ class XiaozhiStateMachine(
     }
 
     sealed class SideEffect {
-        /** 上行录音开始（同时触发宿主 ducking） */
+        /** 上行录音开始 */
         object StartCapture : SideEffect()
 
-        /** 上行录音停止（同时解除 ducking） */
+        /** 上行录音停止 */
         object StopCapture : SideEffect()
 
         object SendListenStart : SideEffect()
