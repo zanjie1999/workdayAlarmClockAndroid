@@ -66,9 +66,9 @@ Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPos
 :: H.264（使用dxgi采集第2个显示器也就是output_idx=1）
 ffmpeg -f lavfi -i "ddagrab=output_idx=1:framerate=60:draw_mouse=1" -vf "hwdownload,format=bgra,format=yuv420p" -c:v libx264 -preset ultrafast -tune zerolatency -bf 0 -g 60 -profile:v high -x264-params aud=1 -f h264 - | curl.exe -T - "http://192.168.2.217:8880/fb264"
 :: H.265（需要设备有 HEVC 解码器）
-ffmpeg -f lavfi -i "ddagrab=output_idx=1:framerate=60:draw_mouse=1" -vf "hwdownload,format=bgra,format=yuv420p" -c:v libx265 -preset ultrafast -tune zerolatency -bf 0 -g 60 -profile:v main -x265-params aud=1 -f hevc - | curl.exe -T - "http://192.168.2.217:8880/fb265"
+ffmpeg -f lavfi -i "ddagrab=output_idx=1:framerate=60:draw_mouse=1" -vf "hwdownload,format=bgra,format=yuv420p" -c:v libx265 -preset ultrafast -tune zerolatency -bf 0 -g 60 -profile:v mn -x265-params aud=1 -f hevc - | curl.exe -T - "http://192.168.2.217:8880/fb265"
 :: h265 nvenc 1280 表现跟咩moonlight差不多了
-ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=60:draw_mouse=1" -vf "hwdownload,format=bgra,scale=1280:-2,format=yuv420p" -c:v hevc_nvenc -preset p1 -tune ull -zerolatency 1 -delay 0 -bf 0 -g 60 -profile:v main -aud 1 -f hevc - | curl.exe -T - "http://192.168.1.152:8880/fb265"
+ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=60:draw_mouse=1" -vf "hwdownload,format=bgra,scale=1280:-2,format=yuv420p" -c:v hevc_nvenc -preset p1 -tune ull -zerolatency 1 -delay 0 -bf 0 -g 60 -profile:v mn -aud 1 -f hevc - | curl.exe -T - "http://192.168.1.152:8880/fb265"
 :: 如果你要配开机启动，那就这样写，cmd是程序，后面是参数，在新窗口打开那就前面这样写start "名字" cmd...
 cmd /c "ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,scale=1280:-2,format=yuv420p" -c:v hevc_nvenc -preset p1 -tune ull -zerolatency 1 -delay 0 -bf 0 -g 60 -profile:v main -aud 1 -f hevc - | curl.exe -T - "http://192.168.1.152:8880/fb265""
 ```
@@ -133,7 +133,8 @@ http://设备IP:8880/abc/1/1
 
 ### 小智AI
 稍微折腾了下也是让小智AI在Android4.0跑起来了，强行兼容官方Api了属实是  
-双击确认键开始对话，大屏时钟模式单击中间空白处开始对话，小屏时钟模式在全屏后双击时间的区域开始对话；说话中再点一次可打断
+<img width="448" height="782" alt="image" src="https://github.com/user-attachments/assets/0b0f6402-30a1-492e-aebc-96ec1de1629a" />  
+双击确认键开始对话，大屏时钟模式单击中间空白处开始对话，小屏时钟模式在全屏后双击时间的区域开始对话，说话中再点一次可打断  
 如果开启了“说完自动继续听”那只能等超时或者主动让他退下来结束对话  
 
 
