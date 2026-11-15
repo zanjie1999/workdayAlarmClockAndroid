@@ -1059,12 +1059,25 @@ internal class CameraHttpServer(
         }
         val body = JSONObject()
             .put("camera", camera)
+            .put("cameras", cameraCount())
             .put("avcSupported", avc.first)
             .put("avc", levelsJson(avc.second))
             .put("mjpeg", levelsJson(mjpegLevels))
             .toString()
             .toByteArray(Charsets.UTF_8)
         writeJsonResponse(socket, 200, "OK", body)
+    }
+
+    /** 摄像头总数：AVC 侧含逻辑相机背后的物理镜头（getPhysicalCameraIds），比 Camera1 的 2 个更全。 */
+    private fun cameraCount(): Int {
+        val avcCount = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) 0
+        else AvcCameraPipeline.cameraCount(appContext)
+        val mjpegCount = try {
+            Camera.getNumberOfCameras()
+        } catch (_: Exception) {
+            0
+        }
+        return maxOf(avcCount, mjpegCount)
     }
 
     private fun levelsJson(levels: List<Pair<Int, Int>>): JSONArray {
@@ -1697,6 +1710,7 @@ async function loadCameraInfo(){
     const result=await response.json();
     if(controller.signal.aborted)return;
     cameraInfo=result;
+    if(Number.isInteger(result.cameras)&&result.cameras>=1)document.getElementById('camera').max=String(result.cameras);
     if(result.avcSupported!==true||!result.avc||!result.avc.length)forceMjpeg.checked=true;
     fillResolutionOptions();
   }catch(error){}
