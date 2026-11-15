@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- desk “置顶应用”小组件里的一个应用：图标和名称区域都是固定大小 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="72dp"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:focusable="false"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="4dp">
+
+    <ImageView
+        android:id="@+id/desk_pinned_app_icon"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter" />
+
+    <!-- 名称区域固定 64dp x 20dp，只显示一行，超出的用省略号 -->
+    <TextView
+        android:id="@+id/desk_pinned_app_name"
+        android:layout_width="64dp"
+        android:layout_height="20dp"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:shadowColor="#CC000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+        android:singleLine="true"
+        android:textColor="@color/white"
+        android:textSize="12sp" />
+
+</LinearLayout>
