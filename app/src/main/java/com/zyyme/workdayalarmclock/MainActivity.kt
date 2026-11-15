@@ -1132,7 +1132,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(enableSwitch)
 
         container.addView(TextView(this).apply {
-            text = "双击确认键开始对话（小屏大屏一样），大屏也可以点中间空白处；说话中再触发一次可打断。"
+            text = "双击确认键开始对话，大屏时钟点中间空白处，小屏双击时间；说话中再点一次可打断"
             textSize = 12f
             setPadding(0, dp(2), 0, dp(6))
         })
