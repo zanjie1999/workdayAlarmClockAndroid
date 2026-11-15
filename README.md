@@ -81,14 +81,19 @@ ffmpeg -re -f avfoundation -framerate 30 -capture_cursor 1 -i "4:none" -vf "fps=
 至于上位机？Windows的硬件编码太复杂了，我不会写，所以没有hhhh  
 
 ### IP摄像头服务
+
+<img width="700" alt="image" src="https://github.com/user-attachments/assets/e4d3c847-76ac-42b3-b210-e85bd7c3ef39" />
+
 在右上角菜单中打开“IP摄像头”，第一次开启时可授权摄像头和麦克风权限。只授权其中一个也可以启动服务，未授权的设备不会输出对应的流。服务监听 `8880` 端口，摄像头编号从 `1` 开始  
 可以在“摄像头密码”设置访问密码，留空则没有密码  
-直接访问下面的地址可以打开播放页，并独立选择视频和声音：  
+直接访问下面的地址可以打开播放页，并独立选择视频和声音，勾选MJPG时将强制使用MJPG模式，更高带宽占用，更大分辨率：  
 ```
 http://设备IP:8880/
 ```
 低延迟直播，秒杀市面上已有的软件，依然兼容到android4.0，突破兼容下限  
-支持部分多摄像头的手机（有些是完全不暴露的是私有的这个没办法）
+支持部分多摄像头的手机（有些是完全不暴露的是私有的这个没办法）  
+**断开后摄像头会保活15秒，便于熄屏后OBS重连，所以断开后看到升降摄像头没有马上收回去，是正常的**  
+可以直接将显示的蓝色地址复制，在OBS添加一个“媒体”，将画面放入OBS中
 
 播放页中填写“摄像头密码”和编号，点击“播放”即可观看 H.264 视频。也可以直接访问 MJPEG 流：  
 ```
@@ -327,6 +332,10 @@ adb shell settings put global wifi_suspend_optimizations_enabled 0
 在控制台右上角菜单开启IP摄像头功能后，用浏览器访问设备的8880端口即可查看摄像头画面和控制云台  
 可以通过 `/bgcam/status` 接口获取传感器状态  
 <img width="500" alt="image" src="https://github.com/user-attachments/assets/13ec963d-b030-49d5-9f0a-723ac36bb65a" />
+
+### Apme安培儿童智能机器人（白菜卖的会走路的机器人）
+逆向了电机控制，于是成了带视频的遥控车？  
+<img width="500" alt="image" src="https://github.com/user-attachments/assets/4a8af440-5a05-4562-ae04-7498172416c0" />
 
 
 ### 协议 咩License
