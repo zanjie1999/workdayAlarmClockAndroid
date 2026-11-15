@@ -37,6 +37,7 @@ import androidx.core.net.toUri
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.notification.MeNotificationListenerService
+import com.zyyme.workdayalarmclock.xiaozhi.DoubleClickGate
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiAssistant
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiDeviceInfo
 import java.net.Inet4Address
@@ -94,8 +95,17 @@ class MainActivity : AppCompatActivity() {
         if (dpadPassthrough || dpadCenterLongPressTriggered) return@Runnable
         dpadCenterLongPressTriggered = true
         dpadPassthrough = true
+        // 进菜单就别再挂着双击/待执行单击的状态
+        xiaozhiClickGate.reset()
+        pendingCenterClickRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingCenterClickRunnable = null
         showSettingsMenu(findViewById(R.id.iconMenu))
     }
+
+    // 小智：DPAD Center 双击唤醒（长按仍是设置菜单）；菜单打开时不参与
+    private val xiaozhiClickGate = DoubleClickGate(300L)
+    private var xiaozhiPressConsumed = false
+    private var pendingCenterClickRunnable: Runnable? = null
 
     private val scrollLogToBottom = Runnable {
         if (isActivityVisible && ::logScrollView.isInitialized) {
@@ -471,6 +481,7 @@ class MainActivity : AppCompatActivity() {
             // 长按 Center 进入菜单后，返回时恢复应用自身的按键劫持。
             dpadPassthrough = false
             dpadCenterLongPressTriggered = false
+            xiaozhiClickGate.reset()
         }
         settingsPopupMenu = popupMenu
         return popupMenu
@@ -1318,17 +1329,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(keyEvent: KeyEvent?): Boolean {
+        // 菜单打开时按键不劫持：原样交给系统，也别喂给双击判定
         if (dpadPassthrough) {
             if (keyEvent?.action == KeyEvent.ACTION_UP && keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
                 dpadCenterLongPressTriggered = false
             }
             return super.dispatchKeyEvent(keyEvent)
         }
+        val xiaozhiEnabled = MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)
         // 方便按键机操作
         if (findViewById<EditText>(R.id.shellInput).text.toString() == "") {
             when (keyEvent?.action) {
                 KeyEvent.ACTION_DOWN -> {
                     if (keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                        // 小智启用时先判双击：第二击直接唤醒，不排菜单
+                        if (keyEvent.repeatCount == 0 && xiaozhiEnabled &&
+                            xiaozhiClickGate.onDown(
+                                System.currentTimeMillis(),
+                                true
+                            ) == DoubleClickGate.DownResult.DOUBLE
+                        ) {
+                            mainHandler.removeCallbacks(dpadCenterLongPressRunnable)
+                            dpadCenterLongPressTriggered = false
+                            xiaozhiPressConsumed = true
+                            print2LogView("双击 唤醒小智")
+                            XiaozhiAssistant.start()
+                            return true
+                        }
                         if (!dpadCenterLongPressTriggered) {
                             mainHandler.postDelayed(
                                 dpadCenterLongPressRunnable,
@@ -1343,10 +1370,31 @@ class MainActivity : AppCompatActivity() {
                 }
                 KeyEvent.ACTION_UP -> {
                     if (keyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                        if (xiaozhiPressConsumed) {
+                            xiaozhiPressConsumed = false
+                            return true
+                        }
                         mainHandler.removeCallbacks(dpadCenterLongPressRunnable)
                         val wasLongPress = dpadCenterLongPressTriggered
                         dpadCenterLongPressTriggered = false
                         if (wasLongPress) return true
+                        if (xiaozhiEnabled) {
+                            // 启用双击后单击要等一个双击窗口，确认不是双击再执行
+                            when (xiaozhiClickGate.onUp(System.currentTimeMillis(), true, false)) {
+                                DoubleClickGate.UpResult.DEFER -> {
+                                    val runnable = Runnable {
+                                        pendingCenterClickRunnable = null
+                                        if (xiaozhiClickGate.consumeSingle()) {
+                                            MeService.me?.keyHandleAction(KeyEvent.KEYCODE_DPAD_CENTER)
+                                        }
+                                    }
+                                    pendingCenterClickRunnable = runnable
+                                    mainHandler.postDelayed(runnable, 300L)
+                                    return true
+                                }
+                                else -> return true
+                            }
+                        }
                         if (MeService.me?.keyHandleAction(KeyEvent.KEYCODE_DPAD_CENTER) == true) {
                             return true
                         }
