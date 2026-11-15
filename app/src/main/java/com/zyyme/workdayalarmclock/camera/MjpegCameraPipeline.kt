@@ -65,6 +65,9 @@ internal class MjpegCameraPipeline(
     override val description: String
         get() = "MJPEG ${frameWidth}x${frameHeight} ${selectedFps}fps"
 
+    override val isAlive: Boolean
+        get() = running.get()
+
     override fun start(): Boolean {
         if (!running.compareAndSet(false, true)) return true
 

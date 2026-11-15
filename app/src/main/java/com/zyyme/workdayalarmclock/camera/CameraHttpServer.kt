@@ -16,6 +16,8 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.PowerManager
 import android.util.Log
 import android.util.DisplayMetrics
@@ -58,6 +60,9 @@ internal class CameraHttpServer(
         private const val MAX_JPEG_FRAME_BYTES = 16 * 1024 * 1024
         private val HTTP_CHARSET: Charset = Charset.forName("US-ASCII")
         private val HTML_CHARSET: Charset = Charset.forName("UTF-8")
+
+        /** 最后一路客户端断开后相机继续保持的时长，OBS自动重连默认10秒，这里给到15秒 */
+        private const val CAMERA_WARM_KEEP_MS = 15_000L
     }
 
     private val appContext = context.applicationContext
@@ -76,6 +81,10 @@ internal class CameraHttpServer(
     private var acceptThread: Thread? = null
     @Volatile private var activeFramebufferSocket: Socket? = null
     private var activePipeline: CameraStreamPipeline? = null
+    // 独立线程：保持到期后的 stop() 可能要几百毫秒，不能放主线程。
+    private var releaseThread: HandlerThread? = null
+    @Volatile private var releaseHandler: Handler? = null
+    @Volatile private var pendingPipelineRelease: Runnable? = null
     private var activeAudioPipeline: AacAudioPipeline? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -144,10 +153,14 @@ internal class CameraHttpServer(
             if (socket != null) framebufferStreamState(false)
         }
         FramebufferVideoRenderer.stop()
+        cancelPendingPipelineRelease()
         closeActiveSession()
         closeActiveAudioSession()
         acceptThread?.interrupt()
         acceptThread = null
+        releaseThread?.quit()
+        releaseThread = null
+        releaseHandler = null
         log("摄像头HTTP服务已停止")
     }
 
@@ -1200,9 +1213,9 @@ internal class CameraHttpServer(
     ): CameraStreamPipeline? {
         synchronized(sessionChangeLock) {
             if (!running.get()) return null
-
+            cancelPendingPipelineRelease()
             val current = synchronized(stateLock) { activePipeline }
-            if (current != null && current.key == key) {
+            if (current != null && current.key == key && current.isAlive) {
                 synchronized(stateLock) { clients[socket] = current }
                 return current
             }
@@ -1314,16 +1327,50 @@ internal class CameraHttpServer(
             synchronized(stateLock) {
                 clients.remove(socket)
                 if (activePipeline === pipeline && clients.values.none { it === pipeline }) {
-                    activePipeline = null
                     shouldStop = true
                 }
             }
-            if (shouldStop) {
-                pipeline.stop()
-                releaseStreamLocks()
-                brightness.onIpCameraStopped()
+            // 不立刻释放相机：保持窗口内重连直接复用同一个 pipeline，不需要重新 open。
+            if (shouldStop) schedulePipelineRelease(pipeline)
+        }
+    }
+
+    private fun schedulePipelineRelease(pipeline: CameraStreamPipeline) {
+        cancelPendingPipelineRelease()
+        val task = Runnable {
+            synchronized(sessionChangeLock) {
+                val idle = synchronized(stateLock) {
+                    activePipeline === pipeline && clients.values.none { it === pipeline }
+                }
+                if (idle) {
+                    synchronized(stateLock) {
+                        if (activePipeline === pipeline) activePipeline = null
+                    }
+                    log("相机保持结束，释放摄像头")
+                    pipeline.stop()
+                    releaseStreamLocks()
+                    brightness.onIpCameraStopped()
+                }
             }
         }
+        pendingPipelineRelease = task
+        ensureReleaseHandler().postDelayed(task, CAMERA_WARM_KEEP_MS)
+    }
+
+    private fun ensureReleaseHandler(): Handler {
+        val existing = releaseHandler
+        if (existing != null) return existing
+        val thread = HandlerThread("camera-release").apply { start() }
+        val handler = Handler(thread.looper)
+        releaseThread = thread
+        releaseHandler = handler
+        return handler
+    }
+
+    private fun cancelPendingPipelineRelease() {
+        val task = pendingPipelineRelease ?: return
+        pendingPipelineRelease = null
+        releaseHandler?.removeCallbacks(task)
     }
 
     private fun closeActiveSession() {

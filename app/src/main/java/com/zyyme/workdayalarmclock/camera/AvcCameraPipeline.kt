@@ -184,6 +184,9 @@ internal class AvcCameraPipeline(
     override val description: String
         get() = "H.264 ${selectedWidth}x${selectedHeight} ${selectedFps}fps"
 
+    override val isAlive: Boolean
+        get() = running.get()
+
     @SuppressLint("MissingPermission")
     override fun start(): Boolean {
         if (!running.compareAndSet(false, true)) return true

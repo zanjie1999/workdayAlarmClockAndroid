@@ -53,6 +53,9 @@ internal interface CameraStreamPipeline {
     val key: CameraStreamKey
     val description: String
 
+    /** 管线是否还在工作。相机被释放或流异常断开后为 false，此时不能复用。 */
+    val isAlive: Boolean get() = true
+
     fun start(): Boolean
     fun stop()
     fun awaitPacket(afterSequence: Long): CameraStreamPacket?
