@@ -154,6 +154,12 @@ object UnsafeHttps {
             connection.hostnameVerifier = hostnameVerifier
         }
     }
+
+    /**
+     * 给 WebSocket 之类需要自己建 socket 的地方用。
+     * 建出来的 socket 已打开全部可用 TLS 协议并补齐 GCM 套件。
+     */
+    fun socketFactory(): SSLSocketFactory = sslSocketFactory
 }
 
 /**

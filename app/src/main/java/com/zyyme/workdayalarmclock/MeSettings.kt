@@ -52,6 +52,22 @@ object MeSettings {
     const val KEY_DESK_SLOT_BOTTOM_RIGHT = "desk_slot_bottom_right"
     const val KEY_DESK_LYRICS_POSITION = "desk_lyrics_position"
 
+    // 小智AI 语音对话
+    const val KEY_XIAOZHI = "xiaozhi"
+    const val KEY_XIAOZHI_OTA_URL = "xiaozhi_ota_url"
+    const val KEY_XIAOZHI_WS_URL = "xiaozhi_ws_url"
+    const val KEY_XIAOZHI_TOKEN = "xiaozhi_token"
+    const val KEY_XIAOZHI_DEVICE_MAC = "xiaozhi_device_mac"
+    const val KEY_XIAOZHI_CLIENT_ID = "xiaozhi_client_id"
+    const val KEY_XIAOZHI_MODE = "xiaozhi_mode"
+    const val KEY_XIAOZHI_AUTO_CONTINUE = "xiaozhi_auto_continue"
+    const val KEY_XIAOZHI_SILENCE_TIMEOUT = "xiaozhi_silence_timeout"
+
+    const val DEFAULT_XIAOZHI_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"
+    const val DEFAULT_XIAOZHI_WS_URL = "wss://api.tenclass.net/xiaozhi/v1/"
+    const val DEFAULT_XIAOZHI_MODE = "auto"
+    const val DEFAULT_XIAOZHI_SILENCE_TIMEOUT = 8
+
     private fun preferences(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -176,4 +192,63 @@ object MeSettings {
         }
         editor.apply()
     }
+
+    // ---- 小智AI ----
+
+    private fun getTrimmed(context: Context, key: String, def: String = ""): String {
+        return preferences(context).getString(key, def).orEmpty().trim()
+    }
+
+    private fun putTrimmed(context: Context, key: String, value: String) {
+        val cleanValue = value.trim()
+        val editor = preferences(context).edit()
+        if (cleanValue.isEmpty()) {
+            editor.remove(key)
+        } else {
+            editor.putString(key, cleanValue)
+        }
+        editor.apply()
+    }
+
+    fun getXiaozhiOtaUrl(context: Context): String =
+        getTrimmed(context, KEY_XIAOZHI_OTA_URL, DEFAULT_XIAOZHI_OTA_URL)
+            .ifEmpty { DEFAULT_XIAOZHI_OTA_URL }
+
+    fun setXiaozhiOtaUrl(context: Context, url: String) = putTrimmed(context, KEY_XIAOZHI_OTA_URL, url)
+
+    fun getXiaozhiWsUrl(context: Context): String =
+        getTrimmed(context, KEY_XIAOZHI_WS_URL, DEFAULT_XIAOZHI_WS_URL)
+            .ifEmpty { DEFAULT_XIAOZHI_WS_URL }
+
+    fun setXiaozhiWsUrl(context: Context, url: String) = putTrimmed(context, KEY_XIAOZHI_WS_URL, url)
+
+    fun getXiaozhiToken(context: Context): String = getTrimmed(context, KEY_XIAOZHI_TOKEN)
+
+    fun setXiaozhiToken(context: Context, token: String) = putTrimmed(context, KEY_XIAOZHI_TOKEN, token)
+
+    fun getXiaozhiDeviceMac(context: Context): String = getTrimmed(context, KEY_XIAOZHI_DEVICE_MAC)
+
+    fun setXiaozhiDeviceMac(context: Context, mac: String) = putTrimmed(context, KEY_XIAOZHI_DEVICE_MAC, mac)
+
+    fun getXiaozhiClientId(context: Context): String = getTrimmed(context, KEY_XIAOZHI_CLIENT_ID)
+
+    fun setXiaozhiClientId(context: Context, clientId: String) =
+        putTrimmed(context, KEY_XIAOZHI_CLIENT_ID, clientId)
+
+    fun getXiaozhiMode(context: Context): String =
+        getTrimmed(context, KEY_XIAOZHI_MODE, DEFAULT_XIAOZHI_MODE).ifEmpty { DEFAULT_XIAOZHI_MODE }
+
+    fun setXiaozhiMode(context: Context, mode: String) = putTrimmed(context, KEY_XIAOZHI_MODE, mode)
+
+    fun isXiaozhiAutoContinue(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_AUTO_CONTINUE, true)
+
+    fun setXiaozhiAutoContinue(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_AUTO_CONTINUE, enabled)
+
+    fun getXiaozhiSilenceTimeout(context: Context): Int =
+        preferences(context).getInt(KEY_XIAOZHI_SILENCE_TIMEOUT, DEFAULT_XIAOZHI_SILENCE_TIMEOUT)
+
+    fun setXiaozhiSilenceTimeout(context: Context, seconds: Int) =
+        setInt(context, KEY_XIAOZHI_SILENCE_TIMEOUT, seconds.coerceIn(2, 60))
 }

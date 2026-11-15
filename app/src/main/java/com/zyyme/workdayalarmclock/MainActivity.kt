@@ -18,6 +18,7 @@ import android.view.KeyEvent
 import android.view.Menu
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
@@ -36,6 +37,8 @@ import androidx.core.net.toUri
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.notification.MeNotificationListenerService
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiAssistant
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiDeviceInfo
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.concurrent.atomic.AtomicBoolean
@@ -62,9 +65,11 @@ class MainActivity : AppCompatActivity() {
         private const val OPEN_DESK = 14
         private const val TOGGLE_COMPUTER_SPEAKER = 15
         private const val MENU_CHECK_UPDATE = 16
+        private const val CONFIG_XIAOZHI = 17
         private const val MENU_SETTING_START = 100
         private const val REQUEST_MEDIA_SERVER_PERMISSIONS = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
+        private const val REQUEST_XIAOZHI_PERMISSIONS = 104
         private const val LOG_REFRESH_DELAY_MILLIS = 250L
         private const val DPAD_CENTER_LONG_PRESS_DELAY_MS = 900L
     }
@@ -81,6 +86,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playButton: ImageView
     private var settingsPopupMenu: PopupMenu? = null
     private var openAmbientDialogAfterPermission = false
+    /** 等麦克风权限的开关，授权回来后自动置为开 */
+    private var pendingXiaozhiEnableSwitch: Switch? = null
     private var dpadPassthrough = false
     private var dpadCenterLongPressTriggered = false
     private val dpadCenterLongPressRunnable = Runnable {
@@ -342,6 +349,8 @@ class MainActivity : AppCompatActivity() {
             MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)
         popupMenu.menu.findItem(TOGGLE_HOME_LAUNCHER)?.isChecked =
             isHomeLauncherEnabled()
+        popupMenu.menu.findItem(CONFIG_XIAOZHI)?.isChecked =
+            MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)
         popupMenu.show()    }
 
     private fun getOrCreateSettingsMenu(anchor: ImageView): PopupMenu {
@@ -376,7 +385,10 @@ class MainActivity : AppCompatActivity() {
         popupMenu.menu.add(Menu.NONE, CONFIG_CAMERA_AUTO_BRIGHTNESS, MENU_SETTING_START + settingsMenuItems.size + 7, "摄像头自动亮度").apply {
             isCheckable = true
         }
-        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 8, "开发者选项")
+        popupMenu.menu.add(Menu.NONE, CONFIG_XIAOZHI, MENU_SETTING_START + settingsMenuItems.size + 8, "小智AI").apply {
+            isCheckable = true
+        }
+        popupMenu.menu.add(Menu.NONE, OPEN_DEVELOPER_OPTIONS, MENU_SETTING_START + settingsMenuItems.size + 9, "开发者选项")
 
         popupMenu.setOnMenuItemClickListener { menuItem ->
             if (menuItem.itemId == MENU_EXIT) {
@@ -429,6 +441,11 @@ class MainActivity : AppCompatActivity() {
                 return@setOnMenuItemClickListener true
             } else if (menuItem.itemId == OPEN_DEVELOPER_OPTIONS) {
                 openDeveloperOptions()
+                return@setOnMenuItemClickListener true
+            } else if (menuItem.itemId == CONFIG_XIAOZHI) {
+                // 勾选只是回显，点一下打开设置弹窗，不直接切换开关
+                menuItem.isChecked = MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)
+                showXiaozhiSettingsDialog()
                 return@setOnMenuItemClickListener true
             }
 
@@ -591,6 +608,20 @@ class MainActivity : AppCompatActivity() {
         settingsPopupMenu?.menu?.findItem(TOGGLE_CAMERA_SERVER)?.isChecked = true
         MeService.me?.syncCameraServerSetting()
     }
+
+    /** 小智总开关（设置弹窗里的那一个）：关掉时顺手结束正在进行的会话 */
+    private fun applyXiaozhiEnabled(enabled: Boolean) {
+        MeSettings.setEnabled(this, MeSettings.KEY_XIAOZHI, enabled)
+        if (!enabled) XiaozhiAssistant.stop("设置里关闭")
+        MeService.me?.syncXiaozhiSetting()
+        XiaozhiAssistant.reloadConfig()
+        settingsPopupMenu?.menu?.findItem(CONFIG_XIAOZHI)?.isChecked = enabled
+    }
+
+    private fun hasRecordAudioPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
 
     private fun showCameraPasswordDialog() {
         val input = EditText(this).apply {
@@ -877,6 +908,19 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_XIAOZHI_PERMISSIONS) {
+            val granted = hasRecordAudioPermission()
+            val pendingSwitch = pendingXiaozhiEnableSwitch
+            pendingXiaozhiEnableSwitch = null
+            if (pendingSwitch != null) {
+                // 置 true 会回调监听器，由 applyXiaozhiEnabled 落库
+                pendingSwitch.isChecked = granted
+            }
+            if (!granted) {
+                Toast.makeText(this, "麦克风权限未授权，小智无法使用", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         if (requestCode == REQUEST_AMBIENT_CAMERA_PERMISSION) {
             val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             val openDialog = openAmbientDialogAfterPermission
@@ -1033,6 +1077,162 @@ class MainActivity : AppCompatActivity() {
                 MeService.me?.refreshTodoNow()
             }
             .show()
+    }
+
+    private fun showXiaozhiSettingsDialog() {
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+
+        fun addLabel(text: String, top: Int = 12) {
+            container.addView(TextView(this).apply {
+                this.text = text
+                textSize = 14f
+                setPadding(0, dp(top), 0, dp(2))
+            })
+        }
+
+        fun addInput(value: String, password: Boolean = false): EditText {
+            val input = EditText(this).apply {
+                setSingleLine(true)
+                inputType = if (password) {
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                } else {
+                    InputType.TYPE_CLASS_TEXT
+                }
+                setText(value)
+                setSelection(text.length)
+            }
+            container.addView(input)
+            return input
+        }
+
+        // 总开关：没有麦克风权限时先申请，授权回来再自动打开
+        val enableSwitch = Switch(this).apply {
+            text = "启用小智AI"
+            isChecked = MeSettings.isEnabled(this@MainActivity, MeSettings.KEY_XIAOZHI)
+        }
+        enableSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked && !hasRecordAudioPermission()) {
+                pendingXiaozhiEnableSwitch = enableSwitch
+                enableSwitch.isChecked = false
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.RECORD_AUDIO),
+                    REQUEST_XIAOZHI_PERMISSIONS
+                )
+                return@setOnCheckedChangeListener
+            }
+            applyXiaozhiEnabled(checked)
+        }
+        container.addView(enableSwitch)
+
+        container.addView(TextView(this).apply {
+            text = "双击确认键开始对话（小屏大屏一样），大屏也可以点中间空白处；说话中再触发一次可打断。"
+            textSize = 12f
+            setPadding(0, dp(2), 0, dp(6))
+        })
+
+        // 激活：状态直接回显在按钮上
+        val activationButton = Button(this).apply {
+            text = XiaozhiAssistant.activationLabel
+            setOnClickListener {
+                XiaozhiAssistant.requestActivation()
+                this.text = XiaozhiAssistant.activationLabel
+            }
+        }
+        container.addView(activationButton)
+
+        // 设备ID：服务端靠它认设备
+        addLabel("设备ID（服务端靠它认设备，一般不用改）")
+        val deviceIdInput = addInput(XiaozhiDeviceInfo.deviceMac(this@MainActivity))
+
+        container.addView(Button(this).apply {
+            text = "随机生成一个"
+            setOnClickListener {
+                deviceIdInput.setText(XiaozhiDeviceInfo.newMac())
+                deviceIdInput.setSelection(deviceIdInput.text.length)
+                Toast.makeText(
+                    this@MainActivity,
+                    "已填新设备ID，保存后需要到 xiaozhi.me 重新绑定",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        })
+
+        addLabel("静默多少秒后结束会话")
+        val silenceInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setText(MeSettings.getXiaozhiSilenceTimeout(this@MainActivity).toString())
+        }
+        container.addView(silenceInput)
+
+        val autoContinueSwitch = Switch(this).apply {
+            text = "说完自动继续听"
+            isChecked = MeSettings.isXiaozhiAutoContinue(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        container.addView(autoContinueSwitch)
+
+        // 只有自建服务器才需要改这两项
+        addLabel("WebSocket 地址（默认官方，自建才改）")
+        val wsInput = addInput(MeSettings.getXiaozhiWsUrl(this))
+
+        addLabel("Token（填了就直接连，不再走官方激活）")
+        val tokenInput = addInput(MeSettings.getXiaozhiToken(this), password = true)
+
+        val scroll = ScrollView(this).apply { addView(container) }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("小智AI")
+            .setView(scroll)
+            .setNegativeButton("关闭", null)
+            .setPositiveButton("保存") { _, _ ->
+                saveXiaozhiSettings(
+                    deviceIdInput, wsInput, tokenInput, silenceInput, autoContinueSwitch
+                )
+                XiaozhiAssistant.reloadConfig()
+                MeService.me?.syncXiaozhiSetting()
+                Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+            }
+            .create()
+
+        // 激活要走 OTA + 轮询，按钮文字得跟着刷
+        val activationRefresher = object : Runnable {
+            override fun run() {
+                activationButton.text = XiaozhiAssistant.activationLabel
+                mainHandler.postDelayed(this, 800L)
+            }
+        }
+        dialog.setOnShowListener { mainHandler.postDelayed(activationRefresher, 800L) }
+        dialog.setOnDismissListener { mainHandler.removeCallbacks(activationRefresher) }
+        dialog.show()
+    }
+
+    private fun saveXiaozhiSettings(
+        deviceIdInput: EditText,
+        wsInput: EditText,
+        tokenInput: EditText,
+        silenceInput: EditText,
+        autoContinueSwitch: Switch
+    ) {
+        // 清空输入框视为重新随机一个，避免存空值后每次启动都变
+        MeSettings.setXiaozhiDeviceMac(
+            this,
+            XiaozhiDeviceInfo.normalizeMac(deviceIdInput.text.toString())
+        )
+        MeSettings.setXiaozhiWsUrl(this, wsInput.text.toString())
+        MeSettings.setXiaozhiToken(this, tokenInput.text.toString())
+        MeSettings.setXiaozhiSilenceTimeout(
+            this,
+            silenceInput.text.toString().toIntOrNull() ?: MeSettings.DEFAULT_XIAOZHI_SILENCE_TIMEOUT
+        )
+        MeSettings.setXiaozhiAutoContinue(this, autoContinueSwitch.isChecked)
     }
 
     private fun requestNotificationListenerPermissionIfNeeded() {

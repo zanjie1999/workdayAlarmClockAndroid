@@ -56,6 +56,9 @@ import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.camera.FramebufferBitmapReaper
 import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
 import com.zyyme.workdayalarmclock.camera.FramebufferVideoRenderer
+import com.zyyme.workdayalarmclock.xiaozhi.DoubleClickGate
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiAssistant
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiCaption
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -168,6 +171,21 @@ class DeskActivity : AppCompatActivity() {
         confirmKeyLongPressTriggered = true
         showDeskMenu()
     }
+
+    // 小智：DPAD Center 双击唤醒（长按仍是菜单）
+    private val xiaozhiClickGate = DoubleClickGate(300L)
+    private var xiaozhiPressConsumed = false
+    private var pendingCenterClickRunnable: Runnable? = null
+    private val xiaozhiCaptionListener: () -> Unit = {
+        handler.post {
+            if (XiaozhiCaption.active && loadLyricsPosition() == LYRICS_NONE && ::echoView.isInitialized) {
+                // 用户把歌词条关掉了，退化成信息条显示
+                echoView.text = XiaozhiCaption.text
+            } else {
+                applyLyricsBarText(MeService.me?.getPlaybackPosition())
+            }
+        }
+    }
     private var lyricsRefreshScheduled = false
     private var lyricsEnabled = false
     var alarmMode = false
@@ -213,6 +231,7 @@ class DeskActivity : AppCompatActivity() {
      * 双语歌词在服务解析歌词文本时已经用换行拼接；单语歌词保持原样。
      */
     private fun lyricsBarText(position: Int?): String {
+        if (XiaozhiCaption.active) return XiaozhiCaption.text
         val service = MeService.me ?: return ""
         if (lyricsEnabled && service.hasLyrics()) {
             return service.getCurrentLyric(position).orEmpty()
@@ -224,6 +243,7 @@ class DeskActivity : AppCompatActivity() {
      * 歌词条是否常驻占位：这首歌有歌词（哪怕当前这句没字），或者有天气预警信息。
      */
     private fun lyricsBarWanted(): Boolean {
+        if (XiaozhiCaption.active) return true
         val service = MeService.me ?: return false
         return (lyricsEnabled && service.hasLyrics()) || service.weatherAlText.isNotEmpty()
     }
@@ -359,6 +379,8 @@ class DeskActivity : AppCompatActivity() {
         applyDefaultKeepScreenOn()
         restoreFullscreenAfterTransition()
         AmbientBrightnessController.applyLatestTo(window)
+        XiaozhiCaption.addListener(xiaozhiCaptionListener)
+        if (XiaozhiCaption.active) xiaozhiCaptionListener.invoke()
     }
 
     fun showEcho(message: String) {
@@ -519,6 +541,19 @@ class DeskActivity : AppCompatActivity() {
         val menuTrigger = findViewById<View>(R.id.desk_menu_trigger)
         val menuGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
+
+            /**
+             * 单击屏幕中间这块空白区：小智启用时开始对话（会话中则是打断重听）。
+             *
+             * 用 onSingleTapConfirmed 而不是 onSingleTapUp：后者在双击的第一下也会先回调，
+             * 会和下面的"双击锁屏"打架（锁屏前顺手唤醒一次小智）。
+             * 代价是单击要等双击超时（约 300ms）才生效，正好和硬件键那套一致。
+             */
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                val handled = XiaozhiAssistant.start()
+                if (handled) MeService.me?.print2LogView("单击触发区 唤醒小智")
+                return handled
+            }
 
             override fun onDoubleTap(e: MotionEvent): Boolean {
                 lockScreenIfPermitted()
@@ -1735,6 +1770,19 @@ class DeskActivity : AppCompatActivity() {
             when (event.action) {
                 KeyEvent.ACTION_DOWN -> {
                     if (event.repeatCount == 0 && confirmKeyDownCode == 0) {
+                        // 小智启用时先判双击：第二击直接唤醒，不排菜单也不排队单击
+                        if (MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI) &&
+                            xiaozhiClickGate.onDown(
+                                System.currentTimeMillis(),
+                                true
+                            ) == DoubleClickGate.DownResult.DOUBLE
+                        ) {
+                            resetConfirmKeyLongPress()
+                            xiaozhiPressConsumed = true
+                            MeService.me?.print2LogView("双击 唤醒小智")
+                            XiaozhiAssistant.start()
+                            return true
+                        }
                         confirmKeyDownCode = event.keyCode
                         confirmKeyLongPressTriggered = false
                         handler.postDelayed(
@@ -1749,12 +1797,36 @@ class DeskActivity : AppCompatActivity() {
                     }
                 }
                 KeyEvent.ACTION_UP -> {
+                    if (xiaozhiPressConsumed) {
+                        xiaozhiPressConsumed = false
+                        return true
+                    }
                     if (confirmKeyDownCode == event.keyCode) {
                         handler.removeCallbacks(confirmKeyLongPressRunnable)
                         val wasLongPress = confirmKeyLongPressTriggered
                         resetConfirmKeyLongPress()
                         if (wasLongPress) return true
                         if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                            if (MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)) {
+                                when (xiaozhiClickGate.onUp(
+                                    System.currentTimeMillis(),
+                                    true,
+                                    false
+                                )) {
+                                    DoubleClickGate.UpResult.DEFER -> {
+                                        val runnable = Runnable {
+                                            pendingCenterClickRunnable = null
+                                            if (xiaozhiClickGate.consumeSingle()) {
+                                                MeService.me?.keyHandleAction(KeyEvent.KEYCODE_DPAD_CENTER)
+                                            }
+                                        }
+                                        pendingCenterClickRunnable = runnable
+                                        handler.postDelayed(runnable, 300L)
+                                        return true
+                                    }
+                                    else -> return true
+                                }
+                            }
                             MeService.me?.keyHandleAction(KeyEvent.KEYCODE_DPAD_CENTER)
                             return true
                         }
@@ -1772,6 +1844,9 @@ class DeskActivity : AppCompatActivity() {
 
     private fun resetConfirmKeyLongPress() {
         handler.removeCallbacks(confirmKeyLongPressRunnable)
+        pendingCenterClickRunnable?.let { handler.removeCallbacks(it) }
+        pendingCenterClickRunnable = null
+        xiaozhiClickGate.reset()
         confirmKeyDownCode = 0
         confirmKeyLongPressTriggered = false
     }
@@ -1794,6 +1869,7 @@ class DeskActivity : AppCompatActivity() {
     override fun onDestroy() {
         isActivityStarted = false
         releaseWallpaperPlayer()
+        XiaozhiCaption.removeListener(xiaozhiCaptionListener)
         window.decorView.removeCallbacks(fullscreenRestoreRunnable)
         resetConfirmKeyLongPress()
         handler.removeCallbacks(refreshRunnable)

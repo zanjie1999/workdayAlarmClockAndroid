@@ -30,6 +30,9 @@ import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
 import com.zyyme.workdayalarmclock.camera.CameraHttpServer
+import com.zyyme.workdayalarmclock.xiaozhi.DoubleClickGate
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiAssistant
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiHost
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -88,6 +91,10 @@ class MeService : Service() {
         private const val MEDIA_TRACK_LONG_PRESS_DELAY_MS = 900L
         private const val MEDIA_TRACK_SEEK_INTERVAL_MS = 500L
         private const val MEDIA_TRACK_SEEK_STEP_MS = 5000
+        /** 小智录音时的音乐音量，与 audiofocus ducking 保持一致 */
+        private const val VOICE_DUCK_VOLUME = 0.3f
+        /** 小智启用时，DPAD Center 单击延后这么久执行，用来等第二击 */
+        private const val XIAOZHI_DOUBLE_CLICK_WINDOW_MS = 300L
         // 在线播放与歌词请求共用，部分 CDN 会拒绝 MediaPlayer 默认的 stagefright UA
         private const val HTTP_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
 
@@ -156,6 +163,18 @@ class MeService : Service() {
     private var startupClockReturnRunnable: Runnable? = null
     private val playbackHandler = Handler(Looper.getMainLooper())
     private var playerState = PlayerState.IDLE
+        set(value) {
+            field = value
+            playbackStateSnapshot = value
+        }
+
+    /** 给其它线程看播放状态的快照（小智字幕/ducking 判断用） */
+    @Volatile
+    private var playbackStateSnapshot = PlayerState.IDLE
+
+    /** 小智录音期间压低音乐音量 */
+    @Volatile
+    private var voiceDuckActive = false
     private var playWhenReady = false
         set(value) {
             if (field == value) return
@@ -207,6 +226,10 @@ class MeService : Service() {
     private var longPressTriggered = false
     private var longPressDownTime = 0L
     private var longPressRunnable: Runnable? = null
+
+    /** DPAD Center 单击/双击消歧（只有小智启用时才需要等第二击） */
+    private val centerClickGate = DoubleClickGate(XIAOZHI_DOUBLE_CLICK_WINDOW_MS)
+    private var centerSingleClickRunnable: Runnable? = null
     private var clickWindowRunnable: Runnable? = null
 
     // 实体上一首/下一首媒体键长按快退/快进状态
@@ -360,6 +383,8 @@ class MeService : Service() {
         syncAmbientBrightnessSetting()
         updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
         syncCameraServerSetting()
+        // 小智模块只需要上下文 + 宿主回调，放在"可能提前 return"之前接上
+        XiaozhiAssistant.attach(this, buildXiaozhiHost())
 
         // 如果不需要启动Go服务，这个服务将只有播放音频url的功能
         if (!MainActivity.startService) {
@@ -569,9 +594,53 @@ class MeService : Service() {
                     print2LogView("流停止且不满足亮屏条件 熄屏")
                     requestScreenOff()
                 }
-            }
+            },
+            { XiaozhiAssistant.isSessionActive() }
         ).also { cameraHttpServer = it }
         server.start(MeSettings.getCameraPassword(this))
+    }
+
+    /** 设置页改动小智开关后：刷新前台服务类型 + 重新读配置 */
+    fun syncXiaozhiSetting() {
+        updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
+        XiaozhiAssistant.reloadConfig()
+    }
+
+    private fun buildXiaozhiHost(): XiaozhiHost = object : XiaozhiHost {
+        override fun log(message: String) {
+            print2LogView(message)
+        }
+
+        override fun showStatus(message: String) {
+            mainHandler.post {
+                ClockActivity.me?.showMsg(message)
+                DeskActivity.me?.showEcho(message)
+            }
+        }
+
+        override fun appVersion(): String = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0"
+        } catch (e: Exception) {
+            "1.0"
+        }
+
+        override fun setVoiceDuck(on: Boolean) {
+            this@MeService.setVoiceDuck(on)
+        }
+
+        override fun isMediaPlaying(): Boolean = this@MeService.isMediaPlaying()
+
+        override fun claimMicrophone() {
+            // 摄像头 /aac 推流占着麦克风时先让出去
+            cameraHttpServer?.suspendAudioForExternalUser()
+        }
+
+        override fun releaseMicrophone() {
+        }
+
+        override fun ensureForegroundMicType() {
+            updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
+        }
     }
 
     fun syncAmbientBrightnessSetting() {
@@ -672,7 +741,9 @@ class MeService : Service() {
     }
 
     private fun microphoneFeaturesEnabled(): Boolean {
-        return MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) && hasAudioPermission()
+        if (!hasAudioPermission()) return false
+        if (MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)) return true
+        return MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER)
     }
 
     fun updateCameraPassword() {
@@ -713,6 +784,7 @@ class MeService : Service() {
     }
 
     override fun onDestroy() {
+        XiaozhiAssistant.shutdown()
         stopMediaTrackLongPress()
         stopMediaPlayLongPress()
         cameraHttpServer?.stop()
@@ -1130,6 +1202,9 @@ class MeService : Service() {
                 print2LogView("点击右上角菜单「立即更新」")
                 // root 设备自动静默更新（下载→静默安装→重启）
                 MeUpdater.autoSilentUpdate(this)
+            } else if (s == "AI" || s.startsWith("AI ")) {
+                // Go 侧将来的唤醒入口
+                XiaozhiAssistant.onPipeCommand(if (s.length > 3) s.substring(3) else "")
             } else if (s == "Segmentation fault") {
                 print2LogView("出现系统错误，进行重启")
                 Thread {
@@ -1483,6 +1558,13 @@ class MeService : Service() {
             mediaPlayer.start()
             playerState = PlayerState.PLAYING
             playWhenReady = true
+            // 小智正在录音时，中途起播的新歌也要立刻压到 duck 音量
+            if (voiceDuckActive) {
+                try {
+                    mediaPlayer.setVolume(VOICE_DUCK_VOLUME, VOICE_DUCK_VOLUME)
+                } catch (ignored: RuntimeException) {
+                }
+            }
             onPlay()
             startPlaybackCheckpoint()
             ysSetLedsValue(MeYsLed.EMPTY)
@@ -1556,6 +1638,33 @@ class MeService : Service() {
     }
 
     fun shouldShowPauseIcon(): Boolean = playWhenReady
+
+    /** 当前是否真的在出声（可跨线程读） */
+    fun isMediaPlaying(): Boolean =
+        playbackStateSnapshot == PlayerState.PLAYING ||
+            playbackStateSnapshot == PlayerState.BUFFERING
+
+    /** 是否完全没有音源 */
+    fun isMediaIdle(): Boolean = isStop
+
+    /**
+     * 录音期间压低音乐音量（等同 AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK 的处理），停止录音即还原。
+     * 刻意不做"拦截 Go 起播"：它想播就播，只是这段时间声音小一点。
+     */
+    fun setVoiceDuck(on: Boolean) {
+        if (voiceDuckActive == on) return
+        voiceDuckActive = on
+        runOnPlaybackThread {
+            if (isPlayerControllable()) {
+                val volume = if (on) VOICE_DUCK_VOLUME else 1.0f
+                try {
+                    player?.setVolume(volume, volume)
+                } catch (e: RuntimeException) {
+                    Log.w("MeService", "set duck volume failed", e)
+                }
+            }
+        }
+    }
 
     private fun requestPausePlayback(
         resumeAfterFocusGain: Boolean = false,
@@ -2105,10 +2214,29 @@ class MeService : Service() {
         }
     }
 
-    /** 实体播放键长按触发一键播放，短按仍为播放/暂停。 */
+    /**
+     * 实体播放键：
+     * - 双击 DPAD Center = 唤醒小智 / 打断（仅小智模块启用时，单击会因此延后 [XIAOZHI_DOUBLE_CLICK_WINDOW_MS]）
+     * - 长按 900ms = 一键（保持原样）
+     * - 短按 = 播放/暂停（保持原样）
+     */
     private fun handleMediaPlayKey(keyCode: Int, isDown: Boolean): Boolean {
+        val isCenter = keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+        val xiaozhiEnabled = isCenter && MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)
         if (isDown) {
             if (mediaPlayKeyCode == keyCode) return true
+            if (xiaozhiEnabled &&
+                centerClickGate.onDown(
+                    System.currentTimeMillis(),
+                    true
+                ) == DoubleClickGate.DownResult.DOUBLE
+            ) {
+                // 第一击排队的单击要作废，这一击的长按也不要
+                stopMediaPlayLongPress()
+                print2LogView("双击 唤醒小智")
+                XiaozhiAssistant.start()
+                return true
+            }
             stopMediaPlayLongPress()
             mediaPlayKeyCode = keyCode
             mediaPlayLongPressTriggered = false
@@ -2125,13 +2253,33 @@ class MeService : Service() {
         if (mediaPlayKeyCode != keyCode) return true
         val wasLongPress = mediaPlayLongPressTriggered
         stopMediaPlayLongPress()
-        if (!wasLongPress) keyHandleAction(keyCode)
+        if (wasLongPress) {
+            centerClickGate.reset()
+            return true
+        }
+        if (xiaozhiEnabled) {
+            when (centerClickGate.onUp(System.currentTimeMillis(), true, false)) {
+                DoubleClickGate.UpResult.DEFER -> {
+                    val runnable = Runnable {
+                        centerSingleClickRunnable = null
+                        if (centerClickGate.consumeSingle()) keyHandleAction(keyCode)
+                    }
+                    centerSingleClickRunnable = runnable
+                    multiClickHandler.postDelayed(runnable, XIAOZHI_DOUBLE_CLICK_WINDOW_MS)
+                    return true
+                }
+                else -> return true
+            }
+        }
+        keyHandleAction(keyCode)
         return true
     }
 
     private fun stopMediaPlayLongPress() {
         mediaPlayLongPressRunnable?.let { multiClickHandler.removeCallbacks(it) }
         mediaPlayLongPressRunnable = null
+        centerSingleClickRunnable?.let { multiClickHandler.removeCallbacks(it) }
+        centerSingleClickRunnable = null
         mediaPlayKeyCode = 0
         mediaPlayLongPressTriggered = false
     }

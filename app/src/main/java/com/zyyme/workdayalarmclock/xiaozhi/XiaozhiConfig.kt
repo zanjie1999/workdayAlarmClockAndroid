@@ -1,0 +1,64 @@
+package com.zyyme.workdayalarmclock.xiaozhi
+
+/**
+ * 小智模块的运行配置快照，从 MeSettings 读出来后交给 XiaozhiAssistant。
+ * 该类只做数据与 URL 归一化，不依赖 Android。
+ */
+data class XiaozhiConfig(
+    val enabled: Boolean = false,
+    val otaUrl: String = DEFAULT_OTA_URL,
+    val wsUrl: String = DEFAULT_WS_URL,
+    val token: String = "",
+    val deviceMac: String = "",
+    val clientId: String = "",
+    val mode: String = MODE_AUTO,
+    val autoContinue: Boolean = true,
+    val silenceTimeoutMs: Long = 8000L
+) {
+    companion object {
+        const val DEFAULT_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"
+        const val DEFAULT_WS_URL = "wss://api.tenclass.net/xiaozhi/v1/"
+
+        const val MODE_AUTO = "auto"
+        const val MODE_MANUAL = "manual"
+        const val MODE_REALTIME = "realtime"
+
+        val MODES = arrayOf(MODE_AUTO, MODE_MANUAL, MODE_REALTIME)
+
+        /** http(s) 会被换成 ws(s)；没写协议头时按 wss 处理；主机后没有路径时补一个斜杠。 */
+        fun normalizeWsUrl(raw: String): String {
+            var url = raw.trim()
+            if (url.isEmpty()) return DEFAULT_WS_URL
+            url = when {
+                url.startsWith("https://", ignoreCase = true) ->
+                    "wss://" + url.substring("https://".length)
+                url.startsWith("http://", ignoreCase = true) ->
+                    "ws://" + url.substring("http://".length)
+                url.startsWith("wss://", ignoreCase = true) || url.startsWith("ws://", ignoreCase = true) -> url
+                else -> "wss://$url"
+            }
+            val schemeEnd = url.indexOf("://")
+            if (schemeEnd >= 0) {
+                val pathStart = url.indexOf('/', schemeEnd + 3)
+                if (pathStart < 0) url = "$url/"
+            }
+            return url
+        }
+
+        fun normalizeOtaUrl(raw: String): String {
+            var url = raw.trim()
+            if (url.isEmpty()) return DEFAULT_OTA_URL
+            if (!url.startsWith("http://", ignoreCase = true) &&
+                !url.startsWith("https://", ignoreCase = true)
+            ) {
+                url = "https://$url"
+            }
+            return url
+        }
+
+        fun normalizeMode(raw: String): String {
+            val mode = raw.trim().lowercase()
+            return if (mode in MODES) mode else MODE_AUTO
+        }
+    }
+}

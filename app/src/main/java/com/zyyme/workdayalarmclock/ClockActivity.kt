@@ -45,6 +45,8 @@ import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.camera.FramebufferBitmapReaper
 import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
 import com.zyyme.workdayalarmclock.camera.FramebufferVideoRenderer
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiAssistant
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiCaption
 
 import java.io.File
 import java.text.SimpleDateFormat
@@ -73,6 +75,18 @@ class ClockActivity : AppCompatActivity() {
     var isKeepScreenOn = false
 
     private var showMsgUntil = 0L
+
+    /** 小智对话状态/字幕变化时立刻刷一下顶部条 */
+    private val xiaozhiCaptionListener: () -> Unit = {
+        runOnUiThread {
+            if (clockMode) {
+                val top = findViewById<TextView>(R.id.tv_top)
+                val text = if (XiaozhiCaption.active) XiaozhiCaption.text else ""
+                if (top.text.toString() != text) top.text = text
+                applyClockTopBarLayout()
+            }
+        }
+    }
 
     var clockMode = false
     private var enterClockModeAfterLayout = false
@@ -131,6 +145,7 @@ class ClockActivity : AppCompatActivity() {
      * 只有这首歌完全没有歌词时才显示天气预警信息。
      */
     private fun lyricsBarText(position: Int?): String {
+        if (XiaozhiCaption.active) return XiaozhiCaption.text
         val service = MeService.me ?: return ""
         if (showLyrics && service.hasLyrics()) {
             return service.getCurrentLyric(position).orEmpty()
@@ -143,6 +158,7 @@ class ClockActivity : AppCompatActivity() {
      */
     private fun lyricsBarWanted(): Boolean {
         if (!clockMode) return false
+        if (XiaozhiCaption.active) return true
         val service = MeService.me ?: return false
         return (showLyrics && service.hasLyrics()) || service.weatherAlText.isNotEmpty()
     }
@@ -337,22 +353,41 @@ class ClockActivity : AppCompatActivity() {
         val tvGestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
 
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
+            /** 时间区单击：时钟模式播放/暂停，普通模式切保持亮屏 */
+            private fun performSingleTap() {
                 if (clockMode) {
                     MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
                 } else {
                     isKeepScreenOn = !isKeepScreenOn
                     if (isKeepScreenOn) {
                         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-//                Toast.makeText(this, "保持亮屏打开", Toast.LENGTH_SHORT).show()
                         showMsg("保持亮屏 打开")
                     } else {
                         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-//                Toast.makeText(this, "关闭保持亮屏", Toast.LENGTH_SHORT).show()
                         showMsg("关闭 保持亮屏")
                     }
                 }
+            }
+
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                // 小智启用时把单击延后到"确认不是双击"再执行，给双击唤醒让路；
+                // 未启用时保持原来的零延迟
+                if (MeSettings.isEnabled(this@ClockActivity, MeSettings.KEY_XIAOZHI)) return false
+                performSingleTap()
                 return true
+            }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (!MeSettings.isEnabled(this@ClockActivity, MeSettings.KEY_XIAOZHI)) return false
+                performSingleTap()
+                return true
+            }
+
+            /** 双击时间区：唤醒小智（会话中则打断重听） */
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                val handled = XiaozhiAssistant.start()
+                if (handled) MeService.me?.print2LogView("双击时间区 唤醒小智")
+                return handled
             }
 
             override fun onLongPress(e: MotionEvent?) {
@@ -398,8 +433,10 @@ class ClockActivity : AppCompatActivity() {
                 return false
             }
         })
-        tvTime.setOnTouchListener { v, event ->
+        tvTime.setOnTouchListener { _, event ->
+            // 始终消费，保证所有事件都喂给 GestureDetector（双击才判得出来）
             tvGestureDetector.onTouchEvent(event)
+            true
         }
 
         tvDate.setOnClickListener {
@@ -561,6 +598,7 @@ class ClockActivity : AppCompatActivity() {
         MeService.me?.syncLyricsSetting()
         setFullscreen()
         AmbientBrightnessController.applyLatestTo(window)
+        XiaozhiCaption.addListener(xiaozhiCaptionListener)
         if (clockMode) {
             // 歌词开关、这首歌有没有歌词都可能在这期间变过，重算一次顶部条
             applyClockTopBarLayout(true)
@@ -1121,6 +1159,7 @@ class ClockActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         isActivityStarted = false
+        XiaozhiCaption.removeListener(xiaozhiCaptionListener)
 //        mediaButtonReceiverDestroy()
         // 时间计时器回收
         timeHandler.removeCallbacks(hourlyWallpaperRunnable)

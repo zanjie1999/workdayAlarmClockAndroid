@@ -25,3 +25,10 @@
 # 编译期在 android.jar 里看不到，运行期存在，忽略即可
 -dontwarn com.android.org.conscrypt.SSLParametersImpl
 -dontwarn org.apache.harmony.xnet.provider.jsse.SSLParametersImpl
+
+# 小智AI：WebSocket 与 Opus 都靠反射/动态加载，不能混淆
+-keep class org.java_websocket.** { *; }
+-keep class io.github.jaredmdobson.concentus.** { *; }
+-dontwarn org.slf4j.**
+-dontwarn io.github.jaredmdobson.concentus.**
+-dontwarn org.java_websocket.**

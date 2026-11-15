@@ -12,7 +12,7 @@ android {
         minSdk 14
         targetSdk 32
         versionCode 148
-        versionName "50.5"
+        versionName "51.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -112,4 +112,15 @@ dependencies {
     // 老系统的 JSSE 只有 CBC 套件，跟现在只收 AEAD 的服务器握手必失败，
     // 这里内置一份 Conscrypt（Play Services 升级老机器 TLS 用的同一套）
     implementation 'org.conscrypt:conscrypt-android:2.5.2'
+
+    // 小智AI：WebSocket。
+    // 钉 1.4.1 而不是最新的 1.5.x —— 1.5.x 的 Charsetfunctions 用了 java.nio.charset.StandardCharsets，
+    // 那是 API 19 才有的类，在 4.0~4.3 上收发文本帧会直接 NoClassDefFoundError。
+    // 1.4.1 是 Java 6 字节码、Charset.forName，且 run() 会复用外部 setSocket 进来的 TLS socket。
+    implementation 'org.java-websocket:Java-WebSocket:1.4.1'
+    implementation 'org.slf4j:slf4j-nop:1.7.36'
+    // 纯 Java 的 Opus 编解码，不需要 NDK
+    implementation 'io.github.jaredmdobson:concentus:1.0.2'
+    // JVM 单测里跑 org.json
+    testImplementation 'org.json:json:20180813'
 }

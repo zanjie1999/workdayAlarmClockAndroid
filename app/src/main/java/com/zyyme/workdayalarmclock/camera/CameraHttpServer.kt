@@ -53,7 +53,9 @@ internal class CameraHttpServer(
     private val cameraEnabled: () -> Boolean,
     private val speakerEnabled: () -> Boolean,
     private val framebufferFrame: (ByteArray, Int) -> Unit,
-    private val framebufferStreamState: (Boolean) -> Unit
+    private val framebufferStreamState: (Boolean) -> Unit,
+    /** 麦克风被小智对话占用时返回 true，此时 /aac 不可用 */
+    private val micBlocked: () -> Boolean = { false }
 ) {
     companion object {
         const val PORT = 8880
@@ -258,6 +260,11 @@ internal class CameraHttpServer(
             if (path?.let { isAacRoute(it) } == true) {
                 if (!canStreamMicrophone()) {
                     writeEmptyResponse(socket, 204, "No Content")
+                    return
+                }
+                if (micBlocked()) {
+                    log("麦克风正在给小智对话使用，/aac 暂时不可用")
+                    writeEmptyResponse(socket, 409, "Conflict")
                     return
                 }
                 audioPipeline = acquireAudioPipeline(socket)
@@ -1255,6 +1262,7 @@ internal class CameraHttpServer(
     private fun acquireAudioPipeline(socket: Socket): AacAudioPipeline? {
         synchronized(audioSessionChangeLock) {
             if (!running.get() || !canStreamMicrophone()) return null
+            if (micBlocked()) return null
             synchronized(stateLock) {
                 activeAudioPipeline?.let { pipeline ->
                     audioClients.add(socket)
@@ -1296,6 +1304,11 @@ internal class CameraHttpServer(
                 releaseStreamLocks()
             }
         }
+    }
+
+    /** 小智要录音了：把 /aac 的推流全部断掉，让出麦克风 */
+    fun suspendAudioForExternalUser() {
+        closeActiveAudioSession()
     }
 
     private fun closeActiveAudioSession() {
