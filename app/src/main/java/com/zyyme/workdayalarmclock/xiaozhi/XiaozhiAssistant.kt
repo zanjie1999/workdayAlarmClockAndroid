@@ -55,6 +55,16 @@ object XiaozhiAssistant {
 
     private var lastWsUrl = ""
     private var lastToken = ""
+    /**
+     * 缓存这份连接配置时用的设备 MAC。
+     * 重新生成设备ID 之后就是另一台设备了，旧 token 一律不作数。
+     */
+    private var lastEndpointMac = ""
+    /**
+     * 这次会话是直接拿缓存的地址/token 连的。
+     * 连不上就说明缓存过期（服务端换了 token），要把缓存丢掉重新问 OTA。
+     */
+    private var reusedCachedEndpoint = false
     private var reconnectCount = 0
     private var helloTimeout: Runnable? = null
     private var silenceTimeout: Runnable? = null
@@ -111,11 +121,14 @@ object XiaozhiAssistant {
         host = null
         stateMachine.reset()
         sessionActive = false
+        reusedCachedEndpoint = false
+        invalidateCachedEndpoint("模块已关闭")
         XiaozhiCaption.clear()
     }
 
     fun reloadConfig() {
         val ctx = appContext ?: return
+        val previous = config
         val cfg = XiaozhiConfig(
             enabled = MeSettings.isEnabled(ctx, MeSettings.KEY_XIAOZHI),
             otaUrl = XiaozhiConfig.normalizeOtaUrl(MeSettings.getXiaozhiOtaUrl(ctx)),
@@ -129,6 +142,12 @@ object XiaozhiAssistant {
             pauseMedia = MeSettings.isXiaozhiPauseMedia(ctx)
         )
         config = cfg
+        // 地址/token/设备ID 变过，缓存的连接配置就不认了（只改自动续听之类不动它）
+        if (previous.otaUrl != cfg.otaUrl || previous.wsUrl != cfg.wsUrl ||
+            previous.token != cfg.token || previous.deviceMac != cfg.deviceMac
+        ) {
+            invalidateCachedEndpoint("配置变更")
+        }
         stateMachine.autoContinue = cfg.autoContinue
         stateMachine.silenceTimeoutMs = cfg.silenceTimeoutMs
         if (!cfg.enabled && sessionActive) stop("模块已关闭")
@@ -192,8 +211,8 @@ object XiaozhiAssistant {
         val clientId = XiaozhiDeviceInfo.clientId(ctx)
         val version = hostVersion()
         executor.execute {
-            val client = XiaozhiOtaClient(otaUrl, mac, clientId) { log(it) }
-            val body = XiaozhiDeviceInfo.otaRequestBody(ctx, version, "android")
+            val client = XiaozhiOtaClient(otaUrl, mac, clientId, version) { log(it) }
+            val body = XiaozhiDeviceInfo.otaRequestBody(ctx, version)
             when (val result = client.fetch(body)) {
                 is XiaozhiOtaClient.Result.Ok -> {
                     activationLabel = "已激活"
@@ -259,6 +278,7 @@ object XiaozhiAssistant {
         log("开始会话$suffix")
         sessionActive = true
         reconnectCount = 0
+        reusedCachedEndpoint = false
         turnLead.setLength(0)
         stopAfterTurn = false
         // 先停音乐再压低音量：外放的音乐会糊住麦克风，识别会缺字
@@ -326,6 +346,14 @@ object XiaozhiAssistant {
             connectWebSocket(config.wsUrl, config.token)
             return
         }
+        // 官方固件把 OTA 下发的地址和 token 存进 NVS，之后每次唤醒直接用，不再问 OTA。
+        // 这里等价地在进程内缓存一份：正常唤醒零 HTTP，只有连不上/配置变了才重新获取。
+        if (hasCachedEndpoint(ctx)) {
+            log("复用上次的 OTA 配置，跳过 OTA")
+            reusedCachedEndpoint = true
+            connectWebSocket(lastWsUrl, lastToken)
+            return
+        }
         setCaption("连接中…")
         val executor = otaExecutor
         if (executor == null) {
@@ -337,14 +365,27 @@ object XiaozhiAssistant {
         val clientId = XiaozhiDeviceInfo.clientId(ctx)
         val version = hostVersion()
         executor.execute {
-            val client = XiaozhiOtaClient(otaUrl, mac, clientId) { log(it) }
-            val body = XiaozhiDeviceInfo.otaRequestBody(ctx, version, "android")
+            val client = XiaozhiOtaClient(otaUrl, mac, clientId, version) { log(it) }
+            val body = XiaozhiDeviceInfo.otaRequestBody(ctx, version)
             when (val result = client.fetch(body)) {
                 is XiaozhiOtaClient.Result.Ok -> post { connectWebSocket(result.wsUrl, result.token) }
                 is XiaozhiOtaClient.Result.NeedActivation -> post { handleNeedActivation(client, result) }
                 is XiaozhiOtaClient.Result.Failed -> post { failSession("OTA 失败：${result.message}") }
             }
         }
+    }
+
+    /** 缓存的连接配置还能不能用：地址/token 都在，且还是同一台设备（MAC 没换） */
+    private fun hasCachedEndpoint(context: Context): Boolean =
+        lastWsUrl.isNotBlank() && lastToken.isNotBlank() &&
+                lastEndpointMac == XiaozhiDeviceInfo.deviceMac(context)
+
+    private fun invalidateCachedEndpoint(reason: String) {
+        if (lastWsUrl.isEmpty() && lastToken.isEmpty() && lastEndpointMac.isEmpty()) return
+        log("丢弃缓存的小智连接配置：$reason")
+        lastWsUrl = ""
+        lastToken = ""
+        lastEndpointMac = ""
     }
 
     private fun handleNeedActivation(
@@ -362,7 +403,7 @@ object XiaozhiAssistant {
         log("等待绑定，激活码 ${result.code}，设备 ${config.deviceMac}")
         val ctx = appContext ?: return
         // 绑定生效后要再问一次 OTA 才拿得到连接配置
-        val otaBody = XiaozhiDeviceInfo.otaRequestBody(ctx, hostVersion(), "android")
+        val otaBody = XiaozhiDeviceInfo.otaRequestBody(ctx, hostVersion())
         val executor = otaExecutor ?: return
         executor.execute {
             val polled = client.pollActivate(
@@ -396,6 +437,7 @@ object XiaozhiAssistant {
         val ctx = appContext ?: return
         lastWsUrl = wsUrl
         lastToken = token
+        lastEndpointMac = XiaozhiDeviceInfo.deviceMac(ctx)
         closeTransport()
         val headers = mapOf(
             "Authorization" to "Bearer $token",
@@ -489,7 +531,14 @@ object XiaozhiAssistant {
     private fun scheduleReconnect(reason: String) {
         log(reason)
         if (!sessionActive) return
+        // 拿缓存配置压根没连上：多半是服务端把 token 换了，丢掉缓存，这次重连就重新问 OTA
+        if (reusedCachedEndpoint) {
+            reusedCachedEndpoint = false
+            invalidateCachedEndpoint("缓存配置连不上")
+        }
         if (reconnectCount >= MAX_RECONNECT) {
+            // 重试用尽多半是配置真过期了，下次唤醒从头来（重新 OTA）
+            invalidateCachedEndpoint("重试次数用尽")
             failSession("$reason（重试 $MAX_RECONNECT 次仍失败）")
             return
         }
@@ -520,6 +569,8 @@ object XiaozhiAssistant {
         when (event) {
             is XiaozhiProtocol.ServerEvent.Hello -> {
                 log("握手完成 session_id=${event.sessionId} 采样率=${event.sampleRate}")
+                // 缓存配置连通了，这次会话后面再断线重连也不用再问 OTA
+                reusedCachedEndpoint = false
                 cancelHelloTimeout()
                 createPlayer(event.sampleRate)
                 dispatch(XiaozhiStateMachine.Event.HelloReceived(event.sampleRate))

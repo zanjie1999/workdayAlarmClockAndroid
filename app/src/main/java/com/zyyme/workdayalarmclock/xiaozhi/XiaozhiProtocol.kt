@@ -21,6 +21,15 @@ object XiaozhiProtocol {
 
     const val ABORT_REASON_WAKE_WORD = "wake_word_detected"
 
+    /**
+     * 设备语言，等价于官方固件里的 `Lang::CODE`。
+     *
+     * WebSocket 协议本身没有语言字段，服务端只从 **OTA 请求**（body 的 `language`
+     * 和请求头 `Accept-Language`）得知这台设备说什么语言，再据此决定系统播报
+     * （配对验证码、"没有找到该设备的版本信息"）用中文还是英文。
+     */
+    const val DEVICE_LANGUAGE = "zh-CN"
+
     // ---------------- 客户端 -> 服务端 ----------------
 
     fun helloJson(features: Map<String, Boolean> = emptyMap()): String {

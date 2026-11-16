@@ -41,25 +41,27 @@ object XiaozhiDeviceInfo {
     }
 
     /** 小智 OTA 的请求体，字段照 esp32 版打，缺了服务端也能宽容处理。 */
-    fun otaRequestBody(context: Context, versionName: String, boardName: String): String {
+    fun otaRequestBody(context: Context, versionName: String): String {
         val mac = deviceMac(context)
         val application = JSONObject()
             .put("name", "xiaozhi")
             .put("version", versionName)
-            .put("idf_version", "android")
         val board = JSONObject()
-            .put("type", boardName)
-            .put("name", Build.MODEL.orEmpty())
+            .put("type", "generic")
+            .put("name", Build.MANUFACTURER + Build.MODEL)
+            .put("manufacturer", "")
             .put("mac", mac)
-        val chip = JSONObject()
-            .put("model", Build.MODEL.orEmpty())
-            .put("manufacturer", Build.MANUFACTURER.orEmpty())
+        val protocol = JSONObject()
+            .put("features", JSONObject().put("mcp", true))
         return JSONObject()
             .put("version", 2)
+            // 官方固件在这里上报 Lang::CODE，服务端据此决定系统播报用哪种语言
+            .put("language", XiaozhiProtocol.DEVICE_LANGUAGE)
+            .put("mac_address", mac)
             .put("uuid", clientId(context))
             .put("application", application)
             .put("board", board)
-            .put("chip", chip)
+            .put("protocol", protocol)
             .toString()
     }
 

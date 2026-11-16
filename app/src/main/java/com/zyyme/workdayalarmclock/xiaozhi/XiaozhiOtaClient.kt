@@ -15,8 +15,13 @@ class XiaozhiOtaClient(
     private val otaUrl: String,
     private val deviceMac: String,
     private val clientId: String,
+    private val versionName: String = "1.0",
     private val log: (String) -> Unit = {}
 ) {
+
+    /** 官方格式：`User-Agent: BOARD_NAME/firmware-version` */
+    private val userAgent: String
+        get() = "generic/" + versionName
 
     sealed class Result {
         data class Ok(val wsUrl: String, val token: String) : Result()
@@ -33,10 +38,12 @@ class XiaozhiOtaClient(
         connection.readTimeout = 15_000
         connection.setRequestProperty("Content-Type", "application/json")
         connection.setRequestProperty("Accept", "application/json")
+        // 官方固件也会带这个头；服务端用它给系统播报（激活提示等）挑语言
+        connection.setRequestProperty("Accept-Language", XiaozhiProtocol.DEVICE_LANGUAGE)
         connection.setRequestProperty("Device-Id", deviceMac)
         connection.setRequestProperty("Client-Id", clientId)
         connection.setRequestProperty("Activation-Version", "1")
-        connection.setRequestProperty("User-Agent", "workday-alarm-clock-android")
+        connection.setRequestProperty("User-Agent", userAgent)
         return connection
     }
 
