@@ -3,6 +3,7 @@ package com.zyyme.workdayalarmclock.xiaozhi
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -78,6 +79,16 @@ object XiaozhiAssistant {
     private var mediaPausedByUs = false
 
     /**
+     * 录音期间被我们改掉的原始音频模式，`MODE_INVALID` 表示当前不归我们管。
+     * 只有它 != INVALID 时才会去还原，避免踩到别人（比如系统通话）已经设好的模式。
+     */
+    private var previousAudioMode = AudioManager.MODE_INVALID
+
+    /** 外放是我们强制打开时就记下原值，结束时还原 */
+    private var previousSpeakerphoneOn = false
+    private var speakerphoneOwned = false
+
+    /**
      * 本轮说完就收场、不再续听。
      * 播放控制类命令（点歌/切歌/恢复播放）执行完，这件事就办完了，
      * 没必要再把麦克风打开等着听下一句。
@@ -139,7 +150,8 @@ object XiaozhiAssistant {
             mode = XiaozhiConfig.normalizeMode(MeSettings.getXiaozhiMode(ctx)),
             autoContinue = MeSettings.isXiaozhiAutoContinue(ctx),
             silenceTimeoutMs = MeSettings.getXiaozhiSilenceTimeout(ctx) * 1000L,
-            pauseMedia = MeSettings.isXiaozhiPauseMedia(ctx)
+            pauseMedia = MeSettings.isXiaozhiPauseMedia(ctx),
+            micDenoise = MeSettings.isXiaozhiMicDenoise(ctx)
         )
         config = cfg
         // 地址/token/设备ID 变过，缓存的连接配置就不认了（只改自动续听之类不动它）
@@ -192,7 +204,7 @@ object XiaozhiAssistant {
 
     /** 设置弹窗里激活按钮上的文案，激活流程随手更新，弹窗轮询读它 */
     @Volatile
-    var activationLabel: String = "未激活（点击查询）"
+    var activationLabel: String = "查询激活状态"
         private set
 
     /** 设置里点「激活」：跑一次 OTA，把激活码/结果同时写到按钮和日志 */
@@ -727,7 +739,10 @@ object XiaozhiAssistant {
         if (capture != null) return
         host?.ensureForegroundMicType()
         host?.claimMicrophone()
+        // 降噪开关决定走哪条链路：开=语音通话（必须先切 mode 才生效），关=录像链路不碰 mode
+        if (config.micDenoise) enterVoiceAudioMode()
         val created = XiaozhiAudioCapture(
+            denoise = config.micDenoise,
             onPacket = { packet -> if (sendAudio) transport?.sendBinary(packet) },
             onLevel = { rms -> onVoiceLevel(rms) },
             onError = { message -> post { failSession(message) } },
@@ -748,10 +763,91 @@ object XiaozhiAssistant {
         sendAudio = false
         val current = capture
         capture = null
+        // 先还模式再停采：麦克风关掉之后没有任何理由继续占着通话模式
+        restoreAudioMode()
         if (current != null) {
             current.stop()
             log("停止录音")
         }
+    }
+
+    /**
+     * 录音期间切到通话音频模式：这是 `AudioSource.VOICE_COMMUNICATION` 真正生效的前提，
+     * 系统语音助手也是这么做的。HAL 只有在通话模式下才会把输出（含媒体那一路）当 AEC 参考。
+     *
+     * 全局状态，必须成对还原；别人已经处在通话模式（比如正在打电话）就一点都不碰。
+     */
+    private fun enterVoiceAudioMode() {
+        if (previousAudioMode != AudioManager.MODE_INVALID) return
+        val manager = audioManager() ?: return
+        val original = manager.mode
+        if (original == AudioManager.MODE_IN_COMMUNICATION) {
+            log("已处于通话音频模式，跳过切换")
+            return
+        }
+        previousAudioMode = original
+        try {
+            manager.mode = AudioManager.MODE_IN_COMMUNICATION
+            log("音频模式 ${audioModeName(original)} -> IN_COMMUNICATION")
+        } catch (e: Exception) {
+            previousAudioMode = AudioManager.MODE_INVALID
+            log("切换音频模式失败：${e.message}")
+            return
+        }
+        // 通话模式下媒体默认可能走听筒，明确要求外放；顺序不能反，mode 不对时 set 会抛异常
+        enableSpeakerphone(manager)
+    }
+
+    private fun restoreAudioMode() {
+        val original = previousAudioMode
+        if (original == AudioManager.MODE_INVALID) return
+        previousAudioMode = AudioManager.MODE_INVALID
+        val manager = audioManager() ?: return
+        // 先把外放还原，再退 mode：退出通话模式之后 setSpeakerphoneOn 就没意义了
+        restoreSpeakerphone(manager)
+        try {
+            manager.mode = original
+            log("音频模式还原 -> ${audioModeName(original)}")
+        } catch (e: Exception) {
+            log("还原音频模式失败：${e.message}")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun enableSpeakerphone(manager: AudioManager) {
+        if (speakerphoneOwned) return
+        try {
+            previousSpeakerphoneOn = manager.isSpeakerphoneOn
+            speakerphoneOwned = true
+            manager.isSpeakerphoneOn = true
+            log("强制外放 on（原 ${previousSpeakerphoneOn}）")
+        } catch (e: Exception) {
+            speakerphoneOwned = false
+            log("设置外放失败：${e.message}")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun restoreSpeakerphone(manager: AudioManager) {
+        if (!speakerphoneOwned) return
+        speakerphoneOwned = false
+        try {
+            manager.isSpeakerphoneOn = previousSpeakerphoneOn
+            log("外放还原 ${previousSpeakerphoneOn}")
+        } catch (e: Exception) {
+            log("还原外放失败：${e.message}")
+        }
+    }
+
+    private fun audioManager(): AudioManager? =
+        appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+    private fun audioModeName(mode: Int): String = when (mode) {
+        AudioManager.MODE_NORMAL -> "NORMAL"
+        AudioManager.MODE_RINGTONE -> "RINGTONE"
+        AudioManager.MODE_IN_CALL -> "IN_CALL"
+        AudioManager.MODE_IN_COMMUNICATION -> "IN_COMMUNICATION"
+        else -> "MODE($mode)"
     }
 
     private fun onVoiceLevel(rms: Double) {

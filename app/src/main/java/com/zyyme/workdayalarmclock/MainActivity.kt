@@ -1159,7 +1159,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(activationButton)
 
         // 设备ID：服务端靠它认设备
-        addLabel("设备ID（服务端靠它认设备，一般不用改）")
+        addLabel("设备MAC(唯一标识，默认随机)")
         val deviceIdInput = addInput(XiaozhiDeviceInfo.deviceMac(this@MainActivity))
 
         container.addView(Button(this).apply {
@@ -1175,7 +1175,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        addLabel("静默多少秒后结束会话")
+        addLabel("静默结束超时")
         val silenceInput = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             setSingleLine(true)
@@ -1184,18 +1184,25 @@ class MainActivity : AppCompatActivity() {
         container.addView(silenceInput)
 
         val autoContinueSwitch = Switch(this).apply {
-            text = "说完自动继续听"
+            text = "连续对话"
             isChecked = MeSettings.isXiaozhiAutoContinue(this@MainActivity)
             setPadding(0, dp(10), 0, 0)
         }
         container.addView(autoContinueSwitch)
 
         val pauseMediaSwitch = Switch(this).apply {
-            text = "对话时暂停音乐（结束后恢复）"
+            text = "对话时暂停音乐"
             isChecked = MeSettings.isXiaozhiPauseMedia(this@MainActivity)
             setPadding(0, dp(10), 0, 0)
         }
         container.addView(pauseMediaSwitch)
+
+        val micDenoiseSwitch = Switch(this).apply {
+            text = "麦克风降噪"
+            isChecked = MeSettings.isXiaozhiMicDenoise(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        container.addView(micDenoiseSwitch)
 
         // 只有自建服务器才需要改这两项
         addLabel("WebSocket 地址（默认官方，自建才改）")
@@ -1213,7 +1220,7 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("保存") { _, _ ->
                 saveXiaozhiSettings(
                     deviceIdInput, wsInput, tokenInput, silenceInput,
-                    autoContinueSwitch, pauseMediaSwitch
+                    autoContinueSwitch, pauseMediaSwitch, micDenoiseSwitch
                 )
                 XiaozhiAssistant.reloadConfig()
                 MeService.me?.syncXiaozhiSetting()
@@ -1239,7 +1246,8 @@ class MainActivity : AppCompatActivity() {
         tokenInput: EditText,
         silenceInput: EditText,
         autoContinueSwitch: Switch,
-        pauseMediaSwitch: Switch
+        pauseMediaSwitch: Switch,
+        micDenoiseSwitch: Switch
     ) {
         // 清空输入框视为重新随机一个，避免存空值后每次启动都变
         MeSettings.setXiaozhiDeviceMac(
@@ -1254,6 +1262,7 @@ class MainActivity : AppCompatActivity() {
         )
         MeSettings.setXiaozhiAutoContinue(this, autoContinueSwitch.isChecked)
         MeSettings.setXiaozhiPauseMedia(this, pauseMediaSwitch.isChecked)
+        MeSettings.setXiaozhiMicDenoise(this, micDenoiseSwitch.isChecked)
     }
 
     private fun requestNotificationListenerPermissionIfNeeded() {

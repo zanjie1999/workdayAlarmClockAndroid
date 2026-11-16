@@ -1,11 +1,8 @@
 package com.zyyme.workdayalarmclock.xiaozhi
 
-import android.annotation.TargetApi
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.media.audiofx.AcousticEchoCanceler
-import android.os.Build
 import android.os.SystemClock
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -13,6 +10,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 麦克风采集：16kHz / 单声道 / PCM16 -> 60ms 定长帧 -> Opus。
+ *
+ * 采集音源由 [denoise] 决定：开 = `VOICE_COMMUNICATION`（配合宿主侧 `MODE_IN_COMMUNICATION`
+ * 才生效，回声消除/降噪/AGC 全部交给 HAL），关 = `CAMCORDER`（录像链路）。
+ * 这里**不额外挂 AudioEffect**——叠在 HAL 的处理上只会把声音削过头。
  *
  * 线程模型（老机器上编码和发网络都可能卡几十上百毫秒，必须跟采集分开）：
  * - "xiaozhi-capture"：只做 AudioRecord.read(20ms) + RMS，读到的样本丢进 [segments]；
@@ -24,6 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 500ms 预滚缓冲是为了将来做语音唤醒时能把唤醒前的话带上，现在只保留不发送。
  */
 class XiaozhiAudioCapture(
+    /** 降噪开关：开走语音通话链路（HAL 出 AEC/NS/AGC），关走录像链路 */
+    private val denoise: Boolean = false,
     private val onPacket: (ByteArray) -> Unit,
     private val onLevel: (Double) -> Unit = {},
     private val onError: (String) -> Unit = {},
@@ -31,10 +34,25 @@ class XiaozhiAudioCapture(
 ) {
 
     private val running = AtomicBoolean(false)
+
+    /**
+     * 采集音源。试过的顺序：
+     * - `MIC`：裸麦，HAL 不做前处理，AEC/NS 挂上去也常是空转；
+     * - `CAMCORDER`：录像链路（降噪关时用）；
+     * - `VOICE_RECOGNITION`：识别调优，AEC 仍不接参考；
+     * - `VOICE_COMMUNICATION`：唯一承诺会用回声消除的音源，系统助手走的就是它（降噪开时用）。
+     */
+    private val audioSource = if (denoise) {
+        MediaRecorder.AudioSource.VOICE_COMMUNICATION
+    } else {
+        MediaRecorder.AudioSource.CAMCORDER
+    }
+
+    private val audioSourceName = if (denoise) "VOICE_COMMUNICATION" else "CAMCORDER"
+
     private var captureThread: Thread? = null
     private var encodeThread: Thread? = null
     private var record: AudioRecord? = null
-    private var echoCanceler: AcousticEchoCanceler? = null
     private var encoder: OpusEncoderApi? = null
 
     private val chunker = PcmFrameChunker(XiaozhiProtocol.UPLOAD_FRAME_SAMPLES)
@@ -85,7 +103,7 @@ class XiaozhiAudioCapture(
         val recorder = try {
             @Suppress("DEPRECATION")
             AudioRecord(
-                MediaRecorder.AudioSource.MIC,
+                audioSource,
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
@@ -110,7 +128,9 @@ class XiaozhiAudioCapture(
         prerollFilled = 0
         segments = newSegmentQueue()
         resetStats()
-        enableEchoCanceler(recorder.audioSessionId)
+        // 不挂 AudioEffect：VOICE_COMMUNICATION 音频源 + 通话模式已经带 HAL 的 AEC/NS/AGC，
+        // 再叠一层 NoiseSuppressor 只会把声音削得更狠
+        log("录音参数 音源=${audioSourceName} 音效=${if (denoise) "HAL 内置" else "无"}")
         try {
             recorder.startRecording()
         } catch (e: Exception) {
@@ -307,12 +327,6 @@ class XiaozhiAudioCapture(
         } catch (ignored: Exception) {
         }
         record = null
-        try {
-            echoCanceler?.enabled = false
-            echoCanceler?.release()
-        } catch (ignored: Exception) {
-        }
-        echoCanceler = null
         encoder?.release()
         encoder = null
     }
@@ -334,25 +348,6 @@ class XiaozhiAudioCapture(
             sum += v * v
         }
         return Math.sqrt(sum / length)
-    }
-
-    @TargetApi(16)
-    private fun enableEchoCanceler(sessionId: Int) {
-        if (Build.VERSION.SDK_INT < 16) {
-            // 小于 4.1 没有 AEC，外放时可能把自己的 TTS 拾回来，靠协议侧 VAD 兜底
-            log("无回声消除（API ${Build.VERSION.SDK_INT}），建议戴耳机或调低音量")
-            return
-        }
-        try {
-            if (!AcousticEchoCanceler.isAvailable()) {
-                log("本机无回声消除，建议戴耳机或调低音量")
-                return
-            }
-            echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply { enabled = true }
-            log("已启用回声消除")
-        } catch (e: Exception) {
-            log("启用回声消除失败：${e.message}")
-        }
     }
 
     companion object {

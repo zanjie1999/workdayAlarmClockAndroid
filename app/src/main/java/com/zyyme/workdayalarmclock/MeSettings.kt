@@ -63,6 +63,7 @@ object MeSettings {
     const val KEY_XIAOZHI_AUTO_CONTINUE = "xiaozhi_auto_continue"
     const val KEY_XIAOZHI_SILENCE_TIMEOUT = "xiaozhi_silence_timeout"
     const val KEY_XIAOZHI_PAUSE_MEDIA = "xiaozhi_pause_media"
+    const val KEY_XIAOZHI_MIC_DENOISE = "xiaozhi_mic_denoise"
 
     const val DEFAULT_XIAOZHI_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"
     const val DEFAULT_XIAOZHI_WS_URL = "wss://api.tenclass.net/xiaozhi/v1/"
@@ -259,4 +260,11 @@ object MeSettings {
 
     fun setXiaozhiPauseMedia(context: Context, enabled: Boolean) =
         setEnabled(context, KEY_XIAOZHI_PAUSE_MEDIA, enabled)
+
+    /** 麦克风降噪：开=语音通话链路（HAL 的 AEC/NS/AGC），关=录像链路（默认关） */
+    fun isXiaozhiMicDenoise(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_MIC_DENOISE, false)
+
+    fun setXiaozhiMicDenoise(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_MIC_DENOISE, enabled)
 }
