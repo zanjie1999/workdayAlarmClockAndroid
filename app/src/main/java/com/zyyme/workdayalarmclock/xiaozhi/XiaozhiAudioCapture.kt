@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 麦克风采集：16kHz / 单声道 / PCM16 -> 60ms 定长帧 -> Opus。
  *
  * 采集音源由 [denoise] 决定：开 = `VOICE_COMMUNICATION`（配合宿主侧 `MODE_IN_COMMUNICATION`
- * 才生效，回声消除/降噪/AGC 全部交给 HAL），关 = `CAMCORDER`（录像链路）。
+ * 才生效，回声消除/降噪/AGC 全部交给 HAL），关 = `MIC`（裸麦）。
  * 这里**不额外挂 AudioEffect**——叠在 HAL 的处理上只会把声音削过头。
  *
  * 线程模型（老机器上编码和发网络都可能卡几十上百毫秒，必须跟采集分开）：
@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 500ms 预滚缓冲是为了将来做语音唤醒时能把唤醒前的话带上，现在只保留不发送。
  */
 class XiaozhiAudioCapture(
-    /** 降噪开关：开走语音通话链路（HAL 出 AEC/NS/AGC），关走录像链路 */
+    /** 降噪开关：开走语音通话链路（HAL 出 AEC/NS/AGC），关走裸麦 `MIC` */
     private val denoise: Boolean = false,
     private val onPacket: (ByteArray) -> Unit,
     private val onLevel: (Double) -> Unit = {},
@@ -37,18 +37,18 @@ class XiaozhiAudioCapture(
 
     /**
      * 采集音源。试过的顺序：
-     * - `MIC`：裸麦，HAL 不做前处理，AEC/NS 挂上去也常是空转；
-     * - `CAMCORDER`：录像链路（降噪关时用）；
-     * - `VOICE_RECOGNITION`：识别调优，AEC 仍不接参考；
-     * - `VOICE_COMMUNICATION`：唯一承诺会用回声消除的音源，系统助手走的就是它（降噪开时用）。
+     * - `MIC`：裸麦，HAL 不做前处理，AEC/NS亲测啥效果没有，还不如关了
+     * - `CAMCORDER`：录像链路，部分设备上根本出不了声音，弃用
+     * - `VOICE_RECOGNITION`：声音不知道为什么小到嗨那样
+     * - `VOICE_COMMUNICATION`：效果好巨好，音质差
      */
     private val audioSource = if (denoise) {
         MediaRecorder.AudioSource.VOICE_COMMUNICATION
     } else {
-        MediaRecorder.AudioSource.CAMCORDER
+        MediaRecorder.AudioSource.MIC
     }
 
-    private val audioSourceName = if (denoise) "VOICE_COMMUNICATION" else "CAMCORDER"
+    private val audioSourceName = if (denoise) "VOICE_COMMUNICATION" else "MIC"
 
     private var captureThread: Thread? = null
     private var encodeThread: Thread? = null

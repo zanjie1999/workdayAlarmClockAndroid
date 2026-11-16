@@ -261,7 +261,7 @@ object MeSettings {
     fun setXiaozhiPauseMedia(context: Context, enabled: Boolean) =
         setEnabled(context, KEY_XIAOZHI_PAUSE_MEDIA, enabled)
 
-    /** 麦克风降噪：开=语音通话链路（HAL 的 AEC/NS/AGC），关=录像链路（默认关） */
+    /** 麦克风降噪：开=语音通话链路（HAL 的 AEC/NS/AGC），关=MIC 裸麦（默认关） */
     fun isXiaozhiMicDenoise(context: Context): Boolean =
         preferences(context).getBoolean(KEY_XIAOZHI_MIC_DENOISE, false)
 

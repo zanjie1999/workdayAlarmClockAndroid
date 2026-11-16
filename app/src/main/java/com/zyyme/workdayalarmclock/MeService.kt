@@ -2293,13 +2293,14 @@ class MeService : Service() {
 
     /**
      * 实体播放键：
-     * - 双击 DPAD Center = 唤醒小智 / 打断（仅小智模块启用时，单击会因此延后 [XIAOZHI_DOUBLE_CLICK_WINDOW_MS]）
+     * - 双击（确认键 / 播放暂停 / 播放）= 唤醒小智 / 打断（仅小智模块启用时，单击会因此延后 [XIAOZHI_DOUBLE_CLICK_WINDOW_MS]）
      * - 长按 900ms = 一键（保持原样）
      * - 短按 = 播放/暂停（保持原样）
+     *
+     * 只有多击键和播放控制键会进这个方法
      */
     private fun handleMediaPlayKey(keyCode: Int, isDown: Boolean): Boolean {
-        val isCenter = keyCode == KeyEvent.KEYCODE_DPAD_CENTER
-        val xiaozhiEnabled = isCenter && MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)
+        val xiaozhiEnabled = MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)
         if (isDown) {
             if (mediaPlayKeyCode == keyCode) return true
             if (xiaozhiEnabled &&
@@ -2499,6 +2500,13 @@ class MeService : Service() {
                 ClockActivity.me?.showMsg("上一首")
                 print2LogView("三击 上一首")
                 requestTrackChange("prev")
+            }
+            4 -> {
+                // 只有播放键/确认键能用的设备靠这个唤醒；未启用小智时保持原来的无动作
+                if (MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)) {
+                    print2LogView("四击 唤醒小智")
+                    XiaozhiAssistant.start()
+                }
             }
         }
         resetMultiClickState()
@@ -2737,7 +2745,7 @@ class MeService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
         } else {
-            pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_ONE_SHOT);
+            pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE);
         }
         val manager = getSystemService(ALARM_SERVICE) as AlarmManager
         manager[AlarmManager.RTC, System.currentTimeMillis() + 2000] = pendingIntent
