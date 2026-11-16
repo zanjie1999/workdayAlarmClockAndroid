@@ -31,6 +31,17 @@ interface XiaozhiHost {
 
     fun isMediaPlaying(): Boolean
 
+    /** 设备状态，一行紧凑 JSON，直接当 MCP 工具结果返回 */
+    fun deviceStatusJson(): String
+
+    /**
+     * 拍一张照片，按网关下发的视觉地址上传，返回画面描述。
+     * 没权限、相机不可用、上传失败都返回 null。
+     *
+     * @param cameraIndex 摄像头编号，和 `Camera.open` 的一致（0 后置、1 前置是常见情况）
+     */
+    fun capturePhoto(question: String, cameraIndex: Int, visionUrl: String, visionToken: String): String?
+
     /** 抢占麦克风（摄像头 /aac 推流等） */
     fun claimMicrophone()
 

@@ -71,6 +71,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_MEDIA_SERVER_PERMISSIONS = 102
         private const val REQUEST_AMBIENT_CAMERA_PERMISSION = 103
         private const val REQUEST_XIAOZHI_PERMISSIONS = 104
+        private const val REQUEST_XIAOZHI_CAMERA_PERMISSION = 105
         private const val LOG_REFRESH_DELAY_MILLIS = 250L
         private const val DPAD_CENTER_LONG_PRESS_DELAY_MS = 900L
     }
@@ -89,6 +90,8 @@ class MainActivity : AppCompatActivity() {
     private var openAmbientDialogAfterPermission = false
     /** 等麦克风权限的开关，授权回来后自动置为开 */
     private var pendingXiaozhiEnableSwitch: Switch? = null
+    /** 等摄像头权限的「允许拍照」开关，授权回来后自动置为开 */
+    private var pendingXiaozhiPhotoSwitch: Switch? = null
     private var dpadPassthrough = false
     private var dpadCenterLongPressTriggered = false
     private val dpadCenterLongPressRunnable = Runnable {
@@ -634,6 +637,11 @@ class MainActivity : AppCompatActivity() {
                 ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
 
+    private fun hasCameraPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+
     private fun showCameraPasswordDialog() {
         val input = EditText(this).apply {
             hint = "视频：ip:8880/密码/1，声音：ip:8880/密码/aac"
@@ -932,6 +940,19 @@ class MainActivity : AppCompatActivity() {
             }
             return
         }
+        if (requestCode == REQUEST_XIAOZHI_CAMERA_PERMISSION) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            val pendingSwitch = pendingXiaozhiPhotoSwitch
+            pendingXiaozhiPhotoSwitch = null
+            if (granted) {
+                // 置 true 会回调监听器，由保存动作落库
+                pendingSwitch?.isChecked = true
+            } else {
+                Toast.makeText(this, "摄像头权限未授权，无法拍照", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         if (requestCode == REQUEST_AMBIENT_CAMERA_PERMISSION) {
             val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             val openDialog = openAmbientDialogAfterPermission
@@ -1204,6 +1225,24 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(micDenoiseSwitch)
 
+        val allowPhotoSwitch = Switch(this).apply {
+            text = "允许拍照"
+            isChecked = MeSettings.isXiaozhiAllowPhoto(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        allowPhotoSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked && !hasCameraPermission()) {
+                pendingXiaozhiPhotoSwitch = allowPhotoSwitch
+                allowPhotoSwitch.isChecked = false
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.CAMERA),
+                    REQUEST_XIAOZHI_CAMERA_PERMISSION
+                )
+            }
+        }
+        container.addView(allowPhotoSwitch)
+
         // 只有自建服务器才需要改这两项
         addLabel("WebSocket 地址（默认官方，自建才改）")
         val wsInput = addInput(MeSettings.getXiaozhiWsUrl(this))
@@ -1220,7 +1259,7 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("保存") { _, _ ->
                 saveXiaozhiSettings(
                     deviceIdInput, wsInput, tokenInput, silenceInput,
-                    autoContinueSwitch, pauseMediaSwitch, micDenoiseSwitch
+                    autoContinueSwitch, pauseMediaSwitch, micDenoiseSwitch, allowPhotoSwitch
                 )
                 XiaozhiAssistant.reloadConfig()
                 MeService.me?.syncXiaozhiSetting()
@@ -1247,7 +1286,8 @@ class MainActivity : AppCompatActivity() {
         silenceInput: EditText,
         autoContinueSwitch: Switch,
         pauseMediaSwitch: Switch,
-        micDenoiseSwitch: Switch
+        micDenoiseSwitch: Switch,
+        allowPhotoSwitch: Switch
     ) {
         // 清空输入框视为重新随机一个，避免存空值后每次启动都变
         MeSettings.setXiaozhiDeviceMac(
@@ -1263,6 +1303,7 @@ class MainActivity : AppCompatActivity() {
         MeSettings.setXiaozhiAutoContinue(this, autoContinueSwitch.isChecked)
         MeSettings.setXiaozhiPauseMedia(this, pauseMediaSwitch.isChecked)
         MeSettings.setXiaozhiMicDenoise(this, micDenoiseSwitch.isChecked)
+        MeSettings.setXiaozhiAllowPhoto(this, allowPhotoSwitch.isChecked)
     }
 
     private fun requestNotificationListenerPermissionIfNeeded() {

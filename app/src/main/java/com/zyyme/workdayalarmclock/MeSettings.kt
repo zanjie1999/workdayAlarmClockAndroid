@@ -64,6 +64,7 @@ object MeSettings {
     const val KEY_XIAOZHI_SILENCE_TIMEOUT = "xiaozhi_silence_timeout"
     const val KEY_XIAOZHI_PAUSE_MEDIA = "xiaozhi_pause_media"
     const val KEY_XIAOZHI_MIC_DENOISE = "xiaozhi_mic_denoise"
+    const val KEY_XIAOZHI_ALLOW_PHOTO = "xiaozhi_allow_photo"
 
     const val DEFAULT_XIAOZHI_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"
     const val DEFAULT_XIAOZHI_WS_URL = "wss://api.tenclass.net/xiaozhi/v1/"
@@ -267,4 +268,11 @@ object MeSettings {
 
     fun setXiaozhiMicDenoise(context: Context, enabled: Boolean) =
         setEnabled(context, KEY_XIAOZHI_MIC_DENOISE, enabled)
+
+    /** 允许 AI 拍照：开了小智的工具列表里才会出现拍照工具（默认关） */
+    fun isXiaozhiAllowPhoto(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_ALLOW_PHOTO, false)
+
+    fun setXiaozhiAllowPhoto(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_ALLOW_PHOTO, enabled)
 }

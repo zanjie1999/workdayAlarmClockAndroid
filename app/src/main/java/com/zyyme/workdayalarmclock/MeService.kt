@@ -8,6 +8,7 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
+import android.hardware.Camera
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
@@ -15,10 +16,12 @@ import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.StatFs
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.DisplayMetrics
 import android.util.Log
@@ -28,10 +31,15 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
+import com.zyyme.workdayalarmclock.camera.CameraSizes
+import com.zyyme.workdayalarmclock.camera.CameraStreamFormat
+import com.zyyme.workdayalarmclock.camera.CameraStreamKey
 import com.zyyme.workdayalarmclock.camera.FramebufferFrameRenderer
+import com.zyyme.workdayalarmclock.camera.MjpegCameraPipeline
 import com.zyyme.workdayalarmclock.camera.CameraHttpServer
 import com.zyyme.workdayalarmclock.xiaozhi.DoubleClickGate
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiAssistant
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiDeviceInfo
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiHost
 import org.json.JSONArray
 import org.json.JSONObject
@@ -47,6 +55,9 @@ import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.collections.iterator
 import kotlin.jvm.java
 import kotlin.math.sqrt
@@ -642,6 +653,15 @@ class MeService : Service() {
 
         override fun isMediaPlaying(): Boolean = this@MeService.isMediaPlaying()
 
+        override fun deviceStatusJson(): String = this@MeService.deviceStatusJson()
+
+        override fun capturePhoto(
+            question: String,
+            cameraIndex: Int,
+            visionUrl: String,
+            visionToken: String
+        ): String? = this@MeService.capturePhoto(question, cameraIndex, visionUrl, visionToken)
+
         override fun claimMicrophone() {
             // 摄像头 /aac 推流占着麦克风时先让出去
             cameraHttpServer?.suspendAudioForExternalUser()
@@ -669,6 +689,226 @@ class MeService : Service() {
     fun ambientBrightnessValue(): Int = ambientBrightness.currentSystemBrightness()
 
     fun ambientFaceStatus(): String = ambientBrightness.faceStatusText()
+
+    /**
+     * 设备状态，一行紧凑 JSON，给小智的 MCP 工具直接当文本返回。
+     * 所有字段都按 minSdk 14 能用的 API 取，别换成 19+ 才有的符号。
+     */
+    fun deviceStatusJson(): String {
+        val json = JSONObject()
+
+        // 电量/充电：读 ACTION_BATTERY_CHANGED 的粘性广播，API 1 就有
+        try {
+            val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+            json.put("battery", if (level >= 0 && scale > 0) level * 100 / scale else -1)
+            val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            json.put(
+                "charging",
+                status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == BatteryManager.BATTERY_STATUS_FULL
+            )
+        } catch (e: Exception) {
+            json.put("battery", -1)
+            json.put("charging", false)
+        }
+
+        // 音量：不能读 audioManager 字段，它在 onStartCommand 里才初始化，可能还没 init
+        try {
+            val am = getSystemService(AUDIO_SERVICE) as AudioManager
+            val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            json.put(
+                "volume",
+                if (max > 0) am.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / max else -1
+            )
+        } catch (e: Exception) {
+            json.put("volume", -1)
+        }
+
+        json.put("ip", try { getIp() } catch (e: Exception) { "" })
+
+        // 存储：availableBytes 是 API 18，老机器走 blocks*size
+        json.put("storageFreeMB", try {
+            val stat = StatFs(Environment.getDataDirectory().absolutePath)
+            val freeBytes = if (Build.VERSION.SDK_INT >= 18) {
+                stat.availableBytes
+            } else {
+                stat.availableBlocks.toLong() * stat.blockSize
+            }
+            freeBytes / 1048576L
+        } catch (e: Exception) { -1L })
+
+        json.put("memFreeMB", try {
+            val info = ActivityManager.MemoryInfo()
+            (getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
+            info.availMem / 1048576L
+        } catch (e: Exception) { -1L })
+
+        json.put("playing", isMediaPlaying())
+        json.put("version", try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0"
+        } catch (e: Exception) { "1.0" })
+
+        return json.toString()
+    }
+
+    /**
+     * 拍照并上传到网关下发的视觉地址，返回画面描述；任何一步失败返回 null。
+     *
+     * @param cameraIndex 摄像头编号，直接给 `Camera.open`
+     */
+    fun capturePhoto(
+        question: String,
+        cameraIndex: Int,
+        visionUrl: String,
+        visionToken: String
+    ): String? {
+        if (visionUrl.isEmpty()) {
+            print2LogView("拍照失败：网关没有下发视觉地址")
+            return null
+        }
+        // 负数表示没有摄像头
+        if (cameraIndex < 0) {
+            print2LogView("拍照失败：没有摄像头")
+            return null
+        }
+        // 编号超出就退到最后一个摄像头，免得模型瞎猜一个不存在的高编号
+        val cameraCount = Camera.getNumberOfCameras()
+        val index = if (cameraCount > 0 && cameraIndex >= cameraCount) cameraCount - 1
+        else cameraIndex
+        val jpeg = captureJpeg(index) ?: return null
+        return uploadPhoto(question, jpeg, visionUrl, visionToken)
+    }
+
+    /** 拍一帧，返回 MJPEG 管线出的原始 JPEG */
+    private fun captureJpeg(cameraIndex: Int): ByteArray? {
+        if (!hasCameraPermission()) {
+            print2LogView("拍照失败：没有相机权限")
+            return null
+        }
+        var pipeline: MjpegCameraPipeline? = null
+        try {
+            // 档位是 CameraSizes 排好序的下标（面积降序），挑离 1024x768 最近的那个。
+            // 都比 1024x768 小时，最近的自然就是最大那档
+            val sizes = CameraSizes.cachedMjpeg(cameraIndex)
+                ?: MjpegCameraPipeline.supportedResolutions(cameraIndex)
+            val resolutionIndex = sizes.indices.minByOrNull {
+                Math.abs(sizes[it].first - 1024) + Math.abs(sizes[it].second - 768)
+            }
+            val created = MjpegCameraPipeline(
+                CameraStreamKey(CameraStreamFormat.MJPEG, cameraIndex, resolutionIndex),
+                { message -> print2LogView(message) }
+            )
+            pipeline = created
+            if (!created.start()) {
+                print2LogView("拍照失败：相机打不开，可能被 IP 摄像头或摄像头自动亮度占着")
+                return null
+            }
+            // 队列里还没有帧时会最多等 3 秒
+            var packet = created.awaitPacket(0)
+            // 头几帧自动曝光还没收敛，容易全黑，往后多取两帧
+            repeat(2) {
+                val next = created.awaitPacket(packet?.sequence ?: 0)
+                if (next != null) packet = next
+            }
+            val frame = packet ?: run {
+                print2LogView("拍照失败：没拿到预览帧")
+                return null
+            }
+            return frame.data
+        } catch (e: Exception) {
+            print2LogView("拍照失败 $e")
+            return null
+        } finally {
+            try {
+                pipeline?.stop()
+            } catch (e: Exception) {
+                Log.w("MeService", "stop camera pipeline failed", e)
+            }
+        }
+    }
+
+    /**
+     * 按官方固件的格式上传：multipart/form-data，`question` 文本字段 + `file` 图片字段。
+     * 显式给 Content-Length（服务端不接受 chunked），token 走 Bearer。
+     */
+    private fun uploadPhoto(
+        question: String,
+        jpeg: ByteArray,
+        visionUrl: String,
+        visionToken: String
+    ): String? {
+        var conn: HttpURLConnection? = null
+        try {
+            val boundary = "----XiaozhiAndroidBoundary"
+            val head = (
+                "--$boundary\r\n" +
+                    "Content-Disposition: form-data; name=\"question\"\r\n\r\n" +
+                    question + "\r\n" +
+                    "--$boundary\r\n" +
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"camera.jpg\"\r\n" +
+                    "Content-Type: image/jpeg\r\n\r\n"
+                ).toByteArray(Charsets.UTF_8)
+            val tail = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+
+            conn = URL(visionUrl).openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 5000
+            conn.readTimeout = 20000
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            conn.setRequestProperty("Device-Id", XiaozhiDeviceInfo.deviceMac(this))
+            conn.setRequestProperty("Client-Id", XiaozhiDeviceInfo.clientId(this))
+            if (visionToken.isNotEmpty()) {
+                conn.setRequestProperty("Authorization", "Bearer $visionToken")
+            }
+            conn.setFixedLengthStreamingMode(head.size + jpeg.size + tail.size)
+
+            val out = conn.outputStream
+            out.write(head)
+            out.write(jpeg)
+            out.write(tail)
+            out.flush()
+            out.close()
+
+            val code = conn.responseCode
+            val body = try {
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            } catch (e: Exception) {
+                ""
+            }
+            if (code !in 200..299) {
+                print2LogView("拍照失败：视觉服务返回 $code $body")
+                return null
+            }
+            return parseVisionReply(body)
+        } catch (e: Exception) {
+            print2LogView("拍照失败：上传异常 $e")
+            return null
+        } finally {
+            try {
+                conn?.disconnect()
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+    /** 视觉服务回的是 {"success":true,"response":"..."}，取 response；不是 json 就把原文给模型 */
+    private fun parseVisionReply(body: String): String? {
+        if (body.isBlank()) {
+            print2LogView("拍照失败：视觉服务返回空内容")
+            return null
+        }
+        return try {
+            val json = JSONObject(body)
+            val text = json.optString("response")
+            if (text.isNotEmpty()) text else json.optString("message").ifEmpty { body }
+        } catch (e: Exception) {
+            body
+        }
+    }
 
     private fun shouldKeepScreenOnForAlarm(): Boolean {
         mainHandler.post {
@@ -749,7 +989,8 @@ class MeService : Service() {
 
     private fun cameraFeaturesEnabled(): Boolean {
         return (MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_SERVER) ||
-            MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS)) && hasCameraPermission()
+            MeSettings.isEnabled(this, MeSettings.KEY_CAMERA_AUTO_BRIGHTNESS) ||
+            MeSettings.isXiaozhiAllowPhoto(this)) && hasCameraPermission()
     }
 
     private fun microphoneFeaturesEnabled(): Boolean {

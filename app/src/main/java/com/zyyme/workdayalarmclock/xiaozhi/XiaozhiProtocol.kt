@@ -30,6 +30,36 @@ object XiaozhiProtocol {
      */
     const val DEVICE_LANGUAGE = "zh-CN"
 
+    // ---------------- 设备侧 MCP 版本 ----------------
+
+    /**
+     * 设备同时支持两套 MCP 传输格式：
+     * - 新版 [MCP_VERSION_MODERN]：网关先发 `server/discover`，之后每条请求都带 `params._meta`，
+     *   结果里要有 `resultType`
+     * - 旧版 [MCP_VERSION_LEGACY]：`initialize` + `tools/list`，没有任何版本元数据
+     *
+     * 走哪套由网关决定（看 `server/discover` 的响应），我们两边都答。
+     */
+    const val MCP_VERSION_MODERN = "2026-07-28"
+    const val MCP_VERSION_LEGACY = "2024-11-05"
+
+    /** 新版请求 `params._meta` 里的键 */
+    const val META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
+    const val META_CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
+    const val META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
+    const val META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
+
+    /**
+     * 视觉扩展：设备在 `server/discover` 里声明它，网关才会下发 vision 地址
+     * （新版放在 tools/call 的 `_meta…extensions` 里，旧版放在 `initialize` 的
+     * `params.capabilities.vision` 里）。设备拿这个地址上传图片换文字。
+     */
+    const val META_VISION_EXTENSION = "me.xiaozhi/vision"
+
+    /** 这条 MCP 请求是不是新版格式：新版每条请求都在 `params._meta` 里带版本号 */
+    fun isModernMcp(params: JSONObject?): Boolean =
+        params?.optJSONObject("_meta")?.optString(META_PROTOCOL_VERSION) == MCP_VERSION_MODERN
+
     // ---------------- 客户端 -> 服务端 ----------------
 
     fun helloJson(features: Map<String, Boolean> = emptyMap()): String {
@@ -165,8 +195,8 @@ object XiaozhiProtocol {
     /**
      * MCP 回复信封：`{"session_id":..,"type":"mcp","payload":{"jsonrpc":"2.0","id":..,"result":..}}`
      *
-     * 只实现 legacy（2024-11-05）形状：不带 resultType / ttlMs / _meta。
-     * 新网关会先发 server/discover 探测，我们回 -32601，它就退回 legacy 流程。
+     * 信封本身新旧版一样；`resultType` / `_meta` / `ttlMs` 这些新版字段由
+     * [XiaozhiMcp] 按请求版本自己塞进 result 里。
      */
     fun mcpResultJson(id: Any?, result: JSONObject, sessionId: String = ""): String {
         val root = mcpEnvelope(id, sessionId)

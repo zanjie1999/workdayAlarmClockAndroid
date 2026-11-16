@@ -17,7 +17,9 @@ data class XiaozhiConfig(
     /** 会话期间暂停音乐，会话结束恢复（外放音乐会把麦克风糊住，默认开） */
     val pauseMedia: Boolean = true,
     /** 麦克风降噪：开=VOICE_COMMUNICATION + 通话模式（HAL 处理），关=MIC 裸麦（默认关） */
-    val micDenoise: Boolean = false
+    val micDenoise: Boolean = false,
+    /** 允许 AI 拍照：开了 tools/list 里才会出现拍照工具 */
+    val allowPhoto: Boolean = false
 ) {
     companion object {
         const val DEFAULT_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"

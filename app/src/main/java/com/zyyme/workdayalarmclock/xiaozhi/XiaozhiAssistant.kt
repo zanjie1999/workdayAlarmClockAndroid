@@ -35,6 +35,8 @@ object XiaozhiAssistant {
 
     private var appContext: Context? = null
     private var host: XiaozhiHost? = null
+    /** 上一次打过日志的视觉地址，避免每条 MCP 消息都刷一遍 */
+    private var lastVisionUrl = ""
 
     @Volatile
     private var config = XiaozhiConfig()
@@ -151,7 +153,8 @@ object XiaozhiAssistant {
             autoContinue = MeSettings.isXiaozhiAutoContinue(ctx),
             silenceTimeoutMs = MeSettings.getXiaozhiSilenceTimeout(ctx) * 1000L,
             pauseMedia = MeSettings.isXiaozhiPauseMedia(ctx),
-            micDenoise = MeSettings.isXiaozhiMicDenoise(ctx)
+            micDenoise = MeSettings.isXiaozhiMicDenoise(ctx),
+            allowPhoto = MeSettings.isXiaozhiAllowPhoto(ctx)
         )
         config = cfg
         // 地址/token/设备ID 变过，缓存的连接配置就不认了（只改自动续听之类不动它）
@@ -500,7 +503,10 @@ object XiaozhiAssistant {
         dispatch(XiaozhiStateMachine.Event.TransportOpen)
         val transport = transport ?: return
         // 声明支持 MCP，服务端才会来问 tools/list（不声明就完全不会发 initialize）
-        transport.sendText(XiaozhiProtocol.helloJson(mapOf("mcp" to true)))
+        // mcp_20260728：告诉网关我们支持新版，它就不用先发失败一次的 server/discover 探测
+        transport.sendText(
+            XiaozhiProtocol.helloJson(mapOf("mcp" to true, "mcp_20260728" to true))
+        )
         scheduleHelloTimeout()
     }
 
@@ -638,10 +644,27 @@ object XiaozhiAssistant {
         if (request.method != "notifications/initialized" && request.method != "tools/call") {
             log("MCP ${request.method}")
         }
-        val reply = XiaozhiMcp.handle(request, hostVersion()) { command ->
-            log("执行命令 $command")
-            if (XiaozhiPlayerCommands.endsConversation(command)) stopAfterTurn = true
-            host?.runPlayerCommand(command) ?: "设备未就绪"
+        val reply = XiaozhiMcp.handle(
+            request = request,
+            serverVersion = hostVersion(),
+            allowPhoto = config.allowPhoto,
+            runCommand = { command ->
+                log("执行命令 $command")
+                if (XiaozhiPlayerCommands.endsConversation(command)) stopAfterTurn = true
+                host?.runPlayerCommand(command) ?: "设备未就绪"
+            },
+            deviceStatus = { host?.deviceStatusJson() ?: "设备未就绪" },
+            capturePhoto = { question, cameraIndex, visionUrl, visionToken ->
+                host?.capturePhoto(question, cameraIndex, visionUrl, visionToken)
+            }
+        )
+        // 网关只在设备声明了 me.xiaozhi/vision 后才下发地址，打出来方便排查拍照为什么不可用
+        if (request.method == "initialize" || request.method == "tools/call") {
+            val vision = XiaozhiMcp.visionUrl()
+            if (vision != lastVisionUrl) {
+                lastVisionUrl = vision
+                log("MCP 视觉地址：${vision.ifEmpty { "未下发" }}")
+            }
         }
         if (reply != null) transport?.sendText(reply)
     }

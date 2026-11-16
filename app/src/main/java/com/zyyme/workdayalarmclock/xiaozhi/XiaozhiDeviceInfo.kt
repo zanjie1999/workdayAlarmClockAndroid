@@ -52,7 +52,7 @@ object XiaozhiDeviceInfo {
             .put("manufacturer", "")
             .put("mac", mac)
         val protocol = JSONObject()
-            .put("features", JSONObject().put("mcp", true))
+            .put("features", JSONObject().put("mcp", true).put("mcp_20260728", true))
         return JSONObject()
             .put("version", 2)
             // 官方固件在这里上报 Lang::CODE，服务端据此决定系统播报用哪种语言

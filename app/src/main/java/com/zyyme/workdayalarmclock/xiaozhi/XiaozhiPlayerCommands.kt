@@ -16,6 +16,7 @@ package com.zyyme.workdayalarmclock.xiaozhi
  * - `volp` / `volm` / `vol {1-100}`
  * - `alarmlist` 查闹钟
  * - `alarmadd {HHmm} {类型,类型}` / `alarmdel {HHmm} {类型,类型}`
+ * - `nowplay` 查当前播放的歌名
  */
 object XiaozhiPlayerCommands {
 
@@ -33,7 +34,7 @@ object XiaozhiPlayerCommands {
         if (parts.isEmpty()) return null
         val keyword = parts[0].lowercase()
         return when (keyword) {
-            "1key", "pause", "resume", "volp", "volm", "next", "prev", "alarmlist" ->
+            "1key", "pause", "resume", "volp", "volm", "next", "prev", "alarmlist", "nowplay" ->
                 if (parts.size == 1) keyword else null
 
             "stop" -> when (parts.size) {
