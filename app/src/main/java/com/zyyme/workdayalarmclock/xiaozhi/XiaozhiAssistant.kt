@@ -64,6 +64,9 @@ object XiaozhiAssistant {
     @Volatile
     private var sendAudio = false
 
+    /** 本次会话是否由我们暂停了音乐，只有 true 才在结束时恢复 */
+    private var mediaPausedByUs = false
+
     @Volatile
     private var lastLevelResetAt = 0L
 
@@ -115,7 +118,8 @@ object XiaozhiAssistant {
             clientId = XiaozhiDeviceInfo.clientId(ctx),
             mode = XiaozhiConfig.normalizeMode(MeSettings.getXiaozhiMode(ctx)),
             autoContinue = MeSettings.isXiaozhiAutoContinue(ctx),
-            silenceTimeoutMs = MeSettings.getXiaozhiSilenceTimeout(ctx) * 1000L
+            silenceTimeoutMs = MeSettings.getXiaozhiSilenceTimeout(ctx) * 1000L,
+            pauseMedia = MeSettings.isXiaozhiPauseMedia(ctx)
         )
         config = cfg
         stateMachine.autoContinue = cfg.autoContinue
@@ -249,6 +253,8 @@ object XiaozhiAssistant {
         sessionActive = true
         reconnectCount = 0
         turnLead.setLength(0)
+        // 先停音乐再压低音量：外放的音乐会糊住麦克风，识别会缺字
+        mediaPausedByUs = config.pauseMedia && host?.pauseMediaForVoice() == true
         // 整个会话期间都把音乐压低（等同"丢掉焦点"），直到会话结束/断线才还原
         host?.setVoiceDuck(true)
         stateMachine.reset()
@@ -291,7 +297,12 @@ object XiaozhiAssistant {
         player = null
         closeTransport()
         XiaozhiCaption.clear()
+        // 顺序：先把音量还原，再恢复播放，避免恢复后第一下还是 duck 音量
         host?.setVoiceDuck(false)
+        if (mediaPausedByUs) {
+            mediaPausedByUs = false
+            host?.resumeMediaAfterVoice()
+        }
         host?.releaseMicrophone()
         sendAudio = false
     }
@@ -423,7 +434,8 @@ object XiaozhiAssistant {
         if (!sessionActive) return
         dispatch(XiaozhiStateMachine.Event.TransportOpen)
         val transport = transport ?: return
-        transport.sendText(XiaozhiProtocol.helloJson())
+        // 声明支持 MCP，服务端才会来问 tools/list（不声明就完全不会发 initialize）
+        transport.sendText(XiaozhiProtocol.helloJson(mapOf("mcp" to true)))
         scheduleHelloTimeout()
     }
 
@@ -506,7 +518,10 @@ object XiaozhiAssistant {
                 // 新的一轮，表情前缀清空
                 turnLead.setLength(0)
                 dispatch(XiaozhiStateMachine.Event.SttReceived(event.text))
-                if (event.text.isNotBlank()) setCaption("你：${event.text}")
+                if (event.text.isNotBlank()) {
+                    setCaption("你：${event.text}")
+                    log("你：${event.text}")
+                }
             }
 
             is XiaozhiProtocol.ServerEvent.Tts -> onTts(event.state, event.text)
@@ -535,7 +550,25 @@ object XiaozhiAssistant {
             is XiaozhiProtocol.ServerEvent.Unknown -> {
                 log("忽略消息类型 ${event.type}")
             }
+
+            is XiaozhiProtocol.ServerEvent.Mcp -> onMcp(event)
         }
+    }
+
+    /**
+     * 设备侧 MCP：服务端来问工具清单 / 调工具。
+     * 都是控制线程上的同步小活（拼 JSON + 往 Go 管道写一行），不用另开线程。
+     */
+    private fun onMcp(request: XiaozhiProtocol.ServerEvent.Mcp) {
+        // 握手类消息按条记，工具调用在下面单独记命令原文
+        if (request.method != "notifications/initialized" && request.method != "tools/call") {
+            log("MCP ${request.method}")
+        }
+        val reply = XiaozhiMcp.handle(request, hostVersion()) { command ->
+            log("执行命令 $command")
+            host?.runPlayerCommand(command) ?: "设备未就绪"
+        }
+        if (reply != null) transport?.sendText(reply)
     }
 
     private fun onTts(state: String, text: String) {
@@ -547,7 +580,10 @@ object XiaozhiAssistant {
                 // 回复是一段段来的，字幕只显示当前这一段，不累积；
                 // 开头那行表情固定挂在前面
                 if (text.isNotBlank()) {
-                    setCaption(if (turnLead.isEmpty()) text else turnLead.toString() + text)
+                    val line = if (turnLead.isEmpty()) text else turnLead.toString() + text
+                    setCaption(line)
+                    // 字幕一条条刷，日志也一条条记，方便事后翻对话
+                    log("小智：$line")
                 }
                 dispatch(XiaozhiStateMachine.Event.TtsSentence(text))
             }

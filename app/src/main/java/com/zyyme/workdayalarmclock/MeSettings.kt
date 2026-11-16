@@ -62,6 +62,7 @@ object MeSettings {
     const val KEY_XIAOZHI_MODE = "xiaozhi_mode"
     const val KEY_XIAOZHI_AUTO_CONTINUE = "xiaozhi_auto_continue"
     const val KEY_XIAOZHI_SILENCE_TIMEOUT = "xiaozhi_silence_timeout"
+    const val KEY_XIAOZHI_PAUSE_MEDIA = "xiaozhi_pause_media"
 
     const val DEFAULT_XIAOZHI_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"
     const val DEFAULT_XIAOZHI_WS_URL = "wss://api.tenclass.net/xiaozhi/v1/"
@@ -251,4 +252,11 @@ object MeSettings {
 
     fun setXiaozhiSilenceTimeout(context: Context, seconds: Int) =
         setInt(context, KEY_XIAOZHI_SILENCE_TIMEOUT, seconds.coerceIn(2, 60))
+
+    /** 会话期间暂停音乐（外放会糊麦克风，默认打开） */
+    fun isXiaozhiPauseMedia(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_PAUSE_MEDIA, true)
+
+    fun setXiaozhiPauseMedia(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_PAUSE_MEDIA, enabled)
 }

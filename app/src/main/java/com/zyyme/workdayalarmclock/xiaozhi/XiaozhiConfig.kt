@@ -13,7 +13,9 @@ data class XiaozhiConfig(
     val clientId: String = "",
     val mode: String = MODE_AUTO,
     val autoContinue: Boolean = true,
-    val silenceTimeoutMs: Long = 8000L
+    val silenceTimeoutMs: Long = 8000L,
+    /** 会话期间暂停音乐，会话结束恢复（外放音乐会把麦克风糊住，默认开） */
+    val pauseMedia: Boolean = true
 ) {
     companion object {
         const val DEFAULT_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"

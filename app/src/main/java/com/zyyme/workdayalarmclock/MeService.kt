@@ -91,6 +91,8 @@ class MeService : Service() {
         private const val MEDIA_TRACK_LONG_PRESS_DELAY_MS = 900L
         private const val MEDIA_TRACK_SEEK_INTERVAL_MS = 500L
         private const val MEDIA_TRACK_SEEK_STEP_MS = 5000
+        /** 命令写完等这么久，收 Go 的输出 */
+        private const val COMMAND_OUTPUT_WAIT_MS = 500L
         /** 小智录音时的音乐音量，与 audiofocus ducking 保持一致 */
         private const val VOICE_DUCK_VOLUME = 0.3f
         /** 小智启用时，DPAD Center 单击延后这么久执行，用来等第二击 */
@@ -135,6 +137,9 @@ class MeService : Service() {
     var batInfo = ""
     var batLevel = -1
     @Volatile var lastEcho = ""
+    // 小智执行命令时开一个窗口，把这期间 Go 打回来的行收下来当命令结果
+    @Volatile private var commandOutput: StringBuilder? = null
+    private val commandOutputLock = Any()
     @Volatile var weatherText = ""
     // 天气预警信息，显示在歌词条的位置
     @Volatile var weatherAlText = ""
@@ -628,6 +633,13 @@ class MeService : Service() {
             this@MeService.setVoiceDuck(on)
         }
 
+        override fun pauseMediaForVoice(): Boolean = this@MeService.pauseMediaForVoice()
+
+        override fun resumeMediaAfterVoice() = this@MeService.resumeMediaAfterVoice()
+
+        override fun runPlayerCommand(command: String): String =
+            this@MeService.runPlayerCommand(command)
+
         override fun isMediaPlaying(): Boolean = this@MeService.isMediaPlaying()
 
         override fun claimMicrophone() {
@@ -1008,6 +1020,12 @@ class MeService : Service() {
     fun checkAction(s: String?, fromPipe: Boolean) {
         if (s != null) {
             if (fromPipe) {
+                // 小智正在等这条命令的输出，顺手收一份（不影响下面原有的处理）
+                // 前两个字符是大写的是 PLAY/VOL/SONGID/WEATHER/ECHO 这类协议行，别塞给模型
+                val buffer = commandOutput
+                if (buffer != null && !isProtocolLine(s)) {
+                    synchronized(commandOutputLock) { buffer.append(s).append('\n') }
+                }
                 // 在本机发送udp广播时本机也会收到，过滤重复的内容
                 cmdLastT = System.currentTimeMillis()
                 cmdLastMsg = s
@@ -1666,6 +1684,64 @@ class MeService : Service() {
             }
         }
     }
+
+    /**
+     * 小智会话开始：暂停音乐，返回 true 表示这次真的停了（会话结束要接着播）。
+     * 没在播就不动，免得把用户自己暂停的状态当成"要恢复"。
+     */
+    fun pauseMediaForVoice(): Boolean {
+        if (!isMediaPlaying()) return false
+        print2LogView("小智对话，暂停播放")
+        requestPausePlayback()
+        return true
+    }
+
+    /** 小智会话结束：把 [pauseMediaForVoice] 暂停的播放接着放下去 */
+    fun resumeMediaAfterVoice() {
+        if (isStop) return
+        print2LogView("小智对话结束，恢复播放")
+        requestResumePlayback()
+    }
+
+    /**
+     * 小智 MCP 工具下发的命令（上游已按白名单校验过）。
+     * 走和按键/语音同一条 Go 命令管道，所以界面上看到的状态是同步的。
+     * Go 处理都很快，写完等 500ms 把它这期间打回来的行一起交给模型；
+     * 一条都没有就说明这条命令本来就没输出。
+     */
+    fun runPlayerCommand(command: String): String {
+        if (writer == null) return "播放器未启动"
+        val buffer = StringBuilder()
+        synchronized(commandOutputLock) { commandOutput = buffer }
+        return try {
+            if (!writeGoCommand(command)) {
+                "播放器未启动"
+            } else {
+                // 等的时候不能占着 MeService 的锁，读管道那头的线程要用
+                Thread.sleep(COMMAND_OUTPUT_WAIT_MS)
+                val text = synchronized(commandOutputLock) { buffer.toString().trim() }
+                if (text.isEmpty()) "已执行 $command" else text
+            }
+        } catch (e: Exception) {
+            Log.w("MeService", "run player command failed", e)
+            "命令发送失败：${e.message}"
+        } finally {
+            synchronized(commandOutputLock) { commandOutput = null }
+        }
+    }
+
+    /** 只负责把命令写进 Go 的命令管道，返回 false 表示没写成功 */
+    @Synchronized
+    private fun writeGoCommand(command: String): Boolean {
+        val out = writer ?: return false
+        out.println(command)
+        out.flush()
+        return true
+    }
+
+    /** Go 给 App 的协议行都是大写开头的（PLAY / VOL / SONGID / WEATHER ...），这些不给模型看 */
+    private fun isProtocolLine(line: String): Boolean =
+        line.length >= 2 && line[0] in 'A'..'Z' && line[1] in 'A'..'Z'
 
     private fun requestPausePlayback(
         resumeAfterFocusGain: Boolean = false,

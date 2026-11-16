@@ -83,6 +83,18 @@ object XiaozhiProtocol {
         data class Llm(val text: String, val emotion: String) : ServerEvent()
         data class Alert(val status: String, val message: String) : ServerEvent()
         object Goodbye : ServerEvent()
+
+        /**
+         * 设备侧 MCP（JSON-RPC 2.0 塞在 payload 里）。
+         * [id] 原样保留：可能是整数也可能是字符串，回包必须一字不差地带回去，否则服务端不认。
+         */
+        data class Mcp(
+            val id: Any?,
+            val method: String,
+            val params: JSONObject?,
+            val sessionId: String
+        ) : ServerEvent()
+
         data class Unknown(val type: String) : ServerEvent()
     }
 
@@ -117,11 +129,57 @@ object XiaozhiProtocol {
                 )
                 // 用户让 AI"退下"时服务端会发 goodbye 并关掉连接，这种情况不该重连
                 "goodbye" -> ServerEvent.Goodbye
+                // 设备侧 MCP：payload 里是 JSON-RPC，method 为空说明是坏包，当未知类型忽略
+                "mcp" -> {
+                    val payload = root.optJSONObject("payload")
+                    val method = payload?.optString("method").orEmpty()
+                    if (payload == null || method.isEmpty()) {
+                        ServerEvent.Unknown(type)
+                    } else {
+                        ServerEvent.Mcp(
+                            id = payload.opt("id"),
+                            method = method,
+                            params = payload.optJSONObject("params"),
+                            sessionId = root.optString("session_id")
+                        )
+                    }
+                }
                 else -> ServerEvent.Unknown(type)
             }
         } catch (e: Exception) {
             null
         }
+    }
+
+    // ---------------- MCP 回包 ----------------
+
+    /**
+     * MCP 回复信封：`{"session_id":..,"type":"mcp","payload":{"jsonrpc":"2.0","id":..,"result":..}}`
+     *
+     * 只实现 legacy（2024-11-05）形状：不带 resultType / ttlMs / _meta。
+     * 新网关会先发 server/discover 探测，我们回 -32601，它就退回 legacy 流程。
+     */
+    fun mcpResultJson(id: Any?, result: JSONObject, sessionId: String = ""): String {
+        val root = mcpEnvelope(id, sessionId)
+        root.getJSONObject("payload").put("result", result)
+        return root.toString()
+    }
+
+    fun mcpErrorJson(id: Any?, code: Int, message: String, sessionId: String = ""): String {
+        val error = JSONObject().put("code", code).put("message", message)
+        val root = mcpEnvelope(id, sessionId)
+        root.getJSONObject("payload").put("error", error)
+        return root.toString()
+    }
+
+    private fun mcpEnvelope(id: Any?, sessionId: String): JSONObject {
+        val payload = JSONObject().put("jsonrpc", "2.0")
+        // id 必须是原样带回：字符串就是字符串，整数就是整数
+        payload.put("id", id ?: JSONObject.NULL)
+        return JSONObject()
+            .put("session_id", sessionId)
+            .put("type", "mcp")
+            .put("payload", payload)
     }
 
     // ---------------- OTA ----------------

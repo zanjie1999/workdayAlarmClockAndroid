@@ -1190,6 +1190,13 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(autoContinueSwitch)
 
+        val pauseMediaSwitch = Switch(this).apply {
+            text = "对话时暂停音乐（结束后恢复）"
+            isChecked = MeSettings.isXiaozhiPauseMedia(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        container.addView(pauseMediaSwitch)
+
         // 只有自建服务器才需要改这两项
         addLabel("WebSocket 地址（默认官方，自建才改）")
         val wsInput = addInput(MeSettings.getXiaozhiWsUrl(this))
@@ -1205,7 +1212,8 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("关闭", null)
             .setPositiveButton("保存") { _, _ ->
                 saveXiaozhiSettings(
-                    deviceIdInput, wsInput, tokenInput, silenceInput, autoContinueSwitch
+                    deviceIdInput, wsInput, tokenInput, silenceInput,
+                    autoContinueSwitch, pauseMediaSwitch
                 )
                 XiaozhiAssistant.reloadConfig()
                 MeService.me?.syncXiaozhiSetting()
@@ -1230,7 +1238,8 @@ class MainActivity : AppCompatActivity() {
         wsInput: EditText,
         tokenInput: EditText,
         silenceInput: EditText,
-        autoContinueSwitch: Switch
+        autoContinueSwitch: Switch,
+        pauseMediaSwitch: Switch
     ) {
         // 清空输入框视为重新随机一个，避免存空值后每次启动都变
         MeSettings.setXiaozhiDeviceMac(
@@ -1244,6 +1253,7 @@ class MainActivity : AppCompatActivity() {
             silenceInput.text.toString().toIntOrNull() ?: MeSettings.DEFAULT_XIAOZHI_SILENCE_TIMEOUT
         )
         MeSettings.setXiaozhiAutoContinue(this, autoContinueSwitch.isChecked)
+        MeSettings.setXiaozhiPauseMedia(this, pauseMediaSwitch.isChecked)
     }
 
     private fun requestNotificationListenerPermissionIfNeeded() {
