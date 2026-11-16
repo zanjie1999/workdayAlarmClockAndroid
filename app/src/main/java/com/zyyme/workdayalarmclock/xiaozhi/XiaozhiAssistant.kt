@@ -67,6 +67,13 @@ object XiaozhiAssistant {
     /** 本次会话是否由我们暂停了音乐，只有 true 才在结束时恢复 */
     private var mediaPausedByUs = false
 
+    /**
+     * 本轮说完就收场、不再续听。
+     * 播放控制类命令（点歌/切歌/恢复播放）执行完，这件事就办完了，
+     * 没必要再把麦克风打开等着听下一句。
+     */
+    private var stopAfterTurn = false
+
     @Volatile
     private var lastLevelResetAt = 0L
 
@@ -253,6 +260,7 @@ object XiaozhiAssistant {
         sessionActive = true
         reconnectCount = 0
         turnLead.setLength(0)
+        stopAfterTurn = false
         // 先停音乐再压低音量：外放的音乐会糊住麦克风，识别会缺字
         mediaPausedByUs = config.pauseMedia && host?.pauseMediaForVoice() == true
         // 整个会话期间都把音乐压低（等同"丢掉焦点"），直到会话结束/断线才还原
@@ -272,6 +280,8 @@ object XiaozhiAssistant {
         }
         log("打断，重新聆听")
         turnLead.setLength(0)
+        // 用户主动打断就是想接着说，别再收场
+        stopAfterTurn = false
         dispatch(XiaozhiStateMachine.Event.Interrupt)
     }
 
@@ -291,6 +301,7 @@ object XiaozhiAssistant {
 
     private fun finishSession() {
         sessionActive = false
+        stopAfterTurn = false
         cancelTimers()
         stopCaptureInternal()
         player?.stop()
@@ -566,9 +577,21 @@ object XiaozhiAssistant {
         }
         val reply = XiaozhiMcp.handle(request, hostVersion()) { command ->
             log("执行命令 $command")
+            if (XiaozhiPlayerCommands.endsConversation(command)) stopAfterTurn = true
             host?.runPlayerCommand(command) ?: "设备未就绪"
         }
         if (reply != null) transport?.sendText(reply)
+    }
+
+    /** 一轮 TTS 播完：平时自动续听，执行过播放控制命令的话这轮就收场 */
+    private fun onPlaybackDrained() {
+        if (stopAfterTurn) {
+            stopAfterTurn = false
+            // 走 Stop 而不是 PlaybackDrained：状态机直接进 IDLE，一路 StartCapture 都不会被触发
+            stopInternal("播放命令已执行")
+            return
+        }
+        dispatch(XiaozhiStateMachine.Event.PlaybackDrained)
     }
 
     private fun onTts(state: String, text: String) {
@@ -601,7 +624,7 @@ object XiaozhiAssistant {
     private fun createPlayer(sampleRate: Int) {
         player?.stop()
         val created = XiaozhiAudioPlayer(sampleRate) { log(it) }
-        created.onDrained = { post { dispatch(XiaozhiStateMachine.Event.PlaybackDrained) } }
+        created.onDrained = { post { onPlaybackDrained() } }
         created.start()
         player = created
     }

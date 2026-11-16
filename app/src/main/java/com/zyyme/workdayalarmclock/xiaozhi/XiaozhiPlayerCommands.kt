@@ -26,8 +26,7 @@ object XiaozhiPlayerCommands {
     private const val MAX_URL_LENGTH = 2048
     private const val MAX_ALARM_TYPES_LENGTH = 64
 
-    /** 校验并归一化；返回 null 表示不认识，不下发 */
-    fun parse(raw: String?): String? {
+    /** 校验并归一化；返回 null 表示不认识，不下发 */    fun parse(raw: String?): String? {
         val text = raw?.trim().orEmpty()
         if (text.isEmpty()) return null
         val parts = text.split(' ', '\t', '\n', '\r').filter { it.isNotEmpty() }
@@ -72,6 +71,19 @@ object XiaozhiPlayerCommands {
             }
 
             else -> null
+        }
+    }
+
+    /**
+     * 这条命令执行完，这轮对话就该收场、不再续听。
+     *
+     * 只有"开始/切换播放"这一类算：点歌、点歌单、放链接、恢复播放、上下一首、默认歌单。
+     * `pause`/`stop`/音量/闹钟都是可能连着操作的，留着麦克风继续听。
+     */
+    fun endsConversation(command: String): Boolean {
+        return when (command.substringBefore(' ').lowercase()) {
+            "1key", "playmusic", "playlist", "play", "resume", "next", "prev" -> true
+            else -> false
         }
     }
 
