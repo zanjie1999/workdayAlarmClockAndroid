@@ -811,6 +811,7 @@ class MeService : Service() {
             }
             // 队列里还没有帧时会最多等 3 秒
             var packet = created.awaitPacket(0)
+            XiaozhiCaption.set("正在拍...")
             // 头几帧自动曝光还没收敛，容易全黑，往后多取两帧
             repeat(12) {
                 val next = created.awaitPacket(packet?.sequence ?: 0)
