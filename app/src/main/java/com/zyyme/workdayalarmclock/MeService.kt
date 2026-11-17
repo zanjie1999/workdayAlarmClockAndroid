@@ -2390,9 +2390,7 @@ class MeService : Service() {
                     if (multiClickKeyCode != keyCode || multiClickState != 1) {
                         return@Runnable
                     }
-                    if (keyCode == KeyEvent.KEYCODE_ZENKAKU_HANKAKU) {
-                        longPressTriggered = true
-                    } else if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                    if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
                         ClockActivity.me?.showMsg("下一首")
                         print2LogView("长按音量加 下一首")
                         requestTrackChange("next")
