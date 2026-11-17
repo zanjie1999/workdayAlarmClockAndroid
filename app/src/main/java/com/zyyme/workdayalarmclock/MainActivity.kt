@@ -236,6 +236,11 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 101)
         }
 
+        // 电池优化白名单：不关的话 Doze 会挂起后台网络、推迟闹钟
+        if (savedInstanceState == null) {
+            requestIgnoreBatteryOptimizationsIfNeeded()
+        }
+
         // 检测到 su 文件就申请一次 root 授权（授权成功才会自动静默更新）
         // 授权成功就不打扰，只有被拒绝（su 返回非 0 或超时）时才提示
         if (MeUpdater.hasSuBinary()) {
@@ -1304,6 +1309,49 @@ class MainActivity : AppCompatActivity() {
         MeSettings.setXiaozhiPauseMedia(this, pauseMediaSwitch.isChecked)
         MeSettings.setXiaozhiMicDenoise(this, micDenoiseSwitch.isChecked)
         MeSettings.setXiaozhiAllowPhoto(this, allowPhotoSwitch.isChecked)
+    }
+
+    /**
+     * 电池优化白名单：Doze 下系统会挂起后台网络、推迟闹钟，闹钟类应用要主动申请豁免。
+     * 点了"暂不"下次启动还会提示，直到真正加入白名单。
+     */
+    private fun requestIgnoreBatteryOptimizationsIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return
+        }
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            return
+        }
+        if (isFinishing) {
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("允许后台运行")
+            .setMessage("系统在息屏后会限制后台网络并推迟闹钟。将本应用加入电池优化白名单，闹钟和局域网访问才稳定。")
+            .setPositiveButton("去设置") { _, _ ->
+                try {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            "package:$packageName".toUri()
+                        )
+                    )
+                } catch (e: Exception) {
+                    try {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                "package:$packageName".toUri()
+                            )
+                        )
+                    } catch (e2: Exception) {
+                        Toast.makeText(this, "打开电池优化设置失败", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("暂不", null)
+            .show()
     }
 
     private fun requestNotificationListenerPermissionIfNeeded() {

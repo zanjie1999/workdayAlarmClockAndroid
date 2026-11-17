@@ -139,6 +139,7 @@ class MeService : Service() {
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
     var wakeLockPlay: PowerManager.WakeLock? = null
+    private var wakeLockNext: PowerManager.WakeLock? = null
     private var screenWakeLock: PowerManager.WakeLock? = null
     var wifiLock: WifiManager.WifiLock? = null
     var shellProcess: Process? = null
@@ -168,7 +169,7 @@ class MeService : Service() {
     private var batteryReceiver: BroadcastReceiver? = null
     private var notificationBuilder: NotificationCompat.Builder? = null
     private var notificationManager: NotificationManager? = null
-    private var wakePendingIntent: PendingIntent? = null
+    private var nextWakePendingIntent: PendingIntent? = null
     private var udpServerSocket: DatagramSocket? = null
     private var cameraHttpServer: CameraHttpServer? = null
     @Volatile private var framebufferStreaming = false
@@ -571,6 +572,50 @@ class MeService : Service() {
         }
         // 发送一个广播，让MediaButtonReceiver接收
         return PendingIntent.getBroadcast(this, action.hashCode(), intent, flags)
+    }
+
+    /**
+     * Go 算好下一次该醒的绝对毫秒时间戳，这里排一个一次性精确闹钟。
+     * 0 表示没有下一次。
+     */
+    private fun scheduleNextWake(ms: Long) {
+        val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+        nextWakePendingIntent?.let { alarmManager.cancel(it) }
+        nextWakePendingIntent = null
+        if (ms <= 0L) {
+            return
+        }
+        // 加 500ms 避开分钟边界：timeJob() 用 time.Now() 的 hh:mm 判闹钟，
+        // 万一 RTC 在 07:59:59.999 醒，这一分钟的闹钟就漏了
+        val trigger = maxOf(ms + 500L, System.currentTimeMillis() + 1000L)
+        val pendingIntent = createPendingIntentForAction(ACTION_WAKE)
+        nextWakePendingIntent = pendingIntent
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                !alarmManager.canScheduleExactAlarms()
+            ) {
+                // 没有精确闹钟权限，退化成不精确，总比没有强
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)
+                print2LogView("没有精确闹钟权限，使用不精确唤醒")
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(trigger, null), pendingIntent)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)
+            } else {
+                @Suppress("DEPRECATION")
+                alarmManager.set(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)
+            }
+            val fmt = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
+            print2LogView("下次唤醒 " + fmt.format(Date(trigger)))
+        } catch (e: SecurityException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)
+            } else {
+                @Suppress("DEPRECATION")
+                alarmManager.set(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)
+            }
+            print2LogView("精确闹钟被拒绝: ${e.message}")
+        }
     }
 
     fun updateNotificationTitle(newTitle: String) {
@@ -1066,6 +1111,10 @@ class MeService : Service() {
         udpServerSocket?.close()
         wakeLock?.release()
         wakeLockPlay?.release()
+        if (wakeLockNext?.isHeld == true) {
+            wakeLockNext?.release()
+        }
+        wakeLockNext = null
         if (screenWakeLock?.isHeld == true) {
             screenWakeLock?.release()
         }
@@ -1073,9 +1122,9 @@ class MeService : Service() {
         wifiLock?.release()
         unregisterReceiver(batteryReceiver)
         stopForeground(true)
-        if (wakePendingIntent != null) {
+        if (nextWakePendingIntent != null) {
             val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-            alarmManager.cancel(wakePendingIntent)
+            nextWakePendingIntent?.let { alarmManager.cancel(it) }
         }
         me = null
         super.onDestroy()
@@ -1101,6 +1150,23 @@ class MeService : Service() {
             print2LogView("唤醒屏幕失败: ${e.message}")
             e.printStackTrace()
         }
+    }
+
+    /**
+     * 精确闹钟到点后先拿一把短锁，等 Go 被调度、开始播放。
+     * AlarmManager 的锁只覆盖 onReceive，onReceive 返回就释放了。
+     */
+    fun acquireNextWakeLock() {
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (wakeLockNext == null) {
+            wakeLockNext = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "workDayAlarmClock:NextWake"
+            ).apply {
+                setReferenceCounted(false)
+            }
+        }
+        wakeLockNext?.acquire(60_000L)
     }
 
     /**
@@ -1398,25 +1464,10 @@ class MeService : Service() {
                 }
                 wifiLock = (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL, "workDayAlarmClock:WifiLock")
                 wifiLock?.acquire()
-            } else if (s == "ALARMON") {
-                if (wakePendingIntent == null) {
-                    // 每分钟唤醒一下的闹钟
-                    val alarmManager = applicationContext.getSystemService(ALARM_SERVICE) as AlarmManager
-                    wakePendingIntent = createPendingIntentForAction(ACTION_WAKE)
-                    // 秒对齐 实测对的不是很齐
-                    alarmManager.setRepeating(
-                        AlarmManager.RTC_WAKEUP,
-                        60000 - System.currentTimeMillis() % 60000, 60000,
-                        wakePendingIntent
-                    )
-                    print2LogView("已启用每分钟唤醒")
-                }
-            } else if (s == "ALARMOFF") {
-                if (wakePendingIntent != null) {
-                    val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-                    alarmManager.cancel(wakePendingIntent)
-                    wakePendingIntent = null
-                    print2LogView("已关闭每分钟唤醒")
+            } else if (s.startsWith("NEXTWAKE ")) {
+                val ms = s.substring(9).trim().toLongOrNull()
+                if (ms != null) {
+                    scheduleNextWake(ms)
                 }
             } else if (s == "ALARM") {
                 val devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager

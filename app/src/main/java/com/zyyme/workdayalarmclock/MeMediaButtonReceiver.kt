@@ -50,7 +50,10 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
                 Log.d("logView MediaButton", "ACTION_FORWARD")
             }
             MeService.ACTION_WAKE -> {
-                MeService.me?.toGo("wake")
+                MeService.me?.let { service ->
+                    service.acquireNextWakeLock()
+                    service.toGo("wake")
+                }
                 Log.d("logView MediaButton", "ACTION_WAKE")
             }
             else -> {
