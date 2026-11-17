@@ -789,12 +789,14 @@ class MeService : Service() {
         }
         var pipeline: MjpegCameraPipeline? = null
         try {
-            // 档位是 CameraSizes 排好序的下标（面积降序），挑离 1024x768 最近的那个。
-            // 都比 1024x768 小时，最近的自然就是最大那档
+            // 实测小智最大可用分辨率1440x1080 大概278k
+            // 档位是 CameraSizes 排好序的下标（面积降序），挑离 1440x1080 最近的那个。
+            // 都比 1440x1080 小时，最近的自然就是最大那档
             val sizes = CameraSizes.cachedMjpeg(cameraIndex)
                 ?: MjpegCameraPipeline.supportedResolutions(cameraIndex)
             val resolutionIndex = sizes.indices.minByOrNull {
-                Math.abs(sizes[it].first - 1024) + Math.abs(sizes[it].second - 768)
+                Math.abs(sizes[it].first - 1440) +
+                    Math.abs(sizes[it].second - 1080)
             }
             val created = MjpegCameraPipeline(
                 CameraStreamKey(CameraStreamFormat.MJPEG, cameraIndex, resolutionIndex),
@@ -808,7 +810,7 @@ class MeService : Service() {
             // 队列里还没有帧时会最多等 3 秒
             var packet = created.awaitPacket(0)
             // 头几帧自动曝光还没收敛，容易全黑，往后多取两帧
-            repeat(2) {
+            repeat(12) {
                 val next = created.awaitPacket(packet?.sequence ?: 0)
                 if (next != null) packet = next
             }
