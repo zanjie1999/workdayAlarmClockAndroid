@@ -39,6 +39,7 @@ import com.zyyme.workdayalarmclock.camera.MjpegCameraPipeline
 import com.zyyme.workdayalarmclock.camera.CameraHttpServer
 import com.zyyme.workdayalarmclock.xiaozhi.DoubleClickGate
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiAssistant
+import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiCaption
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiDeviceInfo
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiHost
 import org.json.JSONArray
@@ -804,6 +805,7 @@ class MeService : Service() {
             )
             pipeline = created
             if (!created.start()) {
+                XiaozhiCaption.set("打不开摄像头呢!")
                 print2LogView("拍照失败：相机打不开，可能被 IP 摄像头或摄像头自动亮度占着")
                 return null
             }
@@ -818,6 +820,8 @@ class MeService : Service() {
                 print2LogView("拍照失败：没拿到预览帧")
                 return null
             }
+            // 更新歌词栏
+            XiaozhiCaption.set("拍好了!")
             return frame.data
         } catch (e: Exception) {
             print2LogView("拍照失败 $e")
