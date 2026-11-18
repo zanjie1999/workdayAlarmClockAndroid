@@ -154,6 +154,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 界面起来了，进程变成 TOP，这时候才能把服务转回前台
+        MeService.me?.restoreForeground()
         AmbientBrightnessController.applyLatestTo(window)
         isActivityVisible = true
         updatePlaybackButton(MeService.me?.shouldShowPauseIcon() == true)
@@ -1395,7 +1397,12 @@ class MainActivity : AppCompatActivity() {
     private fun exitApp() {
         Toast.makeText(this, "${this.getString(R.string.app_name)} 服务已停止", Toast.LENGTH_SHORT).show()
         onDestroy()
-        MeService.me?.stopSelf()
+        // 主动退出：NEXTWAKE 一起取消，否则过一会儿又会被闹钟拉起来
+        MeService.me?.let {
+            it.cancelNextWakeOnDestroy = true
+            it.cancelNextWakeAlarm()
+            it.stopSelf()
+        }
         exitProcess(0)
     }
 

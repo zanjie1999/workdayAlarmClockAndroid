@@ -594,6 +594,7 @@ class ClockActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        MeService.me?.restoreForeground()
         showLyrics = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
         MeService.me?.syncLyricsSetting()
         setFullscreen()

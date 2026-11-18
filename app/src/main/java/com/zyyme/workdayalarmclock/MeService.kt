@@ -84,6 +84,26 @@ class MeService : Service() {
 //        var mediaButtonReceiverHandler: Handler? = null
         var me: MeService? = null
 
+        /**
+         * 唤醒用的 CPU 锁。放在静态里是因为闹钟广播可能是冷启动拉起的进程，
+         * 那时 MeService 实例还不存在，但锁必须马上拿到。
+         */
+        private var wakeLockNext: PowerManager.WakeLock? = null
+
+        fun acquireNextWakeLock(context: Context) {
+            val appContext = context.applicationContext
+            val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (wakeLockNext == null) {
+                wakeLockNext = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "workDayAlarmClock:NextWake"
+                ).apply {
+                    setReferenceCounted(false)
+                }
+            }
+            wakeLockNext?.acquire(60_000L)
+        }
+
         val logBuilder = StringBuilder()
 
         const val ACTION_PLAY = "com.zyyme.workdayalarmclock.ACTION_PLAY"
@@ -139,7 +159,6 @@ class MeService : Service() {
     var mBreathLedsManager: Any? = null
     var wakeLock: PowerManager.WakeLock? = null
     var wakeLockPlay: PowerManager.WakeLock? = null
-    private var wakeLockNext: PowerManager.WakeLock? = null
     private var screenWakeLock: PowerManager.WakeLock? = null
     var wifiLock: WifiManager.WifiLock? = null
     var shellProcess: Process? = null
@@ -311,7 +330,15 @@ class MeService : Service() {
 
     @SuppressLint("WrongConstant")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val startAction = intent?.action
         if (me != null) {
+            // 服务已经在跑，如果是定时器请求给个wake
+            if (startAction == ACTION_WAKE) {
+                acquireNextWakeLock(applicationContext)
+                // getForegroundService 要求服务保持在前台，这里补一次（已在前台就是刷新通知）
+                updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
+                toGo("wake")
+            }
             return 0
         }
         me = this
@@ -575,6 +602,41 @@ class MeService : Service() {
     }
 
     /**
+     * 闹钟唤醒专用：用 getForegroundService 让系统直接把 MeService 当 FGS 启动，
+     * 不经过广播中转。广播中转时 Android 12 会在服务里把 startForeground() 判成后台调用。
+     */
+    private fun createWakePendingIntent(): PendingIntent {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val intent = Intent(this, MeService::class.java).setAction(ACTION_WAKE)
+            PendingIntent.getForegroundService(this, ACTION_WAKE.hashCode(), intent, flags)
+        } else {
+            // 8.0 以下没有 getForegroundService，只能广播 + receiver 拉服务
+            val intent = Intent(this, MeMediaButtonReceiver::class.java).setAction(ACTION_WAKE)
+            PendingIntent.getBroadcast(this, ACTION_WAKE.hashCode(), intent, flags)
+        }
+    }
+
+    /**
+     * 只有用户主动关闭（EXIT、退出应用）才置 true，
+     * onDestroy 据此决定要不要把 NEXTWAKE 闹钟一起取消。
+     */
+    var cancelNextWakeOnDestroy = false
+
+    fun cancelNextWakeAlarm() {
+        nextWakePendingIntent?.let {
+            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+            alarmManager.cancel(it)
+            print2LogView("已取消下次唤醒")
+        }
+        nextWakePendingIntent = null
+    }
+
+    /**
      * Go 算好下一次该醒的绝对毫秒时间戳，这里排一个一次性精确闹钟。
      * 0 表示没有下一次。
      */
@@ -588,7 +650,7 @@ class MeService : Service() {
         // 加 500ms 避开分钟边界：timeJob() 用 time.Now() 的 hh:mm 判闹钟，
         // 万一 RTC 在 07:59:59.999 醒，这一分钟的闹钟就漏了
         val trigger = maxOf(ms + 500L, System.currentTimeMillis() + 1000L)
-        val pendingIntent = createPendingIntentForAction(ACTION_WAKE)
+        val pendingIntent = createWakePendingIntent()
         nextWakePendingIntent = pendingIntent
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -1088,6 +1150,14 @@ class MeService : Service() {
         }
     }
 
+    /**
+     * App 有可见界面时把服务拉回前台。
+     * 冷启动时进程是 BFGS，系统不让转前台；界面起来后进程变 TOP 才允许。
+     */
+    fun restoreForeground() {
+        updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
+    }
+
     override fun onDestroy() {
         XiaozhiAssistant.shutdown()
         stopMediaTrackLongPress()
@@ -1122,9 +1192,12 @@ class MeService : Service() {
         wifiLock?.release()
         unregisterReceiver(batteryReceiver)
         stopForeground(true)
-        if (nextWakePendingIntent != null) {
-            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-            nextWakePendingIntent?.let { alarmManager.cancel(it) }
+        // 只有用户主动退出才取消闹钟。普通重启、被系统停掉要留着，
+        // 否则下一次 NEXTWAKE 永远不会来
+        if (cancelNextWakeOnDestroy) {
+            cancelNextWakeAlarm()
+        } else {
+            nextWakePendingIntent = null
         }
         me = null
         super.onDestroy()
@@ -1150,23 +1223,6 @@ class MeService : Service() {
             print2LogView("唤醒屏幕失败: ${e.message}")
             e.printStackTrace()
         }
-    }
-
-    /**
-     * 精确闹钟到点后先拿一把短锁，等 Go 被调度、开始播放。
-     * AlarmManager 的锁只覆盖 onReceive，onReceive 返回就释放了。
-     */
-    fun acquireNextWakeLock() {
-        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        if (wakeLockNext == null) {
-            wakeLockNext = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "workDayAlarmClock:NextWake"
-            ).apply {
-                setReferenceCounted(false)
-            }
-        }
-        wakeLockNext?.acquire(60_000L)
     }
 
     /**
@@ -1500,6 +1556,7 @@ class MeService : Service() {
                     requestScreenOff()
                 }
             } else if (s == "EXIT") {
+                cancelNextWakeOnDestroy = true
                 stopSelf()
 //                System.exit(0)
             } else if (s == "RESTART") {

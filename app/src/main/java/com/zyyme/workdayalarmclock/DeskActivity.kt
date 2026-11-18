@@ -358,6 +358,7 @@ class DeskActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        MeService.me?.restoreForeground()
         lyricsEnabled = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
         todoView.text = MeService.me?.todoText.orEmpty()
         configureClockFormat()
