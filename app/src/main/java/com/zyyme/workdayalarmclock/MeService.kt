@@ -2792,6 +2792,12 @@ class MeService : Service() {
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_STOP -> {
+                // Android 媒体控件在已经停止时又发来停止：交给小智唤醒，不再下发 stop
+                if (isStop && MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)) {
+                    print2LogView("停止状态下 唤醒小智")
+                    XiaozhiAssistant.start()
+                    return true
+                }
                 ClockActivity.me?.showMsg("停止")
                 print2LogView("媒体按键 停止")
                 requestTrackChange("stop")
