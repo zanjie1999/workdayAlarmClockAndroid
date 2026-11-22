@@ -2341,6 +2341,12 @@ class MeService : Service() {
     }
 
     private fun requestTrackChange(action: String) {
+        // 任何来源（按钮/媒体控件）的停止，只要已经处于停止态且小智开启，就用唤醒小智代替stop
+        if (action == "stop" && isStop && MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)) {
+            print2LogView("停止状态下 唤醒小智")
+            XiaozhiAssistant.start()
+            return
+        }
         clearLyrics()
         runOnPlaybackThread {
             playbackGeneration++
