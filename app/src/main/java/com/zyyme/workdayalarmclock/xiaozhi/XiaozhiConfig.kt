@@ -19,8 +19,22 @@ data class XiaozhiConfig(
     /** 麦克风降噪：开=VOICE_COMMUNICATION + 通话模式（HAL 处理），关=MIC 裸麦（默认关） */
     val micDenoise: Boolean = false,
     /** 允许 AI 拍照：开了 tools/list 里才会出现拍照工具 */
-    val allowPhoto: Boolean = false
+    val allowPhoto: Boolean = false,
+    /** 离线语音唤醒（支持"你好小智"等唤醒词） */
+    val wakeWordEnabled: Boolean = true,
+    /** 逗号分隔的唤醒词列表 */
+    val wakeWords: String = XiaozhiWakeWordConfig.DEFAULT_WAKE_WORDS,
+    /** 唤醒阈值百分比（10~90，越小越灵敏） */
+    val wakeThreshold: Int = XiaozhiWakeWordConfig.DEFAULT_THRESHOLD_PERCENT,
+    /** 对话中唤醒词打断（独立于待机唤醒开关） */
+    val wakeWordInterrupt: Boolean = true,
+    /** 语音实时打断（全双工模式 + HAL/VAD 抗回声打断） */
+    val realtimeInterrupt: Boolean = true,
+    /** 软件回声消除与降噪（无硬件 AEC 设备防自打断） */
+    val softAec: Boolean = true
 ) {
+    fun effectiveMode(): String = if (realtimeInterrupt) MODE_REALTIME else mode
+
     companion object {
         const val DEFAULT_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"
         const val DEFAULT_WS_URL = "wss://api.tenclass.net/xiaozhi/v1/"

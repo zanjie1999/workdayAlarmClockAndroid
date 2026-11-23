@@ -1171,7 +1171,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(enableSwitch)
 
         container.addView(TextView(this).apply {
-            text = "双击确认键开始对话，大屏时钟点中间空白处，小屏双击时间；说话中再点一次可打断"
+            text = "支持说“你好小智”语音唤醒，对话中可直接开口或说唤醒词打断；也支持双击确认键 / 点时钟界面唤醒"
             textSize = 12f
             setPadding(0, dp(2), 0, dp(6))
         })
@@ -1217,6 +1217,45 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(10), 0, 0)
         }
         container.addView(autoContinueSwitch)
+
+        val wakeWordSwitch = Switch(this).apply {
+            text = "语音唤醒（待机离线监听唤醒词）"
+            isChecked = MeSettings.isXiaozhiWakeWord(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        container.addView(wakeWordSwitch)
+
+        addLabel("唤醒词（逗号分隔，支持 你好小智 / 小智小智 / 小智同学 或拼音）")
+        val wakeWordsInput = addInput(MeSettings.getXiaozhiWakeWords(this))
+
+        addLabel("唤醒阈值（10~90，越小越灵敏，默认 25）")
+        val wakeThresholdInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setText(MeSettings.getXiaozhiWakeThreshold(this@MainActivity).toString())
+        }
+        container.addView(wakeThresholdInput)
+
+        val wakeWordInterruptSwitch = Switch(this).apply {
+            text = "唤醒词打断（说话时喊唤醒词打断，防回声误触）"
+            isChecked = MeSettings.isXiaozhiWakeWordInterrupt(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        container.addView(wakeWordInterruptSwitch)
+
+        val realtimeInterruptSwitch = Switch(this).apply {
+            text = "语音实时打断（全双工，直接开口打断）"
+            isChecked = MeSettings.isXiaozhiRealtimeInterrupt(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        container.addView(realtimeInterruptSwitch)
+
+        val softAecSwitch = Switch(this).apply {
+            text = "软件回声消除与降噪（无硬件降噪防自打断）"
+            isChecked = MeSettings.isXiaozhiSoftAec(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        container.addView(softAecSwitch)
 
         val pauseMediaSwitch = Switch(this).apply {
             text = "对话时暂停音乐"
@@ -1266,7 +1305,9 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("保存") { _, _ ->
                 saveXiaozhiSettings(
                     deviceIdInput, wsInput, tokenInput, silenceInput,
-                    autoContinueSwitch, pauseMediaSwitch, micDenoiseSwitch, allowPhotoSwitch
+                    autoContinueSwitch, wakeWordSwitch, wakeWordsInput, wakeThresholdInput,
+                    wakeWordInterruptSwitch, realtimeInterruptSwitch, softAecSwitch,
+                    pauseMediaSwitch, micDenoiseSwitch, allowPhotoSwitch
                 )
                 XiaozhiAssistant.reloadConfig()
                 MeService.me?.syncXiaozhiSetting()
@@ -1292,6 +1333,12 @@ class MainActivity : AppCompatActivity() {
         tokenInput: EditText,
         silenceInput: EditText,
         autoContinueSwitch: Switch,
+        wakeWordSwitch: Switch,
+        wakeWordsInput: EditText,
+        wakeThresholdInput: EditText,
+        wakeWordInterruptSwitch: Switch,
+        realtimeInterruptSwitch: Switch,
+        softAecSwitch: Switch,
         pauseMediaSwitch: Switch,
         micDenoiseSwitch: Switch,
         allowPhotoSwitch: Switch
@@ -1308,6 +1355,15 @@ class MainActivity : AppCompatActivity() {
             silenceInput.text.toString().toIntOrNull() ?: MeSettings.DEFAULT_XIAOZHI_SILENCE_TIMEOUT
         )
         MeSettings.setXiaozhiAutoContinue(this, autoContinueSwitch.isChecked)
+        MeSettings.setXiaozhiWakeWord(this, wakeWordSwitch.isChecked)
+        MeSettings.setXiaozhiWakeWords(this, wakeWordsInput.text.toString())
+        MeSettings.setXiaozhiWakeThreshold(
+            this,
+            wakeThresholdInput.text.toString().toIntOrNull() ?: MeSettings.DEFAULT_XIAOZHI_WAKE_THRESHOLD
+        )
+        MeSettings.setXiaozhiWakeWordInterrupt(this, wakeWordInterruptSwitch.isChecked)
+        MeSettings.setXiaozhiRealtimeInterrupt(this, realtimeInterruptSwitch.isChecked)
+        MeSettings.setXiaozhiSoftAec(this, softAecSwitch.isChecked)
         MeSettings.setXiaozhiPauseMedia(this, pauseMediaSwitch.isChecked)
         MeSettings.setXiaozhiMicDenoise(this, micDenoiseSwitch.isChecked)
         MeSettings.setXiaozhiAllowPhoto(this, allowPhotoSwitch.isChecked)

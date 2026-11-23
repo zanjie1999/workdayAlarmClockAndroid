@@ -32,3 +32,6 @@
 -dontwarn org.slf4j.**
 -dontwarn io.github.jaredmdobson.concentus.**
 -dontwarn org.java_websocket.**
+
+# Sherpa-ONNX JNI 绑定类与字段名不能被混淆
+-keep class com.k2fsa.sherpa.onnx.** { *; }

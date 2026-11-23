@@ -44,7 +44,7 @@ android {
     sourceSets {
         main {
             // Android列表文件中显示的jniLibs实际是libs
-            jniLibs.srcDirs = ['libs']
+            jniLibs.srcDirs = ['libs', 'src/main/jniLibs']
         }
     }
 
@@ -77,6 +77,139 @@ android {
 }
 
 def targetOutputDir = new File(rootDir, "app/release")
+
+def xiaozhiJniDir = file("src/main/jniLibs")
+def xiaozhiAssetsDir = file("src/main/assets/xiaozhi_kws")
+def xiaozhiRequiredBinaries = [
+    new File(xiaozhiJniDir, "arm64-v8a/libonnxruntime.so"),
+    new File(xiaozhiJniDir, "arm64-v8a/libsherpa-onnx-jni.so"),
+    new File(xiaozhiJniDir, "armeabi-v7a/libonnxruntime.so"),
+    new File(xiaozhiJniDir, "armeabi-v7a/libsherpa-onnx-jni.so"),
+    new File(xiaozhiJniDir, "x86/libonnxruntime.so"),
+    new File(xiaozhiJniDir, "x86/libsherpa-onnx-jni.so"),
+    new File(xiaozhiAssetsDir, "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"),
+    new File(xiaozhiAssetsDir, "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
+    new File(xiaozhiAssetsDir, "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"),
+    new File(xiaozhiAssetsDir, "silero_vad.onnx")
+]
+
+tasks.register("fetchXiaozhiKwsAssets") {
+    group = "xiaozhi"
+    description = "Download official Sherpa-ONNX v2.0.3 native libs and KWS/VAD ONNX models if missing."
+    onlyIf {
+        !project.hasProperty("skipXiaozhiKwsDownload") &&
+            xiaozhiRequiredBinaries.any { !it.exists() || it.length() == 0L }
+    }
+    doLast {
+        def downloadFile = { String rawUrl, File dest ->
+            dest.parentFile.mkdirs()
+            def tmp = new File(dest.parentFile, "${dest.name}.tmp")
+            String currentUrl = rawUrl
+            HttpURLConnection conn = null
+            for (int hop = 0; hop < 8; hop++) {
+                conn = (HttpURLConnection) new URL(currentUrl).openConnection()
+                conn.instanceFollowRedirects = false
+                conn.connectTimeout = 20000
+                conn.readTimeout = 120000
+                conn.setRequestProperty("User-Agent", "Gradle-fetchXiaozhiKwsAssets")
+                int code = conn.responseCode
+                if (code in [301, 302, 303, 307, 308]) {
+                    String next = conn.getHeaderField("Location")
+                    conn.disconnect()
+                    if (!next) throw new GradleException("Redirect without Location from ${currentUrl}")
+                    currentUrl = new URL(new URL(currentUrl), next).toString()
+                    continue
+                }
+                if (code !in 200..299) {
+                    conn.disconnect()
+                    throw new GradleException("HTTP ${code} downloading ${currentUrl}")
+                }
+                break
+            }
+            try {
+                conn.inputStream.withCloseable { input ->
+                    tmp.withOutputStream { output ->
+                        byte[] buf = new byte[32768]
+                        int n
+                        while ((n = input.read(buf)) != -1) {
+                            output.write(buf, 0, n)
+                        }
+                    }
+                }
+            } finally {
+                conn?.disconnect()
+            }
+            if (dest.exists()) dest.delete()
+            if (!tmp.renameTo(dest)) {
+                throw new GradleException("Failed to rename ${tmp} to ${dest}")
+            }
+        }
+
+        def cacheDir = new File(buildDir, "tmp/xiaozhi_fetch")
+        cacheDir.mkdirs()
+
+        def neededSo = [
+            "jni/arm64-v8a/libonnxruntime.so": new File(xiaozhiJniDir, "arm64-v8a/libonnxruntime.so"),
+            "jni/arm64-v8a/libsherpa-onnx-jni.so": new File(xiaozhiJniDir, "arm64-v8a/libsherpa-onnx-jni.so"),
+            "jni/armeabi-v7a/libonnxruntime.so": new File(xiaozhiJniDir, "armeabi-v7a/libonnxruntime.so"),
+            "jni/armeabi-v7a/libsherpa-onnx-jni.so": new File(xiaozhiJniDir, "armeabi-v7a/libsherpa-onnx-jni.so"),
+            "jni/x86/libonnxruntime.so": new File(xiaozhiJniDir, "x86/libonnxruntime.so"),
+            "jni/x86/libsherpa-onnx-jni.so": new File(xiaozhiJniDir, "x86/libsherpa-onnx-jni.so")
+        ]
+        if (neededSo.values().any { !it.exists() || it.length() == 0L }) {
+            def aarFile = new File(cacheDir, "sherpa-onnx-2.0.3.aar")
+            logger.lifecycle("Downloading Sherpa-ONNX v2.0.3 native libraries...")
+            downloadFile("https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.3/sherpa-onnx-2.0.3.aar", aarFile)
+            new java.util.zip.ZipFile(aarFile).withCloseable { zf ->
+                neededSo.each { entryName, outFile ->
+                    def entry = zf.getEntry(entryName)
+                    if (entry == null) throw new GradleException("Missing ${entryName} in ${aarFile}")
+                    outFile.parentFile.mkdirs()
+                    zf.getInputStream(entry).withCloseable { input ->
+                        outFile.withOutputStream { output -> input.transferTo(output) }
+                    }
+                }
+            }
+            aarFile.delete()
+        }
+
+        def kwsPrefix = "sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01"
+        def neededKws = [
+            "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+            "decoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+            "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+            "tokens.txt"
+        ]
+        if (neededKws.any { name -> def f = new File(xiaozhiAssetsDir, name); !f.exists() || f.length() == 0L }) {
+            def kwsArchive = new File(cacheDir, "${kwsPrefix}.tar.bz2")
+            def unpackDir = new File(cacheDir, "kws_unpack")
+            logger.lifecycle("Downloading Sherpa-ONNX KWS model...")
+            downloadFile("https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/${kwsPrefix}.tar.bz2", kwsArchive)
+            unpackDir.deleteDir()
+            unpackDir.mkdirs()
+            ant.untar(src: kwsArchive, dest: unpackDir, compression: "bzip2")
+            xiaozhiAssetsDir.mkdirs()
+            neededKws.each { name ->
+                def srcFile = new File(unpackDir, "${kwsPrefix}/${name}")
+                if (!srcFile.exists()) throw new GradleException("Missing ${srcFile} after untar")
+                def dstFile = new File(xiaozhiAssetsDir, name)
+                srcFile.withInputStream { input ->
+                    dstFile.withOutputStream { output -> input.transferTo(output) }
+                }
+            }
+            unpackDir.deleteDir()
+            kwsArchive.delete()
+        }
+
+        def vadFile = new File(xiaozhiAssetsDir, "silero_vad.onnx")
+        if (!vadFile.exists() || vadFile.length() == 0L) {
+            logger.lifecycle("Downloading Silero VAD model...")
+            downloadFile("https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx", vadFile)
+        }
+    }
+}
+
+preBuild.dependsOn(fetchXiaozhiKwsAssets)
 
 afterEvaluate {
     android.applicationVariants.all { variant ->

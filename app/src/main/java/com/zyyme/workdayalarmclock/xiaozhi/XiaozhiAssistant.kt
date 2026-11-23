@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import com.zyyme.workdayalarmclock.MeSettings
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -17,10 +18,10 @@ import java.util.concurrent.Executors
  *
  * 线程模型：
  * - 控制面：[handler]（HandlerThread "xiaozhi-ctrl"）上跑状态机、socket 收发、各种计时器；
- * - 采集与播放各有自己的线程，回调一律 post 回控制面；
+ * - 采集、播放与待机唤醒各有自己的线程，回调一律 post 回控制面；
  * - 宿主（MeService / Activity）的方法都在主线程调用。
  *
- * 手势 / 触屏 / 管道 / 将来的语音唤醒都只调 [start]，不再区分是谁唤起的。
+ * 手势 / 触屏 / 管道 / 离线语音唤醒汇流到同一个会话状态机。
  */
 object XiaozhiAssistant {
 
@@ -32,6 +33,8 @@ object XiaozhiAssistant {
     private const val LEVEL_RESET_INTERVAL_MS = 800L
     private const val OTA_POLL_MAX_ATTEMPTS = 100
     private const val OTA_POLL_INTERVAL_MS = 3000L
+    private const val STANDBY_RETRY_MAX = 3
+    private const val STANDBY_RETRY_BASE_MS = 2000L
 
     private var appContext: Context? = null
     private var host: XiaozhiHost? = null
@@ -52,9 +55,29 @@ object XiaozhiAssistant {
     @Volatile
     private var sessionActive = false
 
+    @Volatile
+    private var standbyMonitoring = false
+
     private var transport: XiaozhiTransport? = null
     private var capture: XiaozhiAudioCapture? = null
     private var player: XiaozhiAudioPlayer? = null
+
+    private val wakeWordEngine = XiaozhiWakeWordEngine()
+    private var wakeWordMonitor: XiaozhiWakeWordMonitor? = null
+    private val bargeInDetector = XiaozhiBargeInDetector()
+    private val softwareAec = XiaozhiSoftwareAec()
+
+    @Volatile
+    private var standbyPrepareInFlight = false
+    private var preparedWakeWords = ""
+    private var preparedWakeThreshold = -1
+    private var preparedVad = false
+    private var standbyRetryAttempt = 0
+    private var standbyRetryRunnable: Runnable? = null
+
+    private var currentSessionId = ""
+    private var pendingWakeWord: String? = null
+    private var pendingWakeWordPcm: ShortArray? = null
 
     private var lastWsUrl = ""
     private var lastToken = ""
@@ -76,6 +99,9 @@ object XiaozhiAssistant {
 
     @Volatile
     private var sendAudio = false
+
+    @Volatile
+    private var latestCaptureRms = 0.0
 
     /** 本次会话是否由我们暂停了音乐，只有 true 才在结束时恢复 */
     private var mediaPausedByUs = false
@@ -123,7 +149,10 @@ object XiaozhiAssistant {
     @Synchronized
     fun shutdown() {
         stop("服务结束")
-        handler?.post {
+        val ctrlHandler = handler
+        ctrlHandler?.post {
+            stopStandbyMonitor()
+            wakeWordEngine.release()
             handlerThread?.quitSafely()
         }
         handlerThread = null
@@ -134,6 +163,7 @@ object XiaozhiAssistant {
         host = null
         stateMachine.reset()
         sessionActive = false
+        standbyMonitoring = false
         reusedCachedEndpoint = false
         invalidateCachedEndpoint("模块已关闭")
         XiaozhiCaption.clear()
@@ -154,7 +184,13 @@ object XiaozhiAssistant {
             silenceTimeoutMs = MeSettings.getXiaozhiSilenceTimeout(ctx) * 1000L,
             pauseMedia = MeSettings.isXiaozhiPauseMedia(ctx),
             micDenoise = MeSettings.isXiaozhiMicDenoise(ctx),
-            allowPhoto = MeSettings.isXiaozhiAllowPhoto(ctx)
+            allowPhoto = MeSettings.isXiaozhiAllowPhoto(ctx),
+            wakeWordEnabled = MeSettings.isXiaozhiWakeWord(ctx),
+            wakeWords = MeSettings.getXiaozhiWakeWords(ctx),
+            wakeThreshold = MeSettings.getXiaozhiWakeThreshold(ctx),
+            wakeWordInterrupt = MeSettings.isXiaozhiWakeWordInterrupt(ctx),
+            realtimeInterrupt = MeSettings.isXiaozhiRealtimeInterrupt(ctx),
+            softAec = MeSettings.isXiaozhiSoftAec(ctx)
         )
         config = cfg
         // 地址/token/设备ID 变过，缓存的连接配置就不认了（只改自动续听之类不动它）
@@ -165,10 +201,16 @@ object XiaozhiAssistant {
         }
         stateMachine.autoContinue = cfg.autoContinue
         stateMachine.silenceTimeoutMs = cfg.silenceTimeoutMs
+        stateMachine.realtimeMode = cfg.realtimeInterrupt
+        stateMachine.keepCaptureWhileSpeaking = cfg.realtimeInterrupt || cfg.wakeWordInterrupt
         if (!cfg.enabled && sessionActive) stop("模块已关闭")
+        post { syncStandbyWakeWord() }
     }
 
     fun isSessionActive(): Boolean = sessionActive
+
+    /** 会话中或待机唤醒监听中都视为小智正在占用麦克风 */
+    fun isMicrophoneInUse(): Boolean = sessionActive || standbyMonitoring
 
     fun isEnabled(): Boolean = config.enabled
 
@@ -176,9 +218,6 @@ object XiaozhiAssistant {
 
     /**
      * 唤醒 / 打断。返回 false 表示这次不该被消费（未启用 / 无权限），宿主落回原逻辑。
-     *
-     * 注意：这里不按系统版本做门槛。小智用到的音频接口都是 API 3 起就有的，
-     * 唯一的版本差异是 16+ 才有 AcousticEchoCanceler，XiaozhiAudioCapture 内部已自行降级。
      *
      * @param hint 可选的补充文本，目前只有 Go 管道会传，预留给"AI 打开待办"这类带参数的唤起。
      */
@@ -277,12 +316,144 @@ object XiaozhiAssistant {
         }
     }
 
+    // ---------------------------------------------------------------- 待机语音唤醒
+
+    private fun syncStandbyWakeWord() {
+        val ctx = appContext ?: return
+        val cfg = config
+        val wantStandby = cfg.enabled && cfg.wakeWordEnabled && !sessionActive && hasRecordPermission(ctx)
+        if (!wantStandby) {
+            cancelStandbyRetry()
+            standbyRetryAttempt = 0
+            stopStandbyMonitor()
+            return
+        }
+
+        val configChanged = preparedWakeWords != cfg.wakeWords ||
+            preparedWakeThreshold != cfg.wakeThreshold ||
+            (cfg.realtimeInterrupt && !preparedVad)
+
+        if (wakeWordMonitor?.isRunning == true && !configChanged) {
+            return
+        }
+
+        if (configChanged) {
+            stopStandbyMonitor()
+        }
+
+        if (standbyPrepareInFlight) return
+        val executor = otaExecutor ?: return
+        standbyPrepareInFlight = true
+        val reqWakeWords = cfg.wakeWords
+        val reqThreshold = cfg.wakeThreshold
+        val reqRealtime = cfg.realtimeInterrupt
+        executor.execute {
+            val ok = wakeWordEngine.ensureReady(
+                context = ctx,
+                rawWakeWords = reqWakeWords,
+                thresholdPercent = reqThreshold,
+                needKws = true,
+                needVad = reqRealtime,
+                log = { log(it) }
+            )
+            post {
+                standbyPrepareInFlight = false
+                if (!ok) return@post
+                preparedWakeWords = reqWakeWords
+                preparedWakeThreshold = reqThreshold
+                preparedVad = preparedVad || reqRealtime
+                val latest = config
+                if (latest.enabled && latest.wakeWordEnabled && !sessionActive && hasRecordPermission(ctx)) {
+                    if (latest.wakeWords != reqWakeWords || latest.wakeThreshold != reqThreshold) {
+                        syncStandbyWakeWord()
+                    } else {
+                        startStandbyMonitor()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startStandbyMonitor() {
+        if (wakeWordMonitor?.isRunning == true || sessionActive) return
+        host?.ensureForegroundMicType()
+        host?.claimMicrophone()
+        val monitor = XiaozhiWakeWordMonitor(
+            engine = wakeWordEngine,
+            onDetected = { wakeWord, prerollPcm ->
+                post { onStandbyWakeWordDetected(wakeWord, prerollPcm) }
+            },
+            onError = { message ->
+                post { onStandbyMonitorError(message) }
+            },
+            log = { message -> log(message) }
+        )
+        if (monitor.start()) {
+            wakeWordMonitor = monitor
+            standbyMonitoring = true
+            standbyRetryAttempt = 0
+        } else {
+            standbyMonitoring = false
+            scheduleStandbyRetry()
+        }
+    }
+
+    private fun stopStandbyMonitor() {
+        val current = wakeWordMonitor
+        wakeWordMonitor = null
+        standbyMonitoring = false
+        current?.stopAndAwait(600L)
+    }
+
+    private fun onStandbyMonitorError(message: String) {
+        log(message)
+        wakeWordMonitor = null
+        standbyMonitoring = false
+        if (config.enabled && config.wakeWordEnabled && !sessionActive) {
+            scheduleStandbyRetry()
+        }
+    }
+
+    private fun scheduleStandbyRetry() {
+        cancelStandbyRetry()
+        if (standbyRetryAttempt >= STANDBY_RETRY_MAX) return
+        standbyRetryAttempt++
+        val delayMs = STANDBY_RETRY_BASE_MS * standbyRetryAttempt
+        val runnable = Runnable {
+            standbyRetryRunnable = null
+            syncStandbyWakeWord()
+        }
+        standbyRetryRunnable = runnable
+        handler?.postDelayed(runnable, delayMs)
+    }
+
+    private fun cancelStandbyRetry() {
+        standbyRetryRunnable?.let { handler?.removeCallbacks(it) }
+        standbyRetryRunnable = null
+    }
+
+    private fun onStandbyWakeWordDetected(wakeWord: String, prerollPcm: ShortArray) {
+        wakeWordMonitor = null
+        standbyMonitoring = false
+        if (!config.enabled || sessionActive) return
+        cancelStandbyRetry()
+        pendingWakeWord = wakeWord
+        pendingWakeWordPcm = prerollPcm
+        setCaption("已唤醒：$wakeWord")
+        log("语音唤醒：$wakeWord")
+        beginSession(hint = null)
+    }
+
     // ---------------------------------------------------------------- 会话
 
     private fun onTrigger(hint: String?) {
         if (stateMachine.isActive) {
             interruptInternal()
         } else {
+            stopStandbyMonitor()
+            cancelStandbyRetry()
+            pendingWakeWord = null
+            pendingWakeWordPcm = null
             beginSession(hint)
         }
     }
@@ -292,17 +463,64 @@ object XiaozhiAssistant {
         val suffix = if (hint.isNullOrBlank()) "" else "：$hint"
         log("开始会话$suffix")
         sessionActive = true
+        currentSessionId = ""
         reconnectCount = 0
         reusedCachedEndpoint = false
         turnLead.setLength(0)
         stopAfterTurn = false
+        bargeInDetector.reset()
+
         // 先停音乐再压低音量：外放的音乐会糊住麦克风，识别会缺字
         mediaPausedByUs = config.pauseMedia && host?.pauseMediaForVoice() == true
         // 整个会话期间都把音乐压低（等同"丢掉焦点"），直到会话结束/断线才还原
         host?.setVoiceDuck(true)
+
+        // 实时打断或降噪模式需在建 AudioTrack/AudioRecord 之前切到通话音频模式，
+        // 否则 HAL 不会将下游输出接入 AEC 参考通路。
+        if (config.realtimeInterrupt || config.micDenoise) {
+            enterVoiceAudioMode()
+        }
+        if (pendingWakeWord != null) {
+            XiaozhiToneCue.playWakeCue(useVoiceStream = config.realtimeInterrupt)
+        }
+
+        ensureSessionModelsReadyAsync()
         stateMachine.reset()
         dispatch(XiaozhiStateMachine.Event.Start)
         resolveEndpointAndConnect()
+    }
+
+    private fun ensureSessionModelsReadyAsync() {
+        val ctx = appContext ?: return
+        val cfg = config
+        val needKws = cfg.wakeWordEnabled || cfg.wakeWordInterrupt
+        val needVad = cfg.realtimeInterrupt
+        if ((!needKws && !needVad) || Build.VERSION.SDK_INT < 21) return
+        val needReload = (needKws &&
+            (preparedWakeWords != cfg.wakeWords || preparedWakeThreshold != cfg.wakeThreshold)) ||
+            (needVad && !preparedVad)
+        if (!needReload && wakeWordEngine.available) return
+        otaExecutor?.execute {
+            val ok = wakeWordEngine.ensureReady(
+                context = ctx,
+                rawWakeWords = cfg.wakeWords,
+                thresholdPercent = cfg.wakeThreshold,
+                needKws = needKws,
+                needVad = needVad,
+                log = { log(it) }
+            )
+            if (ok) {
+                post {
+                    if (needKws) {
+                        preparedWakeWords = cfg.wakeWords
+                        preparedWakeThreshold = cfg.wakeThreshold
+                    }
+                    if (needVad) {
+                        preparedVad = true
+                    }
+                }
+            }
+        }
     }
 
     private fun interruptInternal() {
@@ -317,7 +535,36 @@ object XiaozhiAssistant {
         turnLead.setLength(0)
         // 用户主动打断就是想接着说，别再收场
         stopAfterTurn = false
+        bargeInDetector.reset()
+        wakeWordEngine.resetWakeWord()
+        wakeWordEngine.resetVad()
         dispatch(XiaozhiStateMachine.Event.Interrupt)
+    }
+
+    private fun onInSessionWakeWord(wakeWord: String) {
+        if (!sessionActive) return
+        val st = stateMachine.state
+        if (st != XiaozhiStateMachine.State.SPEAKING && st != XiaozhiStateMachine.State.THINKING) {
+            return
+        }
+        log("唤醒词打断：$wakeWord")
+        XiaozhiToneCue.playInterruptCue(useVoiceStream = config.realtimeInterrupt)
+        turnLead.setLength(0)
+        stopAfterTurn = false
+        bargeInDetector.reset()
+        wakeWordEngine.resetVad()
+        dispatch(XiaozhiStateMachine.Event.WakeWordInterrupt(wakeWord))
+    }
+
+    private fun onLocalVoiceBargeIn() {
+        if (!sessionActive || stateMachine.state != XiaozhiStateMachine.State.SPEAKING) return
+        log("语音实时打断")
+        turnLead.setLength(0)
+        stopAfterTurn = false
+        bargeInDetector.reset()
+        wakeWordEngine.resetWakeWord()
+        wakeWordEngine.resetVad()
+        dispatch(XiaozhiStateMachine.Event.VoiceBargeIn)
     }
 
     private fun stopInternal(reason: String) {
@@ -337,8 +584,13 @@ object XiaozhiAssistant {
     private fun finishSession() {
         sessionActive = false
         stopAfterTurn = false
+        currentSessionId = ""
+        pendingWakeWord = null
+        pendingWakeWordPcm = null
+        bargeInDetector.reset()
+        softwareAec.reset()
         cancelTimers()
-        stopCaptureInternal()
+        stopCaptureInternal(awaitRelease = true)
         player?.stop()
         player = null
         closeTransport()
@@ -351,6 +603,7 @@ object XiaozhiAssistant {
         }
         host?.releaseMicrophone()
         sendAudio = false
+        syncStandbyWakeWord()
     }
 
     // ---------------------------------------------------------------- 连接 / OTA
@@ -393,7 +646,7 @@ object XiaozhiAssistant {
     /** 缓存的连接配置还能不能用：地址/token 都在，且还是同一台设备（MAC 没换） */
     private fun hasCachedEndpoint(context: Context): Boolean =
         lastWsUrl.isNotBlank() && lastToken.isNotBlank() &&
-                lastEndpointMac == XiaozhiDeviceInfo.deviceMac(context)
+            lastEndpointMac == XiaozhiDeviceInfo.deviceMac(context)
 
     private fun invalidateCachedEndpoint(reason: String) {
         if (lastWsUrl.isEmpty() && lastToken.isEmpty() && lastEndpointMac.isEmpty()) return
@@ -490,7 +743,11 @@ object XiaozhiAssistant {
     private val transportListener = object : XiaozhiTransport.Listener {
         override fun onOpen() = post { onTransportOpen() }
         override fun onText(text: String) = post { onServerText(text) }
-        override fun onBinary(data: ByteArray) = post { player?.enqueue(data) }
+        override fun onBinary(data: ByteArray) = post {
+            if (stateMachine.state == XiaozhiStateMachine.State.SPEAKING) {
+                player?.enqueue(data)
+            }
+        }
         override fun onClosed(reason: String, code: Int, remote: Boolean) =
             post { onTransportClosed(reason, code, remote) }
         override fun onFailure(error: Throwable) = post {
@@ -505,7 +762,12 @@ object XiaozhiAssistant {
         // 声明支持 MCP，服务端才会来问 tools/list（不声明就完全不会发 initialize）
         // mcp_20260728：告诉网关我们支持新版，它就不用先发失败一次的 server/discover 探测
         transport.sendText(
-            XiaozhiProtocol.helloJson(mapOf("mcp" to true, "mcp_20260728" to true))
+            XiaozhiProtocol.helloJson(
+                mapOf(
+                    "mcp" to true,
+                    "mcp_20260728" to true
+                )
+            )
         )
         scheduleHelloTimeout()
     }
@@ -587,14 +849,19 @@ object XiaozhiAssistant {
         when (event) {
             is XiaozhiProtocol.ServerEvent.Hello -> {
                 log("握手完成 session_id=${event.sessionId} 采样率=${event.sampleRate}")
+                currentSessionId = event.sessionId
                 // 缓存配置连通了，这次会话后面再断线重连也不用再问 OTA
                 reusedCachedEndpoint = false
                 cancelHelloTimeout()
                 createPlayer(event.sampleRate)
+                sendWakeWordDetectIfPending()
                 dispatch(XiaozhiStateMachine.Event.HelloReceived(event.sampleRate))
             }
 
             is XiaozhiProtocol.ServerEvent.Stt -> {
+                if (stateMachine.state == XiaozhiStateMachine.State.SPEAKING) {
+                    log("服务端触发语音打断")
+                }
                 // 新的一轮，表情前缀清空
                 turnLead.setLength(0)
                 dispatch(XiaozhiStateMachine.Event.SttReceived(event.text))
@@ -633,6 +900,32 @@ object XiaozhiAssistant {
 
             is XiaozhiProtocol.ServerEvent.Mcp -> onMcp(event)
         }
+    }
+
+    private fun sendWakeWordDetectIfPending() {
+        val wakeWord = pendingWakeWord ?: return
+        val pcm = pendingWakeWordPcm
+        pendingWakeWord = null
+        pendingWakeWordPcm = null
+
+        val activeTransport = transport ?: return
+        if (pcm != null && pcm.isNotEmpty()) {
+            try {
+                val encoder = ConcentusOpusCodec.createEncoder(complexity = 2)
+                val chunker = PcmFrameChunker(XiaozhiProtocol.UPLOAD_FRAME_SAMPLES)
+                for (frame in chunker.append(pcm, 0, pcm.size)) {
+                    val packet = encoder.encode(frame, 0, frame.size)
+                    if (packet != null && packet.isNotEmpty()) {
+                        activeTransport.sendBinary(packet)
+                    }
+                }
+                encoder.release()
+            } catch (e: Exception) {
+                log("发送唤醒音频失败：${e.message}")
+            }
+        }
+        activeTransport.sendText(XiaozhiProtocol.listenDetectJson(wakeWord, currentSessionId))
+        stateMachine.expectListeningAfterTurn = true
     }
 
     /**
@@ -678,11 +971,17 @@ object XiaozhiAssistant {
             return
         }
         dispatch(XiaozhiStateMachine.Event.PlaybackDrained)
+        if (stateMachine.state == XiaozhiStateMachine.State.IDLE) {
+            finishSession()
+        }
     }
 
     private fun onTts(state: String, text: String) {
         when (state) {
             "start" -> {
+                bargeInDetector.onSpeakingStarted(SystemClock.elapsedRealtime())
+                wakeWordEngine.resetWakeWord()
+                wakeWordEngine.resetVad()
                 dispatch(XiaozhiStateMachine.Event.TtsStart)
             }
             "sentence_start" -> {
@@ -698,7 +997,9 @@ object XiaozhiAssistant {
             }
             "stop" -> {
                 dispatch(XiaozhiStateMachine.Event.TtsStop)
-                player?.markEndOfTurn()
+                if (stateMachine.state == XiaozhiStateMachine.State.SPEAKING) {
+                    player?.markEndOfTurn()
+                }
             }
             "sentence_end" -> {
                 // 不需要特殊处理，等 tts stop 再排空
@@ -709,7 +1010,16 @@ object XiaozhiAssistant {
 
     private fun createPlayer(sampleRate: Int) {
         player?.stop()
-        val created = XiaozhiAudioPlayer(sampleRate) { log(it) }
+        if (config.realtimeInterrupt || config.micDenoise) {
+            enterVoiceAudioMode()
+        }
+        val created = XiaozhiAudioPlayer(
+            sampleRate = sampleRate,
+            useVoiceStream = config.realtimeInterrupt
+        ) { log(it) }
+        created.onDecodedPcm = { pcm, len, rate ->
+            if (config.softAec) softwareAec.feedFarEnd(pcm, len, rate)
+        }
         created.onDrained = { post { onPlaybackDrained() } }
         created.start()
         player = created
@@ -728,14 +1038,20 @@ object XiaozhiAssistant {
         for (effect in effects) {
             when (effect) {
                 is XiaozhiStateMachine.SideEffect.StartCapture -> startCapture()
-                is XiaozhiStateMachine.SideEffect.StopCapture -> stopCaptureInternal()
+                is XiaozhiStateMachine.SideEffect.StopCapture -> stopCaptureInternal(awaitRelease = false)
+                is XiaozhiStateMachine.SideEffect.SetUplinkEnabled -> capture?.setUplinkEnabled(effect.enabled)
+                is XiaozhiStateMachine.SideEffect.FlushUplinkQueue -> capture?.clearPendingUplink()
+                is XiaozhiStateMachine.SideEffect.SendPrerollAudio -> capture?.enqueuePrerollForUplink(400)
                 is XiaozhiStateMachine.SideEffect.SendListenStart ->
-                    transport?.sendText(XiaozhiProtocol.listenStartJson(config.mode))
+                    transport?.sendText(XiaozhiProtocol.listenStartJson(config.effectiveMode(), currentSessionId))
                 is XiaozhiStateMachine.SideEffect.SendListenStop ->
-                    transport?.sendText(XiaozhiProtocol.listenStopJson())
+                    transport?.sendText(XiaozhiProtocol.listenStopJson(currentSessionId))
                 is XiaozhiStateMachine.SideEffect.SendAbort ->
-                    transport?.sendText(XiaozhiProtocol.abortJson())
-                is XiaozhiStateMachine.SideEffect.FlushPlayback -> player?.flushAndPause()
+                    transport?.sendText(XiaozhiProtocol.abortJson(effect.reason, currentSessionId))
+                is XiaozhiStateMachine.SideEffect.FlushPlayback -> {
+                    player?.flushAndPause()
+                    softwareAec.clearFarEnd()
+                }
                 is XiaozhiStateMachine.SideEffect.CancelSilence -> cancelSilenceTimer()
                 is XiaozhiStateMachine.SideEffect.ScheduleSilence ->
                     scheduleSilenceTimer(effect.timeoutMs)
@@ -762,13 +1078,24 @@ object XiaozhiAssistant {
         if (capture != null) return
         host?.ensureForegroundMicType()
         host?.claimMicrophone()
-        // 降噪开关决定走哪条链路：开=语音通话（必须先切 mode 才生效），关=录像链路不碰 mode
-        if (config.micDenoise) enterVoiceAudioMode()
+        val useVoiceMode = config.micDenoise || config.realtimeInterrupt
+        if (useVoiceMode) enterVoiceAudioMode()
+        softwareAec.reset()
+        if (config.softAec) {
+            log("软件回声消除/降噪：开启")
+        }
         val created = XiaozhiAudioCapture(
             denoise = config.micDenoise,
+            enableAec = config.realtimeInterrupt || config.micDenoise,
             onPacket = { packet -> if (sendAudio) transport?.sendBinary(packet) },
-            onLevel = { rms -> onVoiceLevel(rms) },
+            onLevel = { rms -> latestCaptureRms = rms },
+            onPcm = { samples, length -> onCapturePcm(samples, length) },
             onError = { message -> post { failSession(message) } },
+            pcmProcessor = if (config.softAec) {
+                { samples, length -> softwareAec.processNearEnd(samples, length) }
+            } else {
+                null
+            },
             log = { message -> log(message) }
         )
         if (created.start()) {
@@ -782,21 +1109,27 @@ object XiaozhiAssistant {
         }
     }
 
-    private fun stopCaptureInternal() {
+    private fun stopCaptureInternal(awaitRelease: Boolean) {
         sendAudio = false
         val current = capture
         capture = null
-        // 先还模式再停采：麦克风关掉之后没有任何理由继续占着通话模式
-        restoreAudioMode()
+        // 仅在会话结束或非全双工模式真正停麦时还原音频模式，避免刚开会话在 Event.Start 处反复切换 HAL 模式
+        if (!sessionActive || (current != null && !config.realtimeInterrupt)) {
+            restoreAudioMode()
+        }
         if (current != null) {
-            current.stop()
+            if (awaitRelease) {
+                current.stopAndAwait(500L)
+            } else {
+                current.stop()
+            }
             log("停止录音")
         }
     }
 
     /**
      * 录音期间切到通话音频模式：这是 `AudioSource.VOICE_COMMUNICATION` 真正生效的前提，
-     * 系统语音助手也是这么做的。HAL 只有在通话模式下才会把输出（含媒体那一路）当 AEC 参考。
+     * 系统语音助手也是这么做的。HAL 只有在通话模式下才会把输出（含语音通话那一路）当 AEC 参考。
      *
      * 全局状态，必须成对还原；别人已经处在通话模式（比如正在打电话）就一点都不碰。
      */
@@ -873,12 +1206,57 @@ object XiaozhiAssistant {
         else -> "MODE($mode)"
     }
 
-    private fun onVoiceLevel(rms: Double) {
-        if (rms < VOICE_RMS_THRESHOLD) return
-        val now = System.currentTimeMillis()
-        if (now - lastLevelResetAt < LEVEL_RESET_INTERVAL_MS) return
-        lastLevelResetAt = now
-        post { resetSilenceTimerIfListening() }
+    private fun onCapturePcm(samples: ShortArray, length: Int) {
+        if (!sessionActive) return
+        val state = stateMachine.state
+        val rms = latestCaptureRms
+
+        if ((state == XiaozhiStateMachine.State.SPEAKING || state == XiaozhiStateMachine.State.THINKING) &&
+            config.wakeWordInterrupt
+        ) {
+            val hit = wakeWordEngine.feedWakeWordPcm(samples, length)
+            if (hit != null) {
+                post { onInSessionWakeWord(hit) }
+                return
+            }
+        }
+
+        if (state == XiaozhiStateMachine.State.SPEAKING && config.realtimeInterrupt) {
+            val vadProb = wakeWordEngine.computeVadProb(samples, length)
+            val playbackPeak = player?.currentPlaybackRmsPeak() ?: 0.0
+            when (
+                bargeInDetector.onFrame(
+                    micRms = rms,
+                    playbackRmsPeak = playbackPeak,
+                    vadProb = vadProb,
+                    frameMs = 20L,
+                    nowMs = SystemClock.elapsedRealtime()
+                )
+            ) {
+                XiaozhiBargeInDetector.Result.TRIGGERED -> {
+                    post { onLocalVoiceBargeIn() }
+                    return
+                }
+                XiaozhiBargeInDetector.Result.ECHO_SUPPRESSED_ONCE -> {
+                    log("检测到较强扬声器回声，已自动抑制本地快打断（仍可用唤醒词或按键打断）")
+                }
+                XiaozhiBargeInDetector.Result.NONE -> Unit
+            }
+        }
+
+        if (state == XiaozhiStateMachine.State.LISTENING) {
+            val vadProb = if (config.realtimeInterrupt) {
+                wakeWordEngine.computeVadProb(samples, length)
+            } else {
+                null
+            }
+            val activeSpeech = (vadProb != null && vadProb >= 0.6f) || rms >= VOICE_RMS_THRESHOLD
+            if (!activeSpeech) return
+            val now = System.currentTimeMillis()
+            if (now - lastLevelResetAt < LEVEL_RESET_INTERVAL_MS) return
+            lastLevelResetAt = now
+            post { resetSilenceTimerIfListening() }
+        }
     }
 
     // ---------------------------------------------------------------- 计时器
@@ -941,6 +1319,6 @@ object XiaozhiAssistant {
     private fun hasRecordPermission(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < 23) return true
         return context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
+            PackageManager.PERMISSION_GRANTED
     }
 }

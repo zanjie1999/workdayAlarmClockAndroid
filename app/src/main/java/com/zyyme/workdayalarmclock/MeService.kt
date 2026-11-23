@@ -719,7 +719,7 @@ class MeService : Service() {
                     requestScreenOff()
                 }
             },
-            { XiaozhiAssistant.isSessionActive() }
+            { XiaozhiAssistant.isMicrophoneInUse() }
         ).also { cameraHttpServer = it }
         server.start(MeSettings.getCameraPassword(this))
     }

@@ -1,8 +1,11 @@
 package com.zyyme.workdayalarmclock.xiaozhi
 
+import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
+import android.os.SystemClock
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -13,9 +16,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 不用 ExoPlayer，也不用 AudioFocus（MeService 已常驻持有 GAIN，同 UID 再申请在廉价
  * OEM 音频栈上不可靠）。打断用 [flushAndPause]，一轮说完用 [markEndOfTurn]，
  * 排空后回调 [onDrained] 给上层决定自动续听还是结束会话。
+ *
+ * 当 [useVoiceStream] 为 true 时走 `USAGE_VOICE_COMMUNICATION` / `STREAM_VOICE_CALL`，
+ * 配合 `MODE_IN_COMMUNICATION` 让 Android HAL 把 TTS 下行送入硬件 AEC 参考信号。
  */
 class XiaozhiAudioPlayer(
     private val sampleRate: Int,
+    private val useVoiceStream: Boolean = false,
     private val log: (String) -> Unit = {}
 ) {
 
@@ -47,6 +54,44 @@ class XiaozhiAudioPlayer(
     @Volatile
     var onDrained: (() -> Unit)? = null
 
+    @Volatile
+    var onDecodedPcm: ((ShortArray, Int, Int) -> Unit)? = null
+
+    private val rmsLock = Any()
+    private val rmsValues = DoubleArray(RMS_WINDOW_SLOTS)
+    private val rmsTimes = LongArray(RMS_WINDOW_SLOTS)
+    private var rmsCursor = 0
+
+    fun currentPlaybackRmsPeak(nowMs: Long = SystemClock.elapsedRealtime()): Double {
+        synchronized(rmsLock) {
+            var peak = 0.0
+            for (i in 0 until RMS_WINDOW_SLOTS) {
+                val t = rmsTimes[i]
+                if (t > 0L && nowMs - t <= RMS_WINDOW_MS && rmsValues[i] > peak) {
+                    peak = rmsValues[i]
+                }
+            }
+            return peak
+        }
+    }
+
+    private fun recordPlaybackRms(rms: Double) {
+        val now = SystemClock.elapsedRealtime()
+        synchronized(rmsLock) {
+            rmsValues[rmsCursor] = rms
+            rmsTimes[rmsCursor] = now
+            rmsCursor = (rmsCursor + 1) % RMS_WINDOW_SLOTS
+        }
+    }
+
+    private fun clearPlaybackRms() {
+        synchronized(rmsLock) {
+            rmsValues.fill(0.0)
+            rmsTimes.fill(0L)
+            rmsCursor = 0
+        }
+    }
+
     fun start() {
         if (running.getAndSet(true)) return
         decoder = ConcentusOpusCodec.createDecoder(sampleRate)
@@ -71,16 +116,41 @@ class XiaozhiAudioPlayer(
                 AudioFormat.ENCODING_PCM_16BIT
             )
             val frameBytes = frameSamples * 2
-            val bufferSize = maxOf(minBuffer, frameBytes * 6)
+            val framesInBuffer = if (useVoiceStream) 4 else 6
+            val bufferSize = maxOf(minBuffer, frameBytes * framesInBuffer)
             @Suppress("DEPRECATION")
-            val created = AudioTrack(
-                AudioManager.STREAM_MUSIC,
-                sampleRate,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                bufferSize,
-                AudioTrack.MODE_STREAM
-            )
+            val created = if (useVoiceStream && Build.VERSION.SDK_INT >= 21) {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                val format = AudioFormat.Builder()
+                    .setSampleRate(sampleRate)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+                AudioTrack(
+                    attrs,
+                    format,
+                    bufferSize,
+                    AudioTrack.MODE_STREAM,
+                    AudioManager.AUDIO_SESSION_ID_GENERATE
+                )
+            } else {
+                val streamType = if (useVoiceStream) {
+                    AudioManager.STREAM_VOICE_CALL
+                } else {
+                    AudioManager.STREAM_MUSIC
+                }
+                AudioTrack(
+                    streamType,
+                    sampleRate,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    bufferSize,
+                    AudioTrack.MODE_STREAM
+                )
+            }
             if (created.state != AudioTrack.STATE_INITIALIZED) {
                 log("AudioTrack 初始化失败，TTS 无法播放")
                 created.release()
@@ -106,6 +176,7 @@ class XiaozhiAudioPlayer(
     /** 打断：丢掉还没播的，暂停播放头 */
     fun flushAndPause() {
         queue.clear()
+        clearPlaybackRms()
         endOfTurn = false
         drainedNotified = true
         val target = track ?: return
@@ -127,6 +198,7 @@ class XiaozhiAudioPlayer(
     fun stop() {
         running.set(false)
         queue.clear()
+        clearPlaybackRms()
         thread?.interrupt()
         thread = null
         val target = track
@@ -171,6 +243,8 @@ class XiaozhiAudioPlayer(
         val target = track ?: return
         val pcm = dec.decode(packet, frameSamples) ?: return
         if (pcm.isEmpty()) return
+        onDecodedPcm?.invoke(pcm, pcm.size, sampleRate)
+        recordPlaybackRms(computeRms(pcm))
         try {
             if (target.playState != AudioTrack.PLAYSTATE_PLAYING) target.play()
             var offset = 0
@@ -185,13 +259,28 @@ class XiaozhiAudioPlayer(
         }
     }
 
+    private fun computeRms(pcm: ShortArray): Double {
+        var sum = 0.0
+        for (s in pcm) {
+            val v = s.toDouble()
+            sum += v * v
+        }
+        return Math.sqrt(sum / pcm.size)
+    }
+
     private fun checkDrained() {
         val target = track ?: return
         val head = target.playbackHeadPosition
         if (writtenFrames - head <= 0) {
+            clearPlaybackRms()
             drainedNotified = true
             endOfTurn = false
             onDrained?.invoke()
         }
+    }
+
+    companion object {
+        private const val RMS_WINDOW_SLOTS = 8
+        private const val RMS_WINDOW_MS = 350L
     }
 }

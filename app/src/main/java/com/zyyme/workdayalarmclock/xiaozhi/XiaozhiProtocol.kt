@@ -81,28 +81,29 @@ object XiaozhiProtocol {
         return root.toString()
     }
 
-    fun listenStartJson(mode: String = "auto"): String = JSONObject()
-        .put("session_id", "")
+    fun listenStartJson(mode: String = "auto", sessionId: String = ""): String = JSONObject()
+        .put("session_id", sessionId)
         .put("type", "listen")
         .put("state", "start")
         .put("mode", mode)
         .toString()
 
-    fun listenStopJson(): String = JSONObject()
-        .put("session_id", "")
+    fun listenStopJson(sessionId: String = ""): String = JSONObject()
+        .put("session_id", sessionId)
         .put("type", "listen")
         .put("state", "stop")
         .toString()
 
-    /** 唤醒词检测到之后，把命中文本告诉服务端（v1 暂未启用，留给语音唤醒） */
-    fun listenDetectJson(text: String): String = JSONObject()
-        .put("session_id", "")
+    /** 唤醒词检测到之后，把命中文本告诉服务端 */
+    fun listenDetectJson(text: String, sessionId: String = ""): String = JSONObject()
+        .put("session_id", sessionId)
         .put("type", "listen")
         .put("state", "detect")
         .put("text", text)
         .toString()
 
-    fun abortJson(reason: String = ABORT_REASON_WAKE_WORD): String = JSONObject()
+    fun abortJson(reason: String = ABORT_REASON_WAKE_WORD, sessionId: String = ""): String = JSONObject()
+        .put("session_id", sessionId)
         .put("type", "abort")
         .put("reason", reason)
         .toString()

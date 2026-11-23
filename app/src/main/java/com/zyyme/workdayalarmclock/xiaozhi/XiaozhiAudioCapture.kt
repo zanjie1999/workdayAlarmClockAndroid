@@ -3,6 +3,8 @@ package com.zyyme.workdayalarmclock.xiaozhi
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.os.Build
 import android.os.SystemClock
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -11,29 +13,37 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * 麦克风采集：16kHz / 单声道 / PCM16 -> 60ms 定长帧 -> Opus。
  *
- * 采集音源由 [denoise] 决定：开 = `VOICE_COMMUNICATION`（配合宿主侧 `MODE_IN_COMMUNICATION`
- * 才生效，回声消除/降噪/AGC 全部交给 HAL），关 = `MIC`（裸麦）。
- * 这里**不额外挂 AudioEffect**——叠在 HAL 的处理上只会把声音削过头。
+ * 采集音源由 [denoise] / [enableAec] 决定：任一为真时走 `VOICE_COMMUNICATION`
+ * （配合宿主侧 `MODE_IN_COMMUNICATION` 与系统 `AcousticEchoCanceler` 生效，
+ * 回声消除交给 HAL），全关走 `MIC` 裸麦。
+ * 这里**不额外挂 NoiseSuppressor**——叠在 HAL 的处理上只会把声音削过头。
  *
  * 线程模型（老机器上编码和发网络都可能卡几十上百毫秒，必须跟采集分开）：
- * - "xiaozhi-capture"：只做 AudioRecord.read(20ms) + RMS，读到的样本丢进 [segments]；
+ * - "xiaozhi-capture"：只做 AudioRecord.read(20ms) + RMS + [onPcm]（KWS/VAD），
+ *   并在 [uplinkEnabled] 为真时把样本丢进 [segments]；
  * - "xiaozhi-encode"：从 [segments] 取样本 -> 分帧 -> Opus 编码 -> [onPacket]（宿主里直接发 WS）。
  *
  * 队列满时丢**最旧**的一段：语音识别要的是"现在的声音"，丢新数据只会让延迟一路累积。
  *
- * 每次会话新建一个实例，[stop] 之后不可复用（AudioRecord 与编码器一起释放，避免状态残留）。
- * 500ms 预滚缓冲是为了将来做语音唤醒时能把唤醒前的话带上，现在只保留不发送。
+ * 每次会话新建一个实例，[stop] / [stopAndAwait] 之后不可复用。
+ * 500ms 预滚缓冲用于在实时语音打断时把开头的音节补发给服务端。
  */
 class XiaozhiAudioCapture(
     /** 降噪开关：开走语音通话链路（HAL 出 AEC/NS/AGC），关走裸麦 `MIC` */
     private val denoise: Boolean = false,
+    /** 是否挂载系统硬件 AEC（全双工实时打断需要开启） */
+    private val enableAec: Boolean = denoise,
     private val onPacket: (ByteArray) -> Unit,
     private val onLevel: (Double) -> Unit = {},
+    private val onPcm: (ShortArray, Int) -> Unit = { _, _ -> },
     private val onError: (String) -> Unit = {},
+    private val onReleased: () -> Unit = {},
+    private val pcmProcessor: ((ShortArray, Int) -> ShortArray)? = null,
     private val log: (String) -> Unit = {}
 ) {
 
     private val running = AtomicBoolean(false)
+    private val releasedNotified = AtomicBoolean(false)
 
     /**
      * 采集音源。试过的顺序：
@@ -42,23 +52,33 @@ class XiaozhiAudioCapture(
      * - `VOICE_RECOGNITION`：声音不知道为什么小到嗨那样
      * - `VOICE_COMMUNICATION`：效果好巨好，音质差
      */
-    private val audioSource = if (denoise) {
+    private val useVoiceCommSource = denoise || enableAec
+    private val audioSource = if (useVoiceCommSource) {
         MediaRecorder.AudioSource.VOICE_COMMUNICATION
     } else {
         MediaRecorder.AudioSource.MIC
     }
 
-    private val audioSourceName = if (denoise) "VOICE_COMMUNICATION" else "MIC"
+    private val audioSourceName = if (useVoiceCommSource) "VOICE_COMMUNICATION" else "MIC"
 
     private var captureThread: Thread? = null
     private var encodeThread: Thread? = null
     private var record: AudioRecord? = null
     private var encoder: OpusEncoderApi? = null
+    private var aec: AcousticEchoCanceler? = null
 
     private val chunker = PcmFrameChunker(XiaozhiProtocol.UPLOAD_FRAME_SAMPLES)
+    private val chunkerLock = Any()
     private val preroll = ShortArray(SAMPLE_RATE / 2)
+    private val prerollLock = Any()
     private var prerollWrite = 0
     private var prerollFilled = 0
+
+    @Volatile
+    private var uplinkEnabled = true
+
+    @Volatile
+    private var uplinkGeneration = 0
 
     /** 采集线程 -> 编码线程的转运队列，一段 = 一次 read（20ms） */
     private var segments = newSegmentQueue()
@@ -123,14 +143,25 @@ class XiaozhiAudioCapture(
         record = recorder
         // 纯 Java 的 Opus，复杂度 2 和 5 在 16kbps 语音上几乎听不出差别，老机器上省一半以上 CPU
         encoder = ConcentusOpusCodec.createEncoder(complexity = ENCODE_COMPLEXITY)
-        chunker.reset()
-        prerollWrite = 0
-        prerollFilled = 0
+        synchronized(chunkerLock) { chunker.reset() }
+        synchronized(prerollLock) {
+            prerollWrite = 0
+            prerollFilled = 0
+        }
+        uplinkEnabled = true
+        uplinkGeneration = 0
+        releasedNotified.set(false)
         segments = newSegmentQueue()
         resetStats()
-        // 不挂 AudioEffect：VOICE_COMMUNICATION 音频源 + 通话模式已经带 HAL 的 AEC/NS/AGC，
-        // 再叠一层 NoiseSuppressor 只会把声音削得更狠
-        log("录音参数 音源=${audioSourceName} 音效=${if (denoise) "HAL 内置" else "无"}")
+        val aecAttached = attachHardwareAecIfWanted(recorder)
+        // 不叠 NoiseSuppressor：VOICE_COMMUNICATION + 通话模式已经带 HAL 处理，
+        // 仅在 enableAec 时按需挂载系统 AcousticEchoCanceler。
+        val effectLabel = when {
+            aecAttached -> "系统AEC"
+            denoise -> "HAL内置"
+            else -> "无"
+        }
+        log("录音参数 音源=${audioSourceName} 音效=${effectLabel}")
         try {
             recorder.startRecording()
         } catch (e: Exception) {
@@ -143,6 +174,65 @@ class XiaozhiAudioCapture(
         encodeThread = Thread({ encodeLoop() }, "xiaozhi-encode").apply { start() }
         captureThread = Thread({ captureLoop(recorder) }, "xiaozhi-capture").apply { start() }
         return true
+    }
+
+    private fun attachHardwareAecIfWanted(recorder: AudioRecord): Boolean {
+        if (!enableAec || Build.VERSION.SDK_INT < 16) return false
+        return try {
+            if (!AcousticEchoCanceler.isAvailable()) {
+                log("设备未提供系统 AcousticEchoCanceler，走纯 HAL/软件判定")
+                return false
+            }
+            val created = AcousticEchoCanceler.create(recorder.audioSessionId)
+            if (created != null) {
+                created.enabled = true
+                aec = created
+                true
+            } else {
+                false
+            }
+        } catch (t: Throwable) {
+            log("挂载 AcousticEchoCanceler 失败：${t.message}")
+            false
+        }
+    }
+
+    fun setUplinkEnabled(enabled: Boolean) {
+        uplinkEnabled = enabled
+    }
+
+    fun clearPendingUplink() {
+        uplinkGeneration++
+        segments.clear()
+        synchronized(chunkerLock) {
+            chunker.reset()
+        }
+    }
+
+    fun enqueuePrerollForUplink(durationMs: Int = 400) {
+        if (!running.get()) return
+        val maxSamples = (SAMPLE_RATE * durationMs / 1000).coerceAtLeast(0)
+        if (maxSamples == 0) return
+        val snap: ShortArray
+        synchronized(prerollLock) {
+            val count = minOf(prerollFilled, maxSamples)
+            if (count <= 0) return
+            snap = ShortArray(count)
+            val start = (prerollWrite - count + preroll.size) % preroll.size
+            val first = minOf(count, preroll.size - start)
+            System.arraycopy(preroll, start, snap, 0, first)
+            if (first < count) {
+                System.arraycopy(preroll, 0, snap, first, count - first)
+            }
+        }
+        var offset = 0
+        while (offset < snap.size) {
+            val len = minOf(READ_SAMPLES, snap.size - offset)
+            val chunk = ShortArray(len)
+            System.arraycopy(snap, offset, chunk, 0, len)
+            enqueueSegment(chunk, len)
+            offset += len
+        }
     }
 
     fun stop() {
@@ -158,23 +248,45 @@ class XiaozhiAudioCapture(
         captureThread = null
         encodeThread = null
         // 不 join：采集线程自己会在 read 返回后退出并释放资源，界面线程不该被它拖住
-        if (worker == null) releaseAll()
+        if (worker == null) {
+            releaseAll()
+            notifyReleasedOnce()
+        }
+    }
+
+    /** 在控制线程上等待录音硬件释放完成，避免紧接着切回待机监听时抢麦失败 */
+    fun stopAndAwait(timeoutMs: Long = 500L) {
+        val worker = captureThread
+        stop()
+        if (worker != null && worker !== Thread.currentThread()) {
+            try {
+                worker.join(timeoutMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+        if (record != null) {
+            releaseAll()
+            notifyReleasedOnce()
+        }
     }
 
     /**
-     * 取出并清空预滚缓冲（唤醒词预留，当前唤醒是按键触发，用不到）。
+     * 取出并清空预滚缓冲。
      */
     fun drainPreroll(): ShortArray {
-        if (prerollFilled == 0) return ShortArray(0)
-        val out = ShortArray(prerollFilled)
-        val start = (prerollWrite - prerollFilled + preroll.size) % preroll.size
-        val first = minOf(prerollFilled, preroll.size - start)
-        System.arraycopy(preroll, start, out, 0, first)
-        if (first < prerollFilled) {
-            System.arraycopy(preroll, 0, out, first, prerollFilled - first)
+        synchronized(prerollLock) {
+            if (prerollFilled == 0) return ShortArray(0)
+            val out = ShortArray(prerollFilled)
+            val start = (prerollWrite - prerollFilled + preroll.size) % preroll.size
+            val first = minOf(prerollFilled, preroll.size - start)
+            System.arraycopy(preroll, start, out, 0, first)
+            if (first < prerollFilled) {
+                System.arraycopy(preroll, 0, out, first, prerollFilled - first)
+            }
+            prerollFilled = 0
+            return out
         }
-        prerollFilled = 0
-        return out
     }
 
     // ---------------------------------------------------------------- 采集线程
@@ -198,10 +310,15 @@ class XiaozhiAudioCapture(
                     continue
                 }
                 samplesRead += read
-                appendPreroll(readBuffer, read)
-                onLevel(computeRms(readBuffer, read))
-                // 这里只做搬运，编码和发网络都在另一个线程，慢死也卡不住录音
-                enqueueSegment(readBuffer, read)
+                val processed = pcmProcessor?.invoke(readBuffer, read) ?: readBuffer
+                val processedLen = if (pcmProcessor != null) processed.size else read
+                appendPreroll(processed, processedLen)
+                onLevel(computeRms(processed, processedLen))
+                onPcm(processed, processedLen)
+                // 仅当允许上行时才送去编码和发网，保证说话期间 KWS/VAD 仍可持续工作
+                if (uplinkEnabled) {
+                    enqueueSegment(processed, processedLen)
+                }
             }
         } finally {
             running.set(false)
@@ -211,6 +328,7 @@ class XiaozhiAudioCapture(
             } catch (ignored: InterruptedException) {
             }
             releaseAll()
+            notifyReleasedOnce()
         }
     }
 
@@ -245,8 +363,12 @@ class XiaozhiAudioCapture(
 
     private fun encodeAndSend(segment: ShortArray) {
         val enc = encoder ?: return
-        for (frame in chunker.append(segment, 0, segment.size)) {
-            if (!running.get()) return
+        val gen = uplinkGeneration
+        val frames = synchronized(chunkerLock) {
+            chunker.append(segment, 0, segment.size)
+        }
+        for (frame in frames) {
+            if (!running.get() || gen != uplinkGeneration || !uplinkEnabled) return
             val encodeStart = System.nanoTime()
             val packet = enc.encode(frame, 0, frame.size)
             val encodeUs = (System.nanoTime() - encodeStart) / 1000L
@@ -254,6 +376,7 @@ class XiaozhiAudioCapture(
             encodeTotalUs += encodeUs
             if (encodeUs > encodeMaxUs) encodeMaxUs = encodeUs
             if (packet == null || packet.isEmpty()) continue
+            if (gen != uplinkGeneration || !uplinkEnabled) return
             // 这一步会同步写 socket（Java-WebSocket 1.4.1 的 send 在调用线程上直接写），
             // 所以它只配待在这个线程里，卡住的是它自己
             val sendStart = System.nanoTime()
@@ -322,6 +445,13 @@ class XiaozhiAudioCapture(
 
     private fun releaseAll() {
         recording = false
+        if (Build.VERSION.SDK_INT >= 16) {
+            try {
+                aec?.release()
+            } catch (_: Exception) {
+            }
+        }
+        aec = null
         try {
             record?.release()
         } catch (ignored: Exception) {
@@ -331,12 +461,20 @@ class XiaozhiAudioCapture(
         encoder = null
     }
 
+    private fun notifyReleasedOnce() {
+        if (releasedNotified.compareAndSet(false, true)) {
+            onReleased()
+        }
+    }
+
     private fun appendPreroll(samples: ShortArray, length: Int) {
-        val size = preroll.size
-        for (i in 0 until length) {
-            preroll[prerollWrite] = samples[i]
-            prerollWrite = (prerollWrite + 1) % size
-            if (prerollFilled < size) prerollFilled++
+        synchronized(prerollLock) {
+            val size = preroll.size
+            for (i in 0 until length) {
+                preroll[prerollWrite] = samples[i]
+                prerollWrite = (prerollWrite + 1) % size
+                if (prerollFilled < size) prerollFilled++
+            }
         }
     }
 

@@ -65,11 +65,19 @@ object MeSettings {
     const val KEY_XIAOZHI_PAUSE_MEDIA = "xiaozhi_pause_media"
     const val KEY_XIAOZHI_MIC_DENOISE = "xiaozhi_mic_denoise"
     const val KEY_XIAOZHI_ALLOW_PHOTO = "xiaozhi_allow_photo"
+    const val KEY_XIAOZHI_WAKE_WORD = "xiaozhi_wake_word"
+    const val KEY_XIAOZHI_WAKE_WORDS = "xiaozhi_wake_words"
+    const val KEY_XIAOZHI_WAKE_THRESHOLD = "xiaozhi_wake_threshold"
+    const val KEY_XIAOZHI_WAKE_WORD_INTERRUPT = "xiaozhi_wake_word_interrupt"
+    const val KEY_XIAOZHI_REALTIME_INTERRUPT = "xiaozhi_realtime_interrupt"
+    const val KEY_XIAOZHI_SOFT_AEC = "xiaozhi_soft_aec"
 
     const val DEFAULT_XIAOZHI_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"
     const val DEFAULT_XIAOZHI_WS_URL = "wss://api.tenclass.net/xiaozhi/v1/"
     const val DEFAULT_XIAOZHI_MODE = "auto"
     const val DEFAULT_XIAOZHI_SILENCE_TIMEOUT = 8
+    const val DEFAULT_XIAOZHI_WAKE_WORDS = "你好小智,小智小智"
+    const val DEFAULT_XIAOZHI_WAKE_THRESHOLD = 25
 
     private fun preferences(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -275,4 +283,48 @@ object MeSettings {
 
     fun setXiaozhiAllowPhoto(context: Context, enabled: Boolean) =
         setEnabled(context, KEY_XIAOZHI_ALLOW_PHOTO, enabled)
+
+    /** 离线语音唤醒（默认开） */
+    fun isXiaozhiWakeWord(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_WAKE_WORD, true)
+
+    fun setXiaozhiWakeWord(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_WAKE_WORD, enabled)
+
+    /** 逗号分隔的唤醒词列表 */
+    fun getXiaozhiWakeWords(context: Context): String =
+        getTrimmed(context, KEY_XIAOZHI_WAKE_WORDS, DEFAULT_XIAOZHI_WAKE_WORDS)
+            .ifEmpty { DEFAULT_XIAOZHI_WAKE_WORDS }
+
+    fun setXiaozhiWakeWords(context: Context, words: String) =
+        putTrimmed(context, KEY_XIAOZHI_WAKE_WORDS, words)
+
+    /** 唤醒阈值（10~90，越小越灵敏，默认 25） */
+    fun getXiaozhiWakeThreshold(context: Context): Int =
+        preferences(context).getInt(KEY_XIAOZHI_WAKE_THRESHOLD, DEFAULT_XIAOZHI_WAKE_THRESHOLD)
+            .coerceIn(10, 90)
+
+    fun setXiaozhiWakeThreshold(context: Context, percent: Int) =
+        setInt(context, KEY_XIAOZHI_WAKE_THRESHOLD, percent.coerceIn(10, 90))
+
+    /** 唤醒词打断：AI 思考/播报时说出唤醒词打断（默认开，独立于待机唤醒开关） */
+    fun isXiaozhiWakeWordInterrupt(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_WAKE_WORD_INTERRUPT, true)
+
+    fun setXiaozhiWakeWordInterrupt(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_WAKE_WORD_INTERRUPT, enabled)
+
+    /** 语音实时打断（全双工 + 回声消除，默认开） */
+    fun isXiaozhiRealtimeInterrupt(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_REALTIME_INTERRUPT, true)
+
+    fun setXiaozhiRealtimeInterrupt(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_REALTIME_INTERRUPT, enabled)
+
+    /** 软件回声消除与降噪：无硬件 AEC 时压制扬声器回声防自打断（默认开） */
+    fun isXiaozhiSoftAec(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_SOFT_AEC, true)
+
+    fun setXiaozhiSoftAec(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_SOFT_AEC, enabled)
 }
