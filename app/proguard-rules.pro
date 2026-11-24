@@ -32,3 +32,11 @@
 -dontwarn org.slf4j.**
 -dontwarn io.github.jaredmdobson.concentus.**
 -dontwarn org.java_websocket.**
+
+# 语音唤醒插件：插件是独立 APK，里面的类实现的是**包名+类名**的 WakeWordHost。
+# 主包这边一旦被混淆成 e2.a，插件的实现类就 checkcast 不过去
+# （java.lang.ClassCastException: WakeWordEngine cannot be cast to e2.a）。
+-keep interface com.zyyme.workdayalarmclock.wake.WakeWordHost { *; }
+-keep interface com.zyyme.workdayalarmclock.wake.WakeWordHost$Listener { *; }
+-keep class com.zyyme.workdayalarmclock.wake.WakeWordDefaults { *; }
+-keep class com.zyyme.workdayalarmclock.xiaozhi.wake.VoiceWakeBridge { *; }

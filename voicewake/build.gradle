@@ -34,9 +34,12 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 插件是独立 APK，由宿主用 DexClassLoader 加载，parent 是宿主的 ClassLoader。
+            // 两边各自跑 R8 会各自生成 e.b / e.a 这种短名并互相撞车：插件的调用会解析到
+            // 宿主 base.apk 里的同名类上，报 `No static method e(...) in class Le/b`。
+            // APK 体积本来就被三个 ABI 的 so 占满，dex 不混淆省心。
+            minifyEnabled false
+            shrinkResources false
         }
         debug {
             minifyEnabled false

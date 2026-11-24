@@ -83,6 +83,9 @@ object XiaozhiAssistant {
     private var idleSignature: String? = null
     /** 待机监听这次是不是自己切了通话音频模式（降噪开时） */
     private var idleVoiceMode = false
+    /** 语音唤醒是否启用（模块开 + 开关开）。会话期间录音要不要留着也看它 */
+    @Volatile
+    private var wakeEnabled = false
     private var player: XiaozhiAudioPlayer? = null
 
     // ---- 说话打断 ----
@@ -216,6 +219,7 @@ object XiaozhiAssistant {
         )
         config = cfg
         talkInterruptOn = cfg.talkInterrupt
+        wakeEnabled = cfg.enabled && MeSettings.isXiaozhiVoiceWake(ctx)
         // 地址/token/设备ID 变过，缓存的连接配置就不认了（只改自动续听之类不动它）
         if (previous.otaUrl != cfg.otaUrl || previous.wsUrl != cfg.wsUrl ||
             previous.token != cfg.token || previous.deviceMac != cfg.deviceMac
@@ -908,7 +912,18 @@ object XiaozhiAssistant {
         // 这个音源必须先切到通话模式才生效
         val idleDenoise = MeSettings.isXiaozhiWakeDenoise(ctx)
         if (idleDenoise) enterVoiceAudioMode()
-        idleVoiceMode = idleDenoise && previousAudioMode != AudioManager.MODE_INVALID
+        // 只要现在确实处在通话模式，退出时就必须负责还原——哪怕进来之前就已经是了。
+        // 不这么做的话：上一次没还原干净 → 这次 enterVoiceAudioMode 看到已是通话模式就
+        // 直接 return、previousAudioMode 保持 INVALID → 再也没有机会还原，
+        // 系统级 MODE_IN_COMMUNICATION 会一直卡着，媒体就放不出声。
+        if (idleDenoise && audioManager()?.mode == AudioManager.MODE_IN_COMMUNICATION) {
+            if (previousAudioMode == AudioManager.MODE_INVALID) {
+                previousAudioMode = AudioManager.MODE_NORMAL
+            }
+            idleVoiceMode = true
+        } else {
+            idleVoiceMode = false
+        }
         val created = XiaozhiAudioCapture(
             denoise = idleDenoise,
             onPacket = {},
@@ -926,6 +941,10 @@ object XiaozhiAssistant {
             log("语音唤醒：开始待机监听")
         } else {
             log("语音唤醒：麦克风打不开")
+            if (idleVoiceMode) {
+                idleVoiceMode = false
+                restoreAudioMode()
+            }
             VoiceWakeBridge.stop()
         }
     }
@@ -935,11 +954,13 @@ object XiaozhiAssistant {
         idleCapture = null
         if (current != null) {
             current.stop()
-            if (idleVoiceMode) {
-                idleVoiceMode = false
-                restoreAudioMode()
-            }
             log("语音唤醒：停止待机监听")
+        }
+        // 不管待机实例还在不在，只要这次是我们切了通话模式就必须还原。
+        // 早先写在 if (current != null) 里面，实例提前变 null 时模式就永远卡住了。
+        if (idleVoiceMode) {
+            idleVoiceMode = false
+            restoreAudioMode()
         }
         if (releaseEngine) {
             idleSignature = null
@@ -953,10 +974,41 @@ object XiaozhiAssistant {
     private fun onWakeDetected(keyword: String) {
         log("语音唤醒：$keyword")
         post {
-            // 先停引擎，免得同一句话反复触发；会话结束后 syncIdleListening 会重新拉起
-            VoiceWakeBridge.stop()
-            if (!sessionActive) start()
+            if (sessionActive) {
+                // 会话中（含播报中）等同双击打断：丢掉还没播的、重新聆听
+                dispatch(XiaozhiStateMachine.Event.Interrupt)
+            } else {
+                // 先停引擎，免得同一句话反复触发；startCapture 里会重新接上
+                VoiceWakeBridge.stop()
+                start()
+            }
         }
+    }
+
+    /** 会话期间把引擎重新挂起来（待机实例让出麦克风时引擎被 stop 过） */
+    private fun ensureWakeEngine() {
+        if (!wakeEnabled) return
+        val ctx = appContext ?: return
+        val keywords = MeSettings.getXiaozhiWakeKeywords(ctx)
+        val threshold = MeSettings.getXiaozhiWakeThreshold(ctx)
+        val signature = "$threshold|$keywords"
+        if (signature != idleSignature) {
+            // 唤醒词或灵敏度改过，旧引擎不能用了
+            VoiceWakeBridge.release()
+            idleSignature = null
+        }
+        val started = VoiceWakeBridge.start(
+            ctx,
+            keywords,
+            threshold,
+            { keyword -> onWakeDetected(keyword) },
+            { message -> log("唤醒插件：$message") }
+        )
+        if (!started) {
+            log("语音唤醒：引擎加载失败 ${VoiceWakeBridge.errorMessage()}")
+            return
+        }
+        idleSignature = signature
     }
 
     private fun startCapture() {
@@ -977,12 +1029,20 @@ object XiaozhiAssistant {
         host?.claimMicrophone()
         // 降噪开关决定走哪条链路：开=语音通话（必须先切 mode 才生效），关=录像链路不碰 mode
         if (config.micDenoise) enterVoiceAudioMode()
+        // 语音唤醒开着：会话期间也要把 PCM 扇给引擎，这样播报中喊唤醒词能打断
+        if (wakeEnabled) ensureWakeEngine()
+        val wakeSink: ((ShortArray, Int) -> Unit)? = if (wakeEnabled) {
+            { samples, length -> VoiceWakeBridge.acceptPcm(samples, length) }
+        } else {
+            null
+        }
         val created = XiaozhiAudioCapture(
             denoise = config.micDenoise,
             onPacket = { packet -> if (sendAudio) transport?.sendBinary(packet) },
             onLevel = { rms -> onVoiceLevel(rms) },
             onError = { message -> post { failSession(message) } },
-            log = { message -> log(message) }
+            log = { message -> log(message) },
+            onPcm = wakeSink
         )
         if (created.start()) {
             capture = created
@@ -1003,10 +1063,10 @@ object XiaozhiAssistant {
             restoreAudioMode()
             return
         }
-        // 说话打断：THINKING/SPEAKING 期间只摘编码管线，AudioRecord 和通话模式都留着。
+        // 说话打断 / 语音唤醒：THINKING/SPEAKING 期间只摘编码管线，AudioRecord 和通话模式都留着。
         // 通话模式不能还——HAL 的 AEC 只在那个模式下才把扬声器输出当参考，
         // 没有 AEC 就分不出「播报」和「人在说话」。
-        if (!force && talkInterruptOn && keepRecordingForInterrupt()) {
+        if (!force && keepRecordingAlive()) {
             current.detachEncoder()
             log("停止上行（录音保持）")
             return
@@ -1019,14 +1079,17 @@ object XiaozhiAssistant {
     }
 
     /**
-     * 这个状态下要不要为了「说话打断」把录音留着。
+     * 这个状态下要不要为了让「说话打断 / 语音唤醒」继续工作而把录音留着。
      * 用 stateMachine.state 而不是 stateSnapshot：副作用是在状态已经切过去之后执行的。
      */
-    private fun keepRecordingForInterrupt(): Boolean = when (stateMachine.state) {
-        XiaozhiStateMachine.State.LISTENING,
-        XiaozhiStateMachine.State.THINKING,
-        XiaozhiStateMachine.State.SPEAKING -> true
-        else -> false
+    private fun keepRecordingAlive(): Boolean {
+        if (!talkInterruptOn && !wakeEnabled) return false
+        return when (stateMachine.state) {
+            XiaozhiStateMachine.State.LISTENING,
+            XiaozhiStateMachine.State.THINKING,
+            XiaozhiStateMachine.State.SPEAKING -> true
+            else -> false
+        }
     }
 
     /** 把打断瞬间截下来的那段预滚补进上行（排在实时数据前面） */

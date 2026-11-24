@@ -1,8 +1,8 @@
 package com.zyyme.workdayalarmclock.xiaozhi.wake
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.os.Build
-import com.zyyme.workdayalarmclock.MeSettings
 import com.zyyme.workdayalarmclock.MeUpdater
 import com.zyyme.workdayalarmclock.wake.WakeWordHost
 import dalvik.system.DexClassLoader
@@ -27,6 +27,22 @@ object VoiceWakeBridge {
 
     @Volatile
     private var lastError: String? = null
+
+    /**
+     * 进程内唯一一份插件 ClassLoader。
+     *
+     * 不能每次 start 都新建：so 一旦被某个 ClassLoader 打开就不会卸载（sherpa 只加载不释放），
+     * 同一路径再去另一个 ClassLoader 的 namespace 里 load 会被 linker 直接拒掉
+     * （`already opened by ClassLoader 0x..; can't open in ClassLoader 0x..`）。
+     * 换设置要重建引擎时必然走到这里，所以 loader 必须缓存；缓存住之后插件类只初始化一次，
+     * System.loadLibrary 也就不会再被调用。
+     */
+    @Volatile
+    private var loader: DexClassLoader? = null
+
+    /** 缓存 loader 对应的插件路径，插件升级换了安装目录就得重建 */
+    @Volatile
+    private var loaderKey: String? = null
 
     fun isPluginInstalled(context: Context): Boolean = MeUpdater.isPluginInstalled(context)
 
@@ -63,16 +79,8 @@ object VoiceWakeBridge {
                 lastError = "插件未安装"
                 return false
             }
-            val parent = WakeWordHost::class.java.classLoader
-            val dexOut = if (Build.VERSION.SDK_INT >= 21) appContext.codeCacheDir else appContext.cacheDir
-            File(dexOut, "voicewake").let { if (!it.exists()) it.mkdirs() }
-            val loader = DexClassLoader(
-                info.sourceDir,
-                File(dexOut, "voicewake").absolutePath,
-                info.nativeLibraryDir,
-                parent
-            )
-            val created = loader.loadClass(ENGINE_CLASS).newInstance() as WakeWordHost
+            val created = pluginClassLoader(appContext, info).loadClass(ENGINE_CLASS)
+                .newInstance() as WakeWordHost
             val assets = pluginAssets(appContext) ?: run {
                 lastError = "读不到插件资源"
                 return false
@@ -114,6 +122,32 @@ object VoiceWakeBridge {
         context.packageManager.getPackageInfo(MeUpdater.PLUGIN_PKG, 0).applicationInfo
     } catch (e: Exception) {
         null
+    }
+
+    /**
+     * 取进程内唯一的插件 ClassLoader。插件安装路径没变就复用，只有插件升级
+     * 导致 sourceDir / nativeLibraryDir 变化才重建（见 [loader] 的注释）。
+     *
+     * parent 显式指定成宿主 ClassLoader，插件里的实现类强转 [WakeWordHost] 时
+     * 才会解析到宿主那份接口；librarySearchPath 传插件的 nativeLibraryDir，
+     * 插件里的 System.loadLibrary 才能找到 so。
+     */
+    private fun pluginClassLoader(context: Context, info: ApplicationInfo): DexClassLoader {
+        val key = "${info.sourceDir}|${info.nativeLibraryDir}"
+        val cached = loader
+        if (cached != null && key == loaderKey) return cached
+        val dexOut = if (Build.VERSION.SDK_INT >= 21) context.codeCacheDir else context.cacheDir
+        val outDir = File(dexOut, "voicewake")
+        if (!outDir.exists()) outDir.mkdirs()
+        val created = DexClassLoader(
+            info.sourceDir,
+            outDir.absolutePath,
+            info.nativeLibraryDir,
+            WakeWordHost::class.java.classLoader
+        )
+        loader = created
+        loaderKey = key
+        return created
     }
 
     private fun pluginAssets(context: Context) = try {

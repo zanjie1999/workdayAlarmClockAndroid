@@ -40,6 +40,10 @@ class WakeWordEngine : WakeWordHost {
         listener: WakeWordHost.Listener?
     ) {
         this.listener = listener
+        // 同一实例可能被重复 init：先把采集线程停掉再放旧的原生对象，
+        // 否则 worker 手里还攥着已释放的指针，native 层直接崩
+        stop()
+        releaseModel()
         try {
             val config = KeywordSpotterConfig(
                 featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = FEATURE_DIM, dither = 0f),
@@ -89,6 +93,11 @@ class WakeWordEngine : WakeWordHost {
 
     override fun release() {
         stop()
+        releaseModel()
+    }
+
+    /** 只释放原生对象，不动线程（[init] 重建引擎和 [release] 都会用到） */
+    private fun releaseModel() {
         try {
             stream?.release()
         } catch (ignored: Throwable) {
