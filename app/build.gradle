@@ -11,8 +11,8 @@ android {
         applicationId "com.zyyme.workdayalarmclock"
         minSdk 14
         targetSdk 32
-        versionCode 155
-        versionName "52.2"
+        versionCode 156
+        versionName "53.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -45,6 +45,8 @@ android {
         main {
             // Android列表文件中显示的jniLibs实际是libs
             jniLibs.srcDirs = ['libs']
+            // 和语音唤醒插件共用一份 WakeWordHost / WakeWordDefaults 源码
+            java.srcDirs += '../wakeword-api/src/main/java'
         }
     }
 

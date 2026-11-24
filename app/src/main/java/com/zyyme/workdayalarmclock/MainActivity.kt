@@ -37,6 +37,7 @@ import androidx.core.net.toUri
 import com.zyyme.workdayalarmclock.applist.AppListActivity
 import com.zyyme.workdayalarmclock.camera.AmbientBrightnessController
 import com.zyyme.workdayalarmclock.notification.MeNotificationListenerService
+import com.zyyme.workdayalarmclock.wake.WakeWordDefaults
 import com.zyyme.workdayalarmclock.xiaozhi.DoubleClickGate
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiAssistant
 import com.zyyme.workdayalarmclock.xiaozhi.XiaozhiDeviceInfo
@@ -156,6 +157,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // 界面起来了，进程变成 TOP，这时候才能把服务转回前台
         MeService.me?.restoreForeground()
+        // NEXTWAKE 闹钟可能被系统清掉，每次恢复都补一次唤醒检查，Go 会去重并重新下发
+        MeService.me?.requestNextWakeRefresh()
         AmbientBrightnessController.applyLatestTo(window)
         isActivityVisible = true
         updatePlaybackButton(MeService.me?.shouldShowPauseIcon() == true)
@@ -1232,6 +1235,25 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(micDenoiseSwitch)
 
+        // 说话打断：播报中音量突然变高就当成人在说话，直接打断。
+        val talkInterruptSwitch = Switch(this).apply {
+            text = "说话打断"
+            isChecked = MeSettings.isXiaozhiTalkInterrupt(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        talkInterruptSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked && !micDenoiseSwitch.isChecked) {
+                micDenoiseSwitch.isChecked = true
+            }
+        }
+        container.addView(talkInterruptSwitch)
+
+        container.addView(TextView(this).apply {
+            text = "播报时直接开口就能打断。依赖麦克风降噪的回声消除，降噪关掉时自动不生效"
+            textSize = 12f
+            setPadding(0, dp(2), 0, dp(6))
+        })
+
         val allowPhotoSwitch = Switch(this).apply {
             text = "允许拍照"
             isChecked = MeSettings.isXiaozhiAllowPhoto(this@MainActivity)
@@ -1250,6 +1272,80 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(allowPhotoSwitch)
 
+        // 语音唤醒：需要额外装一个插件 APK，没装就弹窗引导下载
+        val wakeDenoiseSwitch = Switch(this).apply {
+            text = "待机监听唤醒时麦克风降噪"
+            isChecked = MeSettings.isXiaozhiWakeDenoise(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+            visibility = if (MeSettings.isXiaozhiVoiceWake(this@MainActivity)) View.VISIBLE else View.GONE
+        }
+        val wakeKeywordsInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            minLines = 6
+            setText(MeSettings.getXiaozhiWakeKeywords(this@MainActivity))
+        }
+        val wakeSensitivityLabel = TextView(this).apply { textSize = 12f }
+        val wakeSensitivityBar = SeekBar(this).apply {
+            max = 100
+            progress = WakeWordDefaults.sensitivityOfThreshold(
+                MeSettings.getXiaozhiWakeThreshold(this@MainActivity)
+            )
+        }
+        fun refreshWakeSensitivity() {
+            val threshold = WakeWordDefaults.thresholdOfSensitivity(wakeSensitivityBar.progress)
+            wakeSensitivityLabel.text = String.format(
+                "灵敏度 %d（阈值 %.2f，越大越灵敏）", wakeSensitivityBar.progress, threshold
+            )
+        }
+        wakeSensitivityBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) =
+                refreshWakeSensitivity()
+
+            override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+        })
+        refreshWakeSensitivity()
+
+        val wakeSettingsGroup = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = if (MeSettings.isXiaozhiVoiceWake(this@MainActivity)) View.VISIBLE else View.GONE
+            addView(TextView(this@MainActivity).apply {
+                text = "唤醒词（一行一个，sherpa 拼音 token 格式，@ 后面是显示名）"
+                textSize = 12f
+                setPadding(0, dp(6), 0, 0)
+            })
+            addView(wakeKeywordsInput)
+            addView(wakeSensitivityLabel)
+            addView(wakeSensitivityBar)
+        }
+
+        val voiceWakeSwitch = Switch(this).apply {
+            text = "语音唤醒"
+            isChecked = MeSettings.isXiaozhiVoiceWake(this@MainActivity)
+            setPadding(0, dp(10), 0, 0)
+        }
+        voiceWakeSwitch.setOnCheckedChangeListener { _, checked ->
+            val visibility = if (checked) View.VISIBLE else View.GONE
+            wakeSettingsGroup.visibility = visibility
+            wakeDenoiseSwitch.visibility = visibility
+            if (!checked) return@setOnCheckedChangeListener
+            if (MeUpdater.isPluginInstalled(this@MainActivity)) return@setOnCheckedChangeListener
+            // 没装插件：开关弹回去，弹窗问要不要下载
+            voiceWakeSwitch.isChecked = false
+            showVoiceWakeInstallDialog()
+        }
+        container.addView(voiceWakeSwitch)
+        container.addView(wakeDenoiseSwitch)
+        container.addView(wakeSettingsGroup)
+
+        container.addView(TextView(this).apply {
+            text = "用「你好小智」唤醒，需先安装「工作咩闹钟语音唤醒插件」"
+            textSize = 12f
+            setPadding(0, dp(2), 0, dp(6))
+        })
+
         // 只有自建服务器才需要改这两项
         addLabel("WebSocket 地址（默认官方，自建才改）")
         val wsInput = addInput(MeSettings.getXiaozhiWsUrl(this))
@@ -1266,7 +1362,9 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("保存") { _, _ ->
                 saveXiaozhiSettings(
                     deviceIdInput, wsInput, tokenInput, silenceInput,
-                    autoContinueSwitch, pauseMediaSwitch, micDenoiseSwitch, allowPhotoSwitch
+                    autoContinueSwitch, pauseMediaSwitch, micDenoiseSwitch, allowPhotoSwitch,
+                    voiceWakeSwitch, talkInterruptSwitch, wakeDenoiseSwitch,
+                    wakeKeywordsInput, wakeSensitivityBar
                 )
                 XiaozhiAssistant.reloadConfig()
                 MeService.me?.syncXiaozhiSetting()
@@ -1286,6 +1384,26 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    /**
+     * 语音唤醒插件没装时弹这个：下载走 MeUpdater 那套（GitHub Release 固定 tag=voicewake），
+     * 下载完自动拉起安装器；装完回来再点一次开关就能开了。
+     */
+    private fun showVoiceWakeInstallDialog() {
+        val installed = MeUpdater.pluginVersionName(this)
+        AlertDialog.Builder(this)
+            .setTitle("需要语音唤醒插件")
+            .setMessage(
+                "语音唤醒功能放在单独的插件里（约 30MB），装完才能开启。\n\n" +
+                        if (installed == null) "当前未安装。" else "当前已装版本 $installed。"
+            )
+            .setPositiveButton("下载") { _, _ ->
+                Toast.makeText(this, "开始下载，完成后会弹出安装", Toast.LENGTH_SHORT).show()
+                MeUpdater.installPlugin(this)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
     private fun saveXiaozhiSettings(
         deviceIdInput: EditText,
         wsInput: EditText,
@@ -1294,7 +1412,12 @@ class MainActivity : AppCompatActivity() {
         autoContinueSwitch: Switch,
         pauseMediaSwitch: Switch,
         micDenoiseSwitch: Switch,
-        allowPhotoSwitch: Switch
+        allowPhotoSwitch: Switch,
+        voiceWakeSwitch: Switch,
+        talkInterruptSwitch: Switch,
+        wakeDenoiseSwitch: Switch,
+        wakeKeywordsInput: EditText,
+        wakeSensitivityBar: SeekBar
     ) {
         // 清空输入框视为重新随机一个，避免存空值后每次启动都变
         MeSettings.setXiaozhiDeviceMac(
@@ -1311,6 +1434,14 @@ class MainActivity : AppCompatActivity() {
         MeSettings.setXiaozhiPauseMedia(this, pauseMediaSwitch.isChecked)
         MeSettings.setXiaozhiMicDenoise(this, micDenoiseSwitch.isChecked)
         MeSettings.setXiaozhiAllowPhoto(this, allowPhotoSwitch.isChecked)
+        MeSettings.setXiaozhiVoiceWake(this, voiceWakeSwitch.isChecked)
+        MeSettings.setXiaozhiTalkInterrupt(this, talkInterruptSwitch.isChecked)
+        MeSettings.setXiaozhiWakeDenoise(this, wakeDenoiseSwitch.isChecked)
+        MeSettings.setXiaozhiWakeKeywords(this, wakeKeywordsInput.text.toString())
+        MeSettings.setXiaozhiWakeThreshold(
+            this,
+            WakeWordDefaults.thresholdOfSensitivity(wakeSensitivityBar.progress)
+        )
     }
 
     /**

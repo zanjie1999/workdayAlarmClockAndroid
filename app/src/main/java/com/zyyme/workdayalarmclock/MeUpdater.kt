@@ -28,6 +28,13 @@ import java.util.Locale
 object MeUpdater {
     private const val REPO = "zanjie1999/workdayAlarmClockAndroid"
     private const val LATEST_RELEASE_API = "https://api.github.com/repos/$REPO/releases/latest"
+
+    /** 语音唤醒插件：单独一个 release，tag 固定为 voicewake */
+    const val PLUGIN_PKG = "com.zyyme.workdayalarmclock.voicewake"
+    private const val PLUGIN_RELEASE_TAG = "voicewake"
+    private const val PLUGIN_RELEASE_API =
+        "https://api.github.com/repos/$REPO/releases/tags/$PLUGIN_RELEASE_TAG"
+    private const val PLUGIN_APK_FALLBACK_NAME = "voicewake.apk"
     // 加速下载，拼在完整的 github 地址前面
     private const val ACCELERATE_PREFIX = "https://gh-proxy.com/"
     // 下载用浏览器的UA，部分镜像会按UA分流
@@ -70,6 +77,10 @@ object MeUpdater {
     // 等用户授权「安装未知应用」的安装包，授权返回后自动继续装
     @Volatile
     private var pendingApk: File? = null
+
+    // pendingApk 是插件包还是主包：插件装完不需要重启自己
+    @Volatile
+    private var pendingIsPlugin = false
 
     /**
      * go 侧检测到有新版本，这里只记标志，不打日志
@@ -182,6 +193,75 @@ object MeUpdater {
             }
         }.start()
     }
+
+    /**
+     * 下载并安装语音唤醒插件（独立 APK）。release 走固定 tag，跟主包更新互不影响。
+     */
+    fun installPlugin(context: Context) {
+        if (updating) {
+            log("正在下载中，请稍候…")
+            return
+        }
+        updating = true
+        val appContext = context.applicationContext
+        Thread {
+            try {
+                val info = fetchPluginRelease()
+                if (info == null) {
+                    log("没找到插件 release（tag=$PLUGIN_RELEASE_TAG），请检查仓库 Releases")
+                    return@Thread
+                }
+                log("插件包 ${info.apkName}")
+                val apk = download(appContext, info) ?: return@Thread
+                log("插件下载完成 ${apk.absolutePath}")
+                install(appContext, apk, forPlugin = true)
+            } catch (e: Exception) {
+                log("插件下载出错：$e")
+                e.printStackTrace()
+            } finally {
+                updating = false
+            }
+        }.start()
+    }
+
+    /**
+     * 从固定 tag 的 release 里挑第一个 apk，没有 assets 就拼默认地址
+     */
+    private fun fetchPluginRelease(): ReleaseInfo? {
+        val obj = try {
+            JSONObject(httpGetString(PLUGIN_RELEASE_API))
+        } catch (e: Exception) {
+            log("读取插件 release 失败：${e.message}")
+            return null
+        }
+        val assets = obj.optJSONArray("assets")
+        if (assets != null) {
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                val name = asset.optString("name")
+                val url = asset.optString("browser_download_url")
+                if (!name.endsWith(".apk", ignoreCase = true) || url.isEmpty()) continue
+                return ReleaseInfo(PLUGIN_RELEASE_TAG, url, name)
+            }
+        }
+        return ReleaseInfo(
+            PLUGIN_RELEASE_TAG,
+            "https://github.com/$REPO/releases/download/$PLUGIN_RELEASE_TAG/$PLUGIN_APK_FALLBACK_NAME",
+            PLUGIN_APK_FALLBACK_NAME
+        )
+    }
+
+    /**
+     * 已安装的插件版本号，没装返回 null
+     */
+    fun pluginVersionName(context: Context): String? = try {
+        @Suppress("DEPRECATION")
+        context.packageManager.getPackageInfo(PLUGIN_PKG, 0).versionName
+    } catch (e: Exception) {
+        null
+    }
+
+    fun isPluginInstalled(context: Context): Boolean = pluginVersionName(context) != null
 
     private fun doUpdate(context: Context, silent: Boolean = false) {
         val currentVersion = versionName(context)
@@ -389,15 +469,17 @@ object MeUpdater {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun install(context: Context, apk: File) {
+    private fun install(context: Context, apk: File, forPlugin: Boolean = false) {
         if (!canInstallPackages(context)) {
             // 记下来，用户授权完回到前台自动继续装
             pendingApk = apk
+            pendingIsPlugin = forPlugin
             log("请允许「安装未知应用」权限，授权返回后自动继续安装")
             openInstallPermissionSettings(context)
             return
         }
         pendingApk = null
+        pendingIsPlugin = false
         try {
             val uri: Uri = if (Build.VERSION.SDK_INT >= 24) {
                 FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
@@ -428,7 +510,7 @@ object MeUpdater {
             return
         }
         if (!canInstallPackages(context)) return
-        install(context, apk)
+        install(context, apk, pendingIsPlugin)
     }
 
     private fun canInstallPackages(context: Context): Boolean {

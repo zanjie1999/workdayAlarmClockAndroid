@@ -359,6 +359,10 @@ class DeskActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         MeService.me?.restoreForeground()
+        // NEXTWAKE 闹钟可能被系统清掉，每次恢复都补一次唤醒检查，Go 会去重并重新下发。
+        // 闹钟响铃拉起这个界面时不能再补，否则可能重复触发响铃
+        val alarmLaunch = alarmMode || intent.getBooleanExtra(EXTRA_ALARM_MODE, false)
+        if (!alarmLaunch) MeService.me?.requestNextWakeRefresh()
         lyricsEnabled = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
         todoView.text = MeService.me?.todoText.orEmpty()
         configureClockFormat()

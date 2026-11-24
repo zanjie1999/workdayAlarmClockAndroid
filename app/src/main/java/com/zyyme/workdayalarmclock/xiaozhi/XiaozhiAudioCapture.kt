@@ -27,11 +27,23 @@ import java.util.concurrent.atomic.AtomicBoolean
 class XiaozhiAudioCapture(
     /** 降噪开关：开走语音通话链路（HAL 出 AEC/NS/AGC），关走裸麦 `MIC` */
     private val denoise: Boolean = false,
-    private val onPacket: (ByteArray) -> Unit,
+    onPacket: (ByteArray) -> Unit,
     private val onLevel: (Double) -> Unit = {},
     private val onError: (String) -> Unit = {},
-    private val log: (String) -> Unit = {}
+    private val log: (String) -> Unit = {},
+    /**
+     * 唤醒使用的 PCM 扇出。**跑在采集线程上**，实现方只能做拷贝+入队，
+     * 任何耗时操作都会让 AudioRecord 溢出丢帧。
+     */
+    private val onPcm: ((ShortArray, Int) -> Unit)? = null
 ) {
+
+    /**
+     * 上行帧的出口。做成可变是为了「说话打断」：THINKING/SPEAKING 期间把编码管线摘掉，
+     * 播报中要打断时再挂回来，全程不碰 AudioRecord（不然预滚缓冲就没了）。
+     */
+    @Volatile
+    private var packetSink: (ByteArray) -> Unit = onPacket
 
     private val running = AtomicBoolean(false)
 
@@ -86,7 +98,11 @@ class XiaozhiAudioCapture(
 
     val isRecording: Boolean get() = recording
 
-    fun start(): Boolean {
+    /**
+     * @param encode false 表示只录音不编码（待机监听唤醒词用），
+     *               这样不会白白跑 Opus 和上行队列。
+     */
+    fun start(encode: Boolean = true): Boolean {
         if (running.getAndSet(true)) return true
         val minBuffer = AudioRecord.getMinBufferSize(
             SAMPLE_RATE,
@@ -121,13 +137,9 @@ class XiaozhiAudioCapture(
             return false
         }
         record = recorder
-        // 纯 Java 的 Opus，复杂度 2 和 5 在 16kbps 语音上几乎听不出差别，老机器上省一半以上 CPU
-        encoder = ConcentusOpusCodec.createEncoder(complexity = ENCODE_COMPLEXITY)
-        chunker.reset()
         prerollWrite = 0
         prerollFilled = 0
         segments = newSegmentQueue()
-        resetStats()
         // 不挂 AudioEffect：VOICE_COMMUNICATION 音频源 + 通话模式已经带 HAL 的 AEC/NS/AGC，
         // 再叠一层 NoiseSuppressor 只会把声音削得更狠
         log("录音参数 音源=${audioSourceName} 音效=${if (denoise) "HAL 内置" else "无"}")
@@ -140,9 +152,82 @@ class XiaozhiAudioCapture(
             return false
         }
         recording = true
-        encodeThread = Thread({ encodeLoop() }, "xiaozhi-encode").apply { start() }
+        if (encode) {
+            // 编码器整个实例生命周期只建一个：摘下/挂回只动编码线程，不碰它，
+            // 免得「线程还卡在 ws.send 上、编码器已经被 release」这种竞态
+            encoder = ConcentusOpusCodec.createEncoder(complexity = ENCODE_COMPLEXITY)
+            startEncoderChain()
+        }
         captureThread = Thread({ captureLoop(recorder) }, "xiaozhi-capture").apply { start() }
         return true
+    }
+
+    // ---------------------------------------------------------------- 编码管线挂/摘
+
+    /**
+     * 挂上编码管线（录音已经开着时用）。`onPacket` 会替换掉构造时传的那个。
+     * 队列先清空：摘下期间积的旧段已经没意义了。
+     */
+    fun attachEncoder(onPacket: (ByteArray) -> Unit) {
+        if (!running.get()) return
+        packetSink = onPacket
+        if (encodeThread != null) {
+            // 已经挂着，只换出口
+            return
+        }
+        clearSegments()
+        if (encoder == null) {
+            // 待机监听那个实例没建编码器，会话要复用它时现补一个
+            encoder = ConcentusOpusCodec.createEncoder(complexity = ENCODE_COMPLEXITY)
+        }
+        startEncoderChain()
+    }
+
+    /**
+     * 摘掉编码管线但不关录音：AudioRecord 继续 read、预滚缓冲继续滚、RMS 继续回调。
+     * 供「说话打断」用——THINKING/SPEAKING 期间只有这样才能听到播报中的人声。
+     */
+    fun detachEncoder() {
+        if (encodeThread == null) return
+        stopEncoderChain()
+        clearSegments()
+    }
+
+    /**
+     * 补一段已经录好的 PCM 进上行。调用前必须 [attachEncoder]，
+     * 否则没有编码线程，塞进去也没人处理。
+     */
+    fun feedPreroll(samples: ShortArray) {
+        if (samples.isEmpty()) return
+        if (!segments.offer(samples)) {
+            segments.poll()
+            segments.offer(samples)
+        }
+    }
+
+    private fun startEncoderChain() {
+        chunker.reset()
+        resetStats()
+        encodeThread = Thread({ encodeLoop() }, "xiaozhi-encode").apply { start() }
+    }
+
+    /** 只停线程，不释放编码器（编码器归实例生命周期管，见 releaseAll） */
+    private fun stopEncoderChain() {
+        val worker = encodeThread
+        encodeThread = null
+        worker?.interrupt()
+        if (worker != null && worker !== Thread.currentThread()) {
+            try {
+                worker.join(ENCODE_JOIN_MS)
+            } catch (ignored: InterruptedException) {
+            }
+        }
+    }
+
+    private fun clearSegments() {
+        while (segments.poll() != null) {
+            // 丢弃摘下期间和切换瞬间的旧数据
+        }
     }
 
     fun stop() {
@@ -162,18 +247,26 @@ class XiaozhiAudioCapture(
     }
 
     /**
-     * 取出并清空预滚缓冲（唤醒词预留，当前唤醒是按键触发，用不到）。
+     * 只取预滚缓冲里**最近 framesBack 个 20ms 帧**的样本，缓冲本身不清空。
+     *
+     * 给「说话打断」用：环形缓冲里前面绝大部分是 TTS 从喇叭漏进来的回声，
+     * 从音量突增那一帧开始取，才只有真正的人声。
+     *
+     * 只允许在采集线程调用（preroll 的游标只在那个线程里动）。
      */
-    fun drainPreroll(): ShortArray {
-        if (prerollFilled == 0) return ShortArray(0)
-        val out = ShortArray(prerollFilled)
-        val start = (prerollWrite - prerollFilled + preroll.size) % preroll.size
-        val first = minOf(prerollFilled, preroll.size - start)
+    fun drainPrerollFrom(framesBack: Int): ShortArray {
+        if (prerollFilled == 0 || framesBack <= 0) return ShortArray(0)
+        val want = framesBack.toLong() * READ_SAMPLES
+        val length = if (want > prerollFilled) prerollFilled else want.toInt()
+        if (length <= 0) return ShortArray(0)
+        val out = ShortArray(length)
+        val size = preroll.size
+        val start = (prerollWrite - length + size) % size
+        val first = minOf(length, size - start)
         System.arraycopy(preroll, start, out, 0, first)
-        if (first < prerollFilled) {
-            System.arraycopy(preroll, 0, out, first, prerollFilled - first)
+        if (first < length) {
+            System.arraycopy(preroll, 0, out, first, length - first)
         }
-        prerollFilled = 0
         return out
     }
 
@@ -200,8 +293,11 @@ class XiaozhiAudioCapture(
                 samplesRead += read
                 appendPreroll(readBuffer, read)
                 onLevel(computeRms(readBuffer, read))
-                // 这里只做搬运，编码和发网络都在另一个线程，慢死也卡不住录音
-                enqueueSegment(readBuffer, read)
+                // 唤醒监听：只转发引用，拷贝在接收方自己做
+                onPcm?.invoke(readBuffer, read)
+                // 这里只做搬运，编码和发网络都在另一个线程，慢死也卡不住录音。
+                // 待机监听那个实例没建编码器，就别白拷贝了。
+                if (encoder != null) enqueueSegment(readBuffer, read)
             }
         } finally {
             running.set(false)
@@ -257,7 +353,7 @@ class XiaozhiAudioCapture(
             // 这一步会同步写 socket（Java-WebSocket 1.4.1 的 send 在调用线程上直接写），
             // 所以它只配待在这个线程里，卡住的是它自己
             val sendStart = System.nanoTime()
-            onPacket(packet)
+            packetSink(packet)
             val sendUs = (System.nanoTime() - sendStart) / 1000L
             sendCount++
             sendTotalUs += sendUs

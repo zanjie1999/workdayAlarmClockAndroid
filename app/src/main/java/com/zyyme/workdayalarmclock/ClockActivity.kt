@@ -595,6 +595,10 @@ class ClockActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         MeService.me?.restoreForeground()
+        // NEXTWAKE 闹钟可能被系统清掉，每次恢复都补一次唤醒检查，Go 会去重并重新下发。
+        // 闹钟响铃拉起这个界面时不能再补（keepOn 只有 ALARM 才会带），否则可能重复触发响铃
+        val alarmLaunch = clockMode || intent.getBooleanExtra("keepOn", false)
+        if (!alarmLaunch) MeService.me?.requestNextWakeRefresh()
         showLyrics = MeSettings.isEnabled(this, MeSettings.KEY_LYRICS)
         MeService.me?.syncLyricsSetting()
         setFullscreen()

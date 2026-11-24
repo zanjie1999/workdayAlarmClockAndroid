@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import com.zyyme.workdayalarmclock.MeSettings
+import com.zyyme.workdayalarmclock.xiaozhi.wake.VoiceWakeBridge
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -33,6 +34,28 @@ object XiaozhiAssistant {
     private const val OTA_POLL_MAX_ATTEMPTS = 100
     private const val OTA_POLL_INTERVAL_MS = 3000L
 
+    // ---- 说话打断：播报期间靠音量突增判「有人在说话」 ----
+    /** 判定窗口（帧），每帧 = 一次 read = 20ms */
+    private const val INTERRUPT_WINDOW_FRAMES = 12
+    /** 窗口内至少这么多帧超阈才判命中 */
+    private const val INTERRUPT_HIT_FRAMES = 9
+    /**
+     * 绝对阈值 自适应底噪烂完了
+     */
+    private const val INTERRUPT_MIN_RMS = 300.0
+    /** 起播后这段时间不判：TTS 开头有淡入/爆音 */
+    private const val INTERRUPT_GUARD_MS = 300L
+    /**
+     * 播放器 flush/pause 之后这段时间不判。
+     * 那一刻 AEC 的回声参考突然消失，自适应滤波器要 100~300ms 重新收敛，
+     * 期间残留会短暂冲到 80~200 —— 实测误打断全部落在这一段里。
+     */
+    private const val INTERRUPT_FLUSH_GUARD_MS = 400L
+    /** 打断后冷却，免得同一句话连环触发 */
+    private const val INTERRUPT_COOLDOWN_MS = 1500L
+    /** 临时诊断：播报期间每秒把 rms/底噪/阈值打到日志，调参用，调好记得关掉 */
+    private const val INTERRUPT_DEBUG = true
+
     private var appContext: Context? = null
     private var host: XiaozhiHost? = null
     /** 上一次打过日志的视觉地址，避免每条 MCP 消息都刷一遍 */
@@ -54,7 +77,40 @@ object XiaozhiAssistant {
 
     private var transport: XiaozhiTransport? = null
     private var capture: XiaozhiAudioCapture? = null
+    /** 待机监听唤醒词专用的采集实例，只在「语音唤醒」开关打开且没有会话时存在 */
+    private var idleCapture: XiaozhiAudioCapture? = null
+    /** 引擎当前用的「阈值|唤醒词」，变了就要重建引擎 */
+    private var idleSignature: String? = null
+    /** 待机监听这次是不是自己切了通话音频模式（降噪开时） */
+    private var idleVoiceMode = false
     private var player: XiaozhiAudioPlayer? = null
+
+    // ---- 说话打断 ----
+    /** 开关快照，采集线程每 20ms 读一次，必须是 volatile */
+    @Volatile
+    private var talkInterruptOn = false
+    /** 状态机快照：采集线程不能直接读 stateMachine（那是控制线程的东西） */
+    @Volatile
+    private var stateSnapshot = XiaozhiStateMachine.State.IDLE
+    /** 打断前那几帧预滚，采集线程填、控制线程取 */
+    @Volatile
+    private var pendingInterruptAudio: ShortArray? = null
+    /** 最近 12 帧的 RMS 环形记录，只在采集线程里动 */
+    private val interruptRms = DoubleArray(INTERRUPT_WINDOW_FRAMES)
+    private var interruptRmsIdx = 0
+    private var interruptRmsCount = 0
+    /** 本轮播报内见过的最大 rms（诊断用，看插话到底能到多少） */
+    private var speakingPeak = 0.0
+    /** 采集线程用它发现「这是新一轮播报」，从而清掉本地判定状态 */
+    private var detectorForSinceAt = 0L
+    /** 进入播报的时刻，由控制线程写、采集线程读 */
+    @Volatile
+    private var speakingSinceAt = 0L
+    /** 最近一次播放器 flush/pause 的时刻（AEC 参考信号突变点），控制线程写、采集线程读 */
+    @Volatile
+    private var lastPlaybackFlushAt = 0L
+    private var lastInterruptAt = 0L
+    private var lastInterruptDebugAt = 0L
 
     private var lastWsUrl = ""
     private var lastToken = ""
@@ -124,6 +180,7 @@ object XiaozhiAssistant {
     fun shutdown() {
         stop("服务结束")
         handler?.post {
+            stopIdleListening(releaseEngine = true)
             handlerThread?.quitSafely()
         }
         handlerThread = null
@@ -154,9 +211,11 @@ object XiaozhiAssistant {
             silenceTimeoutMs = MeSettings.getXiaozhiSilenceTimeout(ctx) * 1000L,
             pauseMedia = MeSettings.isXiaozhiPauseMedia(ctx),
             micDenoise = MeSettings.isXiaozhiMicDenoise(ctx),
-            allowPhoto = MeSettings.isXiaozhiAllowPhoto(ctx)
+            allowPhoto = MeSettings.isXiaozhiAllowPhoto(ctx),
+            talkInterrupt = MeSettings.isXiaozhiTalkInterrupt(ctx)
         )
         config = cfg
+        talkInterruptOn = cfg.talkInterrupt
         // 地址/token/设备ID 变过，缓存的连接配置就不认了（只改自动续听之类不动它）
         if (previous.otaUrl != cfg.otaUrl || previous.wsUrl != cfg.wsUrl ||
             previous.token != cfg.token || previous.deviceMac != cfg.deviceMac
@@ -166,6 +225,8 @@ object XiaozhiAssistant {
         stateMachine.autoContinue = cfg.autoContinue
         stateMachine.silenceTimeoutMs = cfg.silenceTimeoutMs
         if (!cfg.enabled && sessionActive) stop("模块已关闭")
+        // 开关或唤醒词改过都要重新同步待机监听
+        syncIdleListening()
     }
 
     fun isSessionActive(): Boolean = sessionActive
@@ -338,7 +399,9 @@ object XiaozhiAssistant {
         sessionActive = false
         stopAfterTurn = false
         cancelTimers()
-        stopCaptureInternal()
+        // 会话彻底结束：不管「说话打断」开没开，录音一定要真的关掉
+        stopCaptureInternal(force = true)
+        pendingInterruptAudio = null
         player?.stop()
         player = null
         closeTransport()
@@ -351,6 +414,8 @@ object XiaozhiAssistant {
         }
         host?.releaseMicrophone()
         sendAudio = false
+        // 会话结束：语音唤醒开着就回到待机监听
+        syncIdleListening()
     }
 
     // ---------------------------------------------------------------- 连接 / OTA
@@ -722,6 +787,25 @@ object XiaozhiAssistant {
         log("状态 ${transition.from} -> ${transition.to}")
         applyEffects(transition.effects)
         updateCaptionForState()
+        onStateChanged(transition.to)
+    }
+
+    /**
+     * 状态迁移完再更新快照：副作用里的 stopCaptureInternal 要按**新**状态决定
+     * 是「摘编码管线」还是「真的停录音」。
+     *
+     * 这里只负责把「进入播报的时刻」发布给采集线程；判定器自己的环形缓冲和底噪
+     * 都归采集线程所有，它发现 sinceAt 变了会自己清零，避免跨线程写。
+     */
+    private fun onStateChanged(state: XiaozhiStateMachine.State) {
+        if (state == XiaozhiStateMachine.State.SPEAKING) {
+            if (stateSnapshot != XiaozhiStateMachine.State.SPEAKING) {
+                speakingSinceAt = android.os.SystemClock.elapsedRealtime()
+            }
+        } else {
+            speakingSinceAt = 0L
+        }
+        stateSnapshot = state
     }
 
     private fun applyEffects(effects: List<XiaozhiStateMachine.SideEffect>) {
@@ -735,7 +819,10 @@ object XiaozhiAssistant {
                     transport?.sendText(XiaozhiProtocol.listenStopJson())
                 is XiaozhiStateMachine.SideEffect.SendAbort ->
                     transport?.sendText(XiaozhiProtocol.abortJson())
-                is XiaozhiStateMachine.SideEffect.FlushPlayback -> player?.flushAndPause()
+                is XiaozhiStateMachine.SideEffect.FlushPlayback -> {
+                    lastPlaybackFlushAt = android.os.SystemClock.elapsedRealtime()
+                    player?.flushAndPause()
+                }
                 is XiaozhiStateMachine.SideEffect.CancelSilence -> cancelSilenceTimer()
                 is XiaozhiStateMachine.SideEffect.ScheduleSilence ->
                     scheduleSilenceTimer(effect.timeoutMs)
@@ -758,8 +845,134 @@ object XiaozhiAssistant {
 
     // ---------------------------------------------------------------- 采集
 
+    /**
+     * 待机常驻录音只在「语音唤醒」开关打开时才跑；模块关掉或者正在会话时一律不跑。
+     * 关掉时连同插件的引擎一起释放，不占内存。
+     *
+     * reloadConfig 是主线程调的，开麦克风不能在那上面做，统一丢给控制面。
+     */
+    private fun syncIdleListening() {
+        val h = handler
+        if (h == null) {
+            applyIdleListening()
+            return
+        }
+        h.post { applyIdleListening() }
+    }
+
+    private fun applyIdleListening() {
+        val ctx = appContext
+        if (ctx == null) {
+            stopIdleListening(releaseEngine = true)
+            return
+        }
+        val wanted = config.enabled && MeSettings.isXiaozhiVoiceWake(ctx)
+        if (wanted && !sessionActive) {
+            startIdleListening()
+        } else {
+            stopIdleListening(releaseEngine = !wanted)
+        }
+    }
+
+    private fun startIdleListening() {
+        val ctx = appContext ?: return
+        if (!hasRecordPermission(ctx)) {
+            log("语音唤醒：没有麦克风权限")
+            return
+        }
+        if (!VoiceWakeBridge.isPluginInstalled(ctx)) {
+            log("语音唤醒：插件未安装")
+            return
+        }
+        val keywords = MeSettings.getXiaozhiWakeKeywords(ctx)
+        val threshold = MeSettings.getXiaozhiWakeThreshold(ctx)
+        val signature = "$threshold|$keywords"
+        if (idleCapture != null) {
+            if (signature == idleSignature) return
+            // 唤醒词或灵敏度改过：引擎要按新参数重建
+            stopIdleListening(releaseEngine = true)
+        }
+        val started = VoiceWakeBridge.start(
+            ctx,
+            keywords,
+            threshold,
+            { keyword -> onWakeDetected(keyword) },
+            { message -> log("唤醒插件：$message") }
+        )
+        if (!started) {
+            log("语音唤醒：引擎加载失败 ${VoiceWakeBridge.errorMessage()}")
+            return
+        }
+        host?.ensureForegroundMicType()
+        // 待机降噪开关：开了走 VOICE_COMMUNICATION（AEC 能把外放音乐当回声消掉），
+        // 这个音源必须先切到通话模式才生效
+        val idleDenoise = MeSettings.isXiaozhiWakeDenoise(ctx)
+        if (idleDenoise) enterVoiceAudioMode()
+        idleVoiceMode = idleDenoise && previousAudioMode != AudioManager.MODE_INVALID
+        val created = XiaozhiAudioCapture(
+            denoise = idleDenoise,
+            onPacket = {},
+            onLevel = {},
+            onError = { message ->
+                log("语音唤醒：录音出错 $message")
+                post { stopIdleListening(releaseEngine = false) }
+            },
+            log = { message -> log(message) },
+            onPcm = { samples, length -> VoiceWakeBridge.acceptPcm(samples, length) }
+        )
+        if (created.start(encode = false)) {
+            idleCapture = created
+            idleSignature = signature
+            log("语音唤醒：开始待机监听")
+        } else {
+            log("语音唤醒：麦克风打不开")
+            VoiceWakeBridge.stop()
+        }
+    }
+
+    private fun stopIdleListening(releaseEngine: Boolean) {
+        val current = idleCapture
+        idleCapture = null
+        if (current != null) {
+            current.stop()
+            if (idleVoiceMode) {
+                idleVoiceMode = false
+                restoreAudioMode()
+            }
+            log("语音唤醒：停止待机监听")
+        }
+        if (releaseEngine) {
+            idleSignature = null
+            VoiceWakeBridge.release()
+        } else {
+            VoiceWakeBridge.stop()
+        }
+    }
+
+    /** 引擎线程回调，切回控制线程再动状态 */
+    private fun onWakeDetected(keyword: String) {
+        log("语音唤醒：$keyword")
+        post {
+            // 先停引擎，免得同一句话反复触发；会话结束后 syncIdleListening 会重新拉起
+            VoiceWakeBridge.stop()
+            if (!sessionActive) start()
+        }
+    }
+
     private fun startCapture() {
-        if (capture != null) return
+        // 麦克风只有一个：会话要录音，先把待机监听的实例让出来（引擎留着，会话结束还能复用）
+        if (idleCapture != null) stopIdleListening(releaseEngine = false)
+        val existing = capture
+        if (existing != null) {
+            // 录音还在（THINKING/SPEAKING 期间只摘了编码管线）：挂回去就行，别重开 AudioRecord，
+            // 一重开预滚缓冲就空了，打断前那段声音也就没了。
+            host?.ensureForegroundMicType()
+            existing.attachEncoder { packet -> if (sendAudio) transport?.sendBinary(packet) }
+            sendAudio = true
+            flushPendingPreroll(existing)
+            log("恢复上行")
+            return
+        }
         host?.ensureForegroundMicType()
         host?.claimMicrophone()
         // 降噪开关决定走哪条链路：开=语音通话（必须先切 mode 才生效），关=录像链路不碰 mode
@@ -775,6 +988,7 @@ object XiaozhiAssistant {
             capture = created
             sendAudio = true
             log("开始录音")
+            flushPendingPreroll(created)
         } else {
             capture = null
             sendAudio = false
@@ -782,16 +996,46 @@ object XiaozhiAssistant {
         }
     }
 
-    private fun stopCaptureInternal() {
+    private fun stopCaptureInternal(force: Boolean = false) {
         sendAudio = false
         val current = capture
+        if (current == null) {
+            restoreAudioMode()
+            return
+        }
+        // 说话打断：THINKING/SPEAKING 期间只摘编码管线，AudioRecord 和通话模式都留着。
+        // 通话模式不能还——HAL 的 AEC 只在那个模式下才把扬声器输出当参考，
+        // 没有 AEC 就分不出「播报」和「人在说话」。
+        if (!force && talkInterruptOn && keepRecordingForInterrupt()) {
+            current.detachEncoder()
+            log("停止上行（录音保持）")
+            return
+        }
         capture = null
         // 先还模式再停采：麦克风关掉之后没有任何理由继续占着通话模式
         restoreAudioMode()
-        if (current != null) {
-            current.stop()
-            log("停止录音")
-        }
+        current.stop()
+        log("停止录音")
+    }
+
+    /**
+     * 这个状态下要不要为了「说话打断」把录音留着。
+     * 用 stateMachine.state 而不是 stateSnapshot：副作用是在状态已经切过去之后执行的。
+     */
+    private fun keepRecordingForInterrupt(): Boolean = when (stateMachine.state) {
+        XiaozhiStateMachine.State.LISTENING,
+        XiaozhiStateMachine.State.THINKING,
+        XiaozhiStateMachine.State.SPEAKING -> true
+        else -> false
+    }
+
+    /** 把打断瞬间截下来的那段预滚补进上行（排在实时数据前面） */
+    private fun flushPendingPreroll(target: XiaozhiAudioCapture) {
+        val preroll = pendingInterruptAudio
+        pendingInterruptAudio = null
+        if (preroll == null || preroll.isEmpty()) return
+        target.feedPreroll(preroll)
+        log("补发打断前 ${preroll.size / 16}ms 语音")
     }
 
     /**
@@ -874,11 +1118,90 @@ object XiaozhiAssistant {
     }
 
     private fun onVoiceLevel(rms: Double) {
+        // 每一帧都要喂给打断判定（低音量帧是学底噪用的，不能提前 return）
+        detectTalkInterrupt(rms)
         if (rms < VOICE_RMS_THRESHOLD) return
         val now = System.currentTimeMillis()
         if (now - lastLevelResetAt < LEVEL_RESET_INTERVAL_MS) return
         lastLevelResetAt = now
         post { resetSilenceTimerIfListening() }
+    }
+
+    /**
+     * 播报期间判「有人在说话」。**跑在采集线程上**，只做几次比较加一个环形写，
+     * 绝不能在这里做任何可能卡住的事——卡一下 AudioRecord 缓冲就溢出，之后是永久丢帧。
+     *
+     * 判据：最近 240ms（12 帧）里至少 9 帧 RMS 超过 [INTERRUPT_MIN_RMS]。
+     * 阈值是**固定值**，不做自适应——这台设备开降噪后 AEC 残留只有个位数，
+     * 自适应只会被环境噪声和失配瞬态带偏（实测出现过「12 帧平稳 174~239 全超阈」的误打断）。
+     */
+    private fun detectTalkInterrupt(rms: Double) {
+        if (!talkInterruptOn) return
+        if (stateSnapshot != XiaozhiStateMachine.State.SPEAKING) return
+        val sinceAt = speakingSinceAt
+        if (sinceAt == 0L) return
+        // 新一轮播报：本地判定状态自己清（控制线程只发布 sinceAt，不碰这些字段）
+        if (sinceAt != detectorForSinceAt) {
+            detectorForSinceAt = sinceAt
+            speakingPeak = 0.0
+            interruptRmsCount = 0
+            interruptRmsIdx = 0
+        }
+        if (rms > speakingPeak) speakingPeak = rms
+        val now = android.os.SystemClock.elapsedRealtime()
+
+        val warmingUp = now - sinceAt < INTERRUPT_GUARD_MS
+        val flushing = !warmingUp && now - lastPlaybackFlushAt < INTERRUPT_FLUSH_GUARD_MS
+        val cooling = !warmingUp && !flushing && now - lastInterruptAt < INTERRUPT_COOLDOWN_MS
+
+        // 诊断日志放在所有 return 之前，否则屏蔽/暖机期间一行都打不出来
+        if (INTERRUPT_DEBUG && now - lastInterruptDebugAt >= 1000L) {
+            lastInterruptDebugAt = now
+            val phase = when {
+                warmingUp -> "暖机"
+                flushing -> "屏蔽失配"
+                cooling -> "冷却"
+                else -> "判定中"
+            }
+            log(
+                "说话打断[$phase] rms=${rms.toInt()} 阈值=${INTERRUPT_MIN_RMS.toInt()}" +
+                        " 峰值=${speakingPeak.toInt()}"
+            )
+        }
+
+        if (warmingUp) return
+        if (flushing) {
+            // AEC 正在重新收敛：这段里的能量全是失配残留，不判
+            interruptRmsCount = 0
+            return
+        }
+        if (cooling) return
+
+        interruptRms[interruptRmsIdx] = rms
+        interruptRmsIdx = (interruptRmsIdx + 1) % INTERRUPT_WINDOW_FRAMES
+        if (interruptRmsCount < INTERRUPT_WINDOW_FRAMES) interruptRmsCount++
+
+        val threshold = INTERRUPT_MIN_RMS
+        val windowFull = interruptRmsCount >= INTERRUPT_WINDOW_FRAMES
+        var hits = 0
+        var firstHit = -1
+        if (windowFull) {
+            for (i in 0 until INTERRUPT_WINDOW_FRAMES) {
+                // interruptRmsIdx 指向「下一次写入」的位置，也就是最旧的帧
+                if (interruptRms[(interruptRmsIdx + i) % INTERRUPT_WINDOW_FRAMES] > threshold) {
+                    hits++
+                    if (firstHit < 0) firstHit = i
+                }
+            }
+        }
+        if (!windowFull || hits < INTERRUPT_HIT_FRAMES || firstHit < 0) return
+
+        lastInterruptAt = now
+        // 从突增起点那帧取到现在：前面的都是 TTS 回声，带上只会让 ASR 认错
+        val framesBack = INTERRUPT_WINDOW_FRAMES - firstHit
+        pendingInterruptAudio = capture?.drainPrerollFrom(framesBack)
+        log("音量突增（$hits/$INTERRUPT_WINDOW_FRAMES 帧超阈），打断播报")
+        post { dispatch(XiaozhiStateMachine.Event.Interrupt) }
     }
 
     // ---------------------------------------------------------------- 计时器

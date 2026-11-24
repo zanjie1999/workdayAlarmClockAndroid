@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  语音唤醒插件。
+
+  纯类库形态：不声明任何 Activity / Service / Provider / Receiver，
+  宿主用 DexClassLoader 加载 WakeWordEngine，装完桌面上也没有图标。
+  唤醒词和灵敏度的设置界面在主程序的小智设置里，插件不提供任何 UI。
+
+  .so 的解压由 build.gradle 里的 packagingOptions.jniLibs.useLegacyPackaging = true 控制，
+  不能改成 false，否则 nativeLibraryDir 是空目录。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:label="工作咩闹钟语音唤醒插件"
+        android:roundIcon="@mipmap/ic_launcher_round" />
+
+</manifest>

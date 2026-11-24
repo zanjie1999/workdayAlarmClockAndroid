@@ -1,0 +1,72 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.zyyme.workdayalarmclock.voicewake'
+    compileSdk 32
+
+    defaultConfig {
+        applicationId "com.zyyme.workdayalarmclock.voicewake"
+        // 唤醒插件 android 5.0
+        minSdk 21
+        targetSdk 32
+        versionCode 1
+        versionName "1.0"
+
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86"
+        }
+    }
+
+    sourceSets {
+        main {
+            // 和主包共用一份 WakeWordHost / WakeWordDefaults 源码
+            java.srcDirs += '../wakeword-api/src/main/java'
+        }
+    }
+
+    // 模型必须原样入包：sherpa 用 AAsset 直接映射 onnx，压缩了就打不开
+    aaptOptions {
+        noCompress "onnx", "txt"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    // 关键：.so 必须解压到 nativeLibraryDir（/data/app/.../lib/），
+    // 宿主的 DexClassLoader 才会按 librarySearchPath 找到它。
+    // AGP 7 默认 false，.so 留在 APK 里不落地，System.loadLibrary 一定失败。
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    lintOptions {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+dependencies {
+    // 推理引擎的 so 已放在 src/main/jniLibs，Kotlin 封装已放在 src/main/java/com/k2fsa/sherpa/onnx，
+    // 不依赖 AAR 也不依赖 JitPack。
+}

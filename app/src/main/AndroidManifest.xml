@@ -37,6 +37,8 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- 语音唤醒插件不挂 launcher，Android 11+ 必须显式声明才看得见（否则插件检测永远为 false） -->
+        <package android:name="com.zyyme.workdayalarmclock.voicewake" />
     </queries>
 
     <application

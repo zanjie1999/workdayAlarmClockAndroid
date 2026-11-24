@@ -120,6 +120,8 @@ class MeService : Service() {
         private const val PLAYBACK_RESUME_REWIND_MS = 2000
         private const val PLAYBACK_CHECKPOINT_INTERVAL_MS = 1000L
         private const val WEATHER_UPDATE_INTERVAL_MS = 60L * 60L * 1000L
+        /** 界面恢复时补 wake 的最小间隔 */
+        private const val NEXT_WAKE_REFRESH_INTERVAL_MS = 60L * 1000L
         private const val MEDIA_TRACK_LONG_PRESS_DELAY_MS = 900L
         private const val MEDIA_TRACK_SEEK_INTERVAL_MS = 500L
         private const val MEDIA_TRACK_SEEK_STEP_MS = 5000
@@ -178,6 +180,7 @@ class MeService : Service() {
     @Volatile var todoText = ""
     @Volatile private var lastWeatherRequestAt = 0L
     @Volatile private var lastTodoRequestAt = 0L
+    @Volatile private var lastNextWakeRefreshAt = 0L
     @Volatile private var todoRequestInFlight = false
 
     val isBonjour = Build.MANUFACTURER + Build.MODEL == "AllwinnerQUAD-CORE A64 ococci"
@@ -2983,6 +2986,24 @@ class MeService : Service() {
 //                print2LogView(e.toString())
 //            }
 //        }).start()
+    }
+
+    /**
+     * 界面恢复到前台时补一次 wake。Go 侧会去重，收到 wake 后重新下发 NEXTWAKE，
+     * 用来兜住「NEXTWAKE 闹钟被系统/ROM 清掉，之后永远不会再唤醒」的情况。
+     * 60s 内只补一次，避免来回切界面反复触发 Go 的唤醒流程。
+     */
+    @Synchronized
+    fun requestNextWakeRefresh() {
+        if (writer == null) return
+        val now = System.currentTimeMillis()
+        if (now - lastNextWakeRefreshAt < NEXT_WAKE_REFRESH_INTERVAL_MS) {
+            return
+        }
+        lastNextWakeRefreshAt = now
+        acquireNextWakeLock(applicationContext)
+        toGo("wake")
+        print2LogView("界面恢复，补一次唤醒检查")
     }
 
     @Synchronized

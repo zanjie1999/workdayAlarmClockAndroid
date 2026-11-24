@@ -19,7 +19,13 @@ data class XiaozhiConfig(
     /** 麦克风降噪：开=VOICE_COMMUNICATION + 通话模式（HAL 处理），关=MIC 裸麦（默认关） */
     val micDenoise: Boolean = false,
     /** 允许 AI 拍照：开了 tools/list 里才会出现拍照工具 */
-    val allowPhoto: Boolean = false
+    val allowPhoto: Boolean = false,
+    /**
+     * 说话打断：播报期间麦克风音量突然变高（有人在说话）就打断播报。
+     * 录音在 THINKING/SPEAKING 期间保持常开，只是不发上行帧；靠 HAL 的 AEC 压掉 TTS 回声，
+     * 所以实际只在「麦克风降噪」打开时才有效，但不限制。
+     */
+    val talkInterrupt: Boolean = false
 ) {
     companion object {
         const val DEFAULT_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"

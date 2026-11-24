@@ -65,6 +65,11 @@ object MeSettings {
     const val KEY_XIAOZHI_PAUSE_MEDIA = "xiaozhi_pause_media"
     const val KEY_XIAOZHI_MIC_DENOISE = "xiaozhi_mic_denoise"
     const val KEY_XIAOZHI_ALLOW_PHOTO = "xiaozhi_allow_photo"
+    const val KEY_XIAOZHI_VOICEWAKE = "xiaozhi_voicewake"
+    const val KEY_XIAOZHI_TALK_INTERRUPT = "xiaozhi_talk_interrupt"
+    const val KEY_XIAOZHI_WAKE_KEYWORDS = "xiaozhi_wake_keywords"
+    const val KEY_XIAOZHI_WAKE_THRESHOLD = "xiaozhi_wake_threshold"
+    const val KEY_XIAOZHI_WAKE_DENOISE = "xiaozhi_wake_denoise"
 
     const val DEFAULT_XIAOZHI_OTA_URL = "https://api.tenclass.net/xiaozhi/ota/"
     const val DEFAULT_XIAOZHI_WS_URL = "wss://api.tenclass.net/xiaozhi/v1/"
@@ -275,4 +280,56 @@ object MeSettings {
 
     fun setXiaozhiAllowPhoto(context: Context, enabled: Boolean) =
         setEnabled(context, KEY_XIAOZHI_ALLOW_PHOTO, enabled)
+
+    /**
+     * 语音唤醒：开了才常驻监听「你好小智」（默认关）。
+     * 需要先装「工作咩闹钟语音唤醒插件」，没装时开关会打不开。
+     */
+    fun isXiaozhiVoiceWake(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_VOICEWAKE, false)
+
+    fun setXiaozhiVoiceWake(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_VOICEWAKE, enabled)
+
+    /**
+     * 说话打断：播报中音量突然变高就当成人在说话，打断播报（默认关）。
+     * 依赖 HAL 的 AEC 压 TTS 回声，降噪关掉时基本失效。
+     */
+    fun isXiaozhiTalkInterrupt(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_TALK_INTERRUPT, false)
+
+    fun setXiaozhiTalkInterrupt(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_TALK_INTERRUPT, enabled)
+
+    /** 语音唤醒词的原始文本（一行一个，sherpa 拼音 token 格式），在插件的设置界面里改 */
+    fun getXiaozhiWakeKeywords(context: Context): String =
+        preferences(context).getString(KEY_XIAOZHI_WAKE_KEYWORDS, null)
+            ?: com.zyyme.workdayalarmclock.wake.WakeWordDefaults.KEYWORDS
+
+    fun setXiaozhiWakeKeywords(context: Context, keywords: String) =
+        preferences(context).edit()
+            .putString(KEY_XIAOZHI_WAKE_KEYWORDS, keywords)
+            .apply()
+
+    /** 语音唤醒触发阈值，越小越灵敏（sherpa 默认 0.25） */
+    fun getXiaozhiWakeThreshold(context: Context): Float =
+        preferences(context).getFloat(
+            KEY_XIAOZHI_WAKE_THRESHOLD,
+            com.zyyme.workdayalarmclock.wake.WakeWordDefaults.THRESHOLD
+        )
+
+    fun setXiaozhiWakeThreshold(context: Context, threshold: Float) =
+        preferences(context).edit()
+            .putFloat(KEY_XIAOZHI_WAKE_THRESHOLD, threshold)
+            .apply()
+
+    /**
+     * 待机监听唤醒词时的麦克风降噪：开=VOICE_COMMUNICATION（HAL 的 AEC），
+     * 能把外放的音乐/视频当回声消掉，避免放着音乐被误唤醒；关=裸麦（默认关）。
+     */
+    fun isXiaozhiWakeDenoise(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_XIAOZHI_WAKE_DENOISE, false)
+
+    fun setXiaozhiWakeDenoise(context: Context, enabled: Boolean) =
+        setEnabled(context, KEY_XIAOZHI_WAKE_DENOISE, enabled)
 }
