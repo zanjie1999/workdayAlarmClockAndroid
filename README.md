@@ -141,7 +141,7 @@ http://设备IP:8880/abc/1/1
 
 ### 小智AI
 稍微折腾了下也是让小智AI在Android4.0跑起来了，强行兼容官方Api了属实是  
-<img width="300" alt="image" src="https://github.com/user-attachments/assets/155b3246-0a57-455c-ba1b-c3547d985259" />  
+<img width="300" alt="image" src="https://github.com/user-attachments/assets/adbf3bfc-0bb3-4fe5-9d1b-e19c6d9a937d" />
 
 双击确认键或者播放键（应用内）开始对话，大屏时钟模式单击中间空白处开始对话，小屏时钟模式在全屏后双击时间的区域开始对话，说话中再点一次可打断  
 如果当前是停止播放，按停止键也可以唤醒  
@@ -165,8 +165,7 @@ http://设备IP:8880/abc/1/1
 
 [语音唤醒需要安装语音唤醒插件（目前是40M）](https://github.com/zanjie1999/workdayAlarmClockAndroid/releases/tag/voicewake)  
 是的你没有看错，语音唤醒插件是本体的4倍多，但是可以自定义唤醒词  
-<img width="300" alt="image" src="https://github.com/user-attachments/assets/0d768be7-6a50-4dd3-b13d-3f304f009e09" />
-
+<img width="300" alt="image" src="https://github.com/user-attachments/assets/ee2d2b9c-792e-43fa-a9b8-a422e964fe58" />
 
 
 ### 摄像头自动亮度(人脸识别)
