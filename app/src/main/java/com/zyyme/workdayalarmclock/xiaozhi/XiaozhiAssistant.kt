@@ -303,7 +303,7 @@ object XiaozhiAssistant {
                         activationLabel = "未绑定（点击重查）"
                         status("设备未绑定，请先在 xiaozhi.me 添加设备（MAC $mac）")
                     } else {
-                        activationLabel = "激活码 ${result.code}（点击重查）"
+                        activationLabel = "激活码 ${result.code}（到xiaozhi.me绑定）"
                         status("激活码 ${result.code}，请到 xiaozhi.me 添加设备（设备 ${mac}）")
                         val polled = client.pollActivate(
                             result.code,
@@ -311,7 +311,7 @@ object XiaozhiAssistant {
                             OTA_POLL_MAX_ATTEMPTS,
                             OTA_POLL_INTERVAL_MS
                         ) { freshCode, _ ->
-                            post { activationLabel = "激活码 $freshCode（点击重查）" }
+                            post { activationLabel = "激活码 $freshCode（到xiaozhi.me绑定）" }
                         }
                         when (polled) {
                             is XiaozhiOtaClient.Result.Ok -> {
