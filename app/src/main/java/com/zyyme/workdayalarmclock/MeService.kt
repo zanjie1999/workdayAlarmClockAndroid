@@ -1722,10 +1722,11 @@ class MeService : Service() {
                 mediaPlayer.setDataSource(filesDir.absolutePath + "/" + url)
             } else if (url.startsWith("http://") || url.startsWith("https://")) {
                 // 带个UA
+                // 必须是可变map：MTK的OMA定制层会往这个map里put自己的头，不可变map会抛UnsupportedOperationException
                 mediaPlayer.setDataSource(
                     applicationContext,
                     Uri.parse(url),
-                    mapOf("User-Agent" to HTTP_USER_AGENT)
+                    hashMapOf("User-Agent" to HTTP_USER_AGENT)
                 )
             } else {
                 mediaPlayer.setDataSource(url)
