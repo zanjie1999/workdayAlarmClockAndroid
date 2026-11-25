@@ -8,7 +8,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import com.zyyme.workdayalarmclock.MeService
 import com.zyyme.workdayalarmclock.MeSettings
+import com.zyyme.workdayalarmclock.MeYsLed
 import com.zyyme.workdayalarmclock.xiaozhi.wake.VoiceWakeBridge
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -835,15 +837,30 @@ object XiaozhiAssistant {
         }
     }
 
+    /**
+     * 状态更新  顺便更新一说宝宝1s的灯板
+     */
     private fun updateCaptionForState() {
         when (stateMachine.state) {
             XiaozhiStateMachine.State.CONNECTING,
-            XiaozhiStateMachine.State.HANDSHAKING -> setCaption("连接中…")
-            XiaozhiStateMachine.State.LISTENING -> setCaption("聆听中…")
+            XiaozhiStateMachine.State.HANDSHAKING -> {
+                setCaption("连接中…")
+                MeService.me?.ysSetLedsValue(MeYsLed.CONNECT_1, MeYsLed.CONNECT_3)
+            }
+            XiaozhiStateMachine.State.LISTENING -> {
+                setCaption("聆听中…")
+                MeService.me?.ysSetLedsValue(MeYsLed.TALKING_1, MeYsLed.TALKING_6)
+            }
             XiaozhiStateMachine.State.THINKING -> setCaption("思考中…")
-            XiaozhiStateMachine.State.SPEAKING -> Unit   // 由 sentence_start 负责
+            XiaozhiStateMachine.State.SPEAKING -> {
+                // 文字更新由 sentence_start 负责
+//                MeService.me?.ysSetLedsValue(MeYsLed.VIOLENCE_1, MeYsLed.VIOLENCE_4)
+                MeService.me?.ysSetLedsValue(MeYsLed.HAPPY_1, MeYsLed.HAPPY_2)
+            }
             XiaozhiStateMachine.State.IDLE,
-            XiaozhiStateMachine.State.ERROR -> Unit
+            XiaozhiStateMachine.State.ERROR -> {
+                MeService.me?.ysSetLedsValue(MeYsLed.EMPTY)
+            }
         }
     }
 
