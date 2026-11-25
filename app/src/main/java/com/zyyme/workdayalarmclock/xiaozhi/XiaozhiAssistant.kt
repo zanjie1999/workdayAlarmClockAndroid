@@ -991,6 +991,7 @@ object XiaozhiAssistant {
     private fun onWakeDetected(keyword: String) {
         log("语音唤醒：$keyword")
         post {
+            XiaozhiChime.play(appContext) { message -> log(message) }
             if (sessionActive) {
                 // 会话中（含播报中）等同双击打断：丢掉还没播的、重新聆听
                 dispatch(XiaozhiStateMachine.Event.Interrupt)
