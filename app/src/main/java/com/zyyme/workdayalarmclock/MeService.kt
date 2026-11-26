@@ -2663,7 +2663,7 @@ class MeService : Service() {
             clickWindowRunnable = Runnable {
                 processMultiClick(multiClickKeyCode, multiClickCount)
             }
-            multiClickHandler.postDelayed(clickWindowRunnable!!, 500)
+            multiClickHandler.postDelayed(clickWindowRunnable!!, 600)
             return true
         }
 
@@ -2979,20 +2979,35 @@ class MeService : Service() {
     private fun processMultiClick(keyCode: Int, count: Int) {
         when (count) {
             1 -> {
-                if (!isStop) {
-                    if (playWhenReady) {
-                        ClockActivity.me?.showMsg("暂停")
-                        print2LogView("单击 暂停")
-                        requestPausePlayback()
-                    } else {
-                        ClockActivity.me?.showMsg("播放")
-                        print2LogView("单击 播放")
-                        requestResumePlayback()
+                // 无屏设备的电源键基本只能按一下：开小智就是唤醒，没开就一键
+                val noScreenPower = keyCode == KeyEvent.KEYCODE_POWER &&
+                        MeSettings.isEnabled(this, MeSettings.KEY_NO_SCREEN)
+                when {
+                    noScreenPower && MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI) -> {
+                        print2LogView("电源键 唤醒小智")
+                        XiaozhiAssistant.start(chime = true)
                     }
-                } else {
-                    print2LogView("单击 一键")
-                    ClockActivity.me?.showMsg("一键")
-                    toGo("1key")
+                    noScreenPower -> {
+                        print2LogView("电源键 一键")
+                        ClockActivity.me?.showMsg("一键")
+                        toGo("1key")
+                    }
+                    !isStop -> {
+                        if (playWhenReady) {
+                            ClockActivity.me?.showMsg("暂停")
+                            print2LogView("单击 暂停")
+                            requestPausePlayback()
+                        } else {
+                            ClockActivity.me?.showMsg("播放")
+                            print2LogView("单击 播放")
+                            requestResumePlayback()
+                        }
+                    }
+                    else -> {
+                        print2LogView("单击 一键")
+                        ClockActivity.me?.showMsg("一键")
+                        toGo("1key")
+                    }
                 }
             }
             2 -> {

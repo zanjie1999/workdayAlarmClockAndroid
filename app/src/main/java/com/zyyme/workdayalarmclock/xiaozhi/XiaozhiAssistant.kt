@@ -1,7 +1,10 @@
 package com.zyyme.workdayalarmclock.xiaozhi
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Build
@@ -35,6 +38,10 @@ object XiaozhiAssistant {
     private const val LEVEL_RESET_INTERVAL_MS = 800L
     private const val OTA_POLL_MAX_ATTEMPTS = 100
     private const val OTA_POLL_INTERVAL_MS = 3000L
+    /** 等 SCO 连上再放提示音，最多等这么久（连不上也得响） */
+    private const val SCO_CHIME_TIMEOUT_MS = 1000L
+    /** 切了通话模式但没有蓝牙时，等路由稳定再放提示音的延时 */
+    private const val WAKE_CHIME_ROUTE_SETTLE_MS = 300L
 
     // ---- 说话打断：播报期间靠音量突增判「有人在说话」 ----
     /** 判定窗口（帧），每帧 = 一次 read = 20ms */
@@ -150,6 +157,9 @@ object XiaozhiAssistant {
     /** 蓝牙 SCO 是我们请求的就负责停掉；只有降噪开（走通话链路）时才会为 true */
     private var bluetoothScoOwned = false
 
+    /** 本次唤醒要响提示音，等录音链路（SCO）真的通了再放 */
+    private var wakeChimePending = false
+
     /**
      * 本轮说完就收场、不再续听。
      * 播放控制类命令（点歌/切歌/恢复播放）执行完，这件事就办完了，
@@ -255,12 +265,9 @@ object XiaozhiAssistant {
             status("需要麦克风权限")
             return false
         }
-        post {
-            // 按键唤醒没有语音唤醒那条提示音，这里补上。
-            // 必须放在 onTrigger 之前：切了通话链路再放就走 SCO 了，又小又闷
-            if (chime) XiaozhiChime.play(appContext) { message -> log(message) }
-            onTrigger(hint)
-        }
+        // 无屏设备没有界面反馈，任何唤醒都响一声
+        if (chime || MeSettings.isEnabled(ctx, MeSettings.KEY_NO_SCREEN)) wakeChimePending = true
+        post { onTrigger(hint) }
         return true
     }
 
@@ -352,6 +359,11 @@ object XiaozhiAssistant {
 
     private fun onTrigger(hint: String?) {
         if (stateMachine.isActive) {
+            // 会话中：通话链路本来就通着，直接响再打断
+            if (wakeChimePending) {
+                wakeChimePending = false
+                XiaozhiChime.play(appContext) { message -> log(message) }
+            }
             interruptInternal()
         } else {
             beginSession(hint)
@@ -408,6 +420,7 @@ object XiaozhiAssistant {
     private fun finishSession() {
         sessionActive = false
         stopAfterTurn = false
+        wakeChimePending = false
         cancelTimers()
         // 会话彻底结束：不管「说话打断」开没开，录音一定要真的关掉
         stopCaptureInternal(force = true)
@@ -1016,6 +1029,8 @@ object XiaozhiAssistant {
                 // 先停引擎，免得同一句话反复触发；startCapture 里会重新接上
                 VoiceWakeBridge.stop()
                 start()
+                // 语音唤醒自己已经响过了，别再让会话补一声
+                wakeChimePending = false
             }
         }
     }
@@ -1062,6 +1077,8 @@ object XiaozhiAssistant {
         }
         host?.ensureForegroundMicType()
         host?.claimMicrophone()
+        // 提示音要在切通话链路之前挂上监听：SCO 连上之后再响，否则会被切链路掐掉
+        armWakeChime(config.micDenoise)
         // 降噪开关决定走哪条链路：开=语音通话（必须先切 mode 才生效），关=录像链路不碰 mode
         if (config.micDenoise) enterVoiceAudioMode(useBluetoothMic = true)
         // 语音唤醒开着：会话期间也要把 PCM 扇给引擎，这样播报中喊唤醒词能打断
@@ -1236,6 +1253,83 @@ object XiaozhiAssistant {
 //            log("停止蓝牙 SCO")
         } catch (e: Exception) {
             log("停止蓝牙 SCO 失败：${e.message}")
+        }
+    }
+
+    /**
+     * 唤醒提示音：走蓝牙麦时必须在 SCO 连上之后再放。
+     * 切链路的瞬间放会被掐掉（实测一点声音都出不来），所以挂个 SCO 状态广播等它就绪。
+     * 不切通话链路（没开降噪）就直接响；切了但没蓝牙，等模式切完再响。
+     */
+    private fun armWakeChime(willUseSco: Boolean) {
+        if (!wakeChimePending) return
+        wakeChimePending = false
+        val ctx = appContext ?: return
+        val manager = audioManager()
+        @Suppress("DEPRECATION")
+        val btRoute = manager != null && manager.isBluetoothA2dpOn
+        if (!willUseSco) {
+            XiaozhiChime.play(ctx) { message -> log(message) }
+            return
+        }
+        if (!btRoute) {
+            // 不开蓝牙也会切通话模式，等它切完再响
+            handler?.postDelayed({
+                if (sessionActive) XiaozhiChime.play(ctx) { message -> log(message) }
+            }, WAKE_CHIME_ROUTE_SETTLE_MS)
+            return
+        }
+        val waiter = ScoChimeWaiter(ctx) {
+            // 会话已经失败/结束了就别补这一声了
+            if (sessionActive) post { XiaozhiChime.play(ctx) { message -> log(message) } }
+        }
+        val sticky = try {
+            ctx.registerReceiver(
+                waiter,
+                IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED),
+                null,
+                handler
+            )
+        } catch (e: Exception) {
+            log("提示音：监听 SCO 失败 ${e.message}")
+            waiter.fire()
+            return
+        }
+        // 系统把这条广播做成了 sticky，注册时就能拿到当前状态（链路已经连着的情况）
+        if (sticky?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1) ==
+            AudioManager.SCO_AUDIO_STATE_CONNECTED
+        ) {
+            waiter.fire()
+            return
+        }
+        // 兜底：SCO 一直连不上也得响
+        handler?.postDelayed({ waiter.fire() }, SCO_CHIME_TIMEOUT_MS)
+    }
+
+    /** 等 SCO 连上的提示音监听，连上或超时都只触发一次 */
+    private class ScoChimeWaiter(
+        private val ctx: Context,
+        private val onReady: () -> Unit
+    ) : BroadcastReceiver() {
+
+        private var fired = false
+
+        fun fire() {
+            if (fired) return
+            fired = true
+            try {
+                ctx.unregisterReceiver(this)
+            } catch (ignored: Exception) {
+            }
+            onReady()
+        }
+
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1) ==
+                AudioManager.SCO_AUDIO_STATE_CONNECTED
+            ) {
+                fire()
+            }
         }
     }
 
