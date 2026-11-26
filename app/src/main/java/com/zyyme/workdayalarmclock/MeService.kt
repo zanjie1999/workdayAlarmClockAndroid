@@ -101,7 +101,7 @@ class MeService : Service() {
                     setReferenceCounted(false)
                 }
             }
-            wakeLockNext?.acquire(60_000L)
+            wakeLockNext?.acquire(NEXT_WAKE_LOCK_MS)
         }
 
         val logBuilder = StringBuilder()
@@ -111,6 +111,14 @@ class MeService : Service() {
         const val ACTION_PREVIOUS = "com.zyyme.workdayalarmclock.ACTION_PREVIOUS"
         const val ACTION_STOP = "com.zyyme.workdayalarmclock.ACTION_STOP"
         const val ACTION_WAKE = "com.zyyme.workdayalarmclock.ACTION_WAKE"
+
+        /** 提前唤醒：只拉起服务和 CPU 锁，给 WiFi 自动重连留时间，不发 wake */
+        const val ACTION_PREWAKE = "com.zyyme.workdayalarmclock.ACTION_PREWAKE"
+
+        /** 预唤醒提前量 */
+        private const val PRE_WAKE_LEAD_MS = 30_000L
+        /** 唤醒锁时长：预唤醒 30s + 原闹钟 + 起播余量 */
+        private const val NEXT_WAKE_LOCK_MS = 75_000L
 
         const val ACTION_FORWARD = "com.zyyme.workdayalarmclock.ACTION_FORWARD"
 
@@ -192,6 +200,7 @@ class MeService : Service() {
     private var notificationBuilder: NotificationCompat.Builder? = null
     private var notificationManager: NotificationManager? = null
     private var nextWakePendingIntent: PendingIntent? = null
+    private var preWakePendingIntent: PendingIntent? = null
     private var udpServerSocket: DatagramSocket? = null
     private var cameraHttpServer: CameraHttpServer? = null
     @Volatile private var framebufferStreaming = false
@@ -334,13 +343,21 @@ class MeService : Service() {
     @SuppressLint("WrongConstant")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val startAction = intent?.action
+        // 预唤醒和正式唤醒都先把 CPU 锁拿住：冷启动时服务实例还不存在，
+        // 预唤醒要撑过等待 WiFi 重连的 30 秒
+        if (startAction == ACTION_WAKE || startAction == ACTION_PREWAKE) {
+            acquireNextWakeLock(applicationContext)
+        }
         if (me != null) {
             // 服务已经在跑，如果是定时器请求给个wake
             if (startAction == ACTION_WAKE) {
-                acquireNextWakeLock(applicationContext)
                 // getForegroundService 要求服务保持在前台，这里补一次（已在前台就是刷新通知）
                 updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
                 toGo("wake")
+            } else if (startAction == ACTION_PREWAKE) {
+                // 只保持前台，让系统和 Go 有 30 秒准备时间，不触发 timeJob
+                updateForegroundServiceType(cameraFeaturesEnabled(), microphoneFeaturesEnabled())
+                print2LogView("预唤醒：等待 WiFi 重连")
             }
             return 0
         }
@@ -625,18 +642,43 @@ class MeService : Service() {
     }
 
     /**
+     * 预唤醒专用：比闹钟提前 30 秒把服务拉起来，只拿 CPU 锁，不发 wake。
+     * 必须用 setAlarmClock，系统才会退出 Doze 恢复 WiFi 扫描；用
+     * setAndAllowWhileIdle 只是临时放行，Doze 里仍然不扫 WiFi。
+     */
+    private fun createPreWakePendingIntent(): PendingIntent {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val intent = Intent(this, MeService::class.java).setAction(ACTION_PREWAKE)
+            PendingIntent.getForegroundService(this, ACTION_PREWAKE.hashCode(), intent, flags)
+        } else {
+            val intent = Intent(this, MeMediaButtonReceiver::class.java).setAction(ACTION_PREWAKE)
+            PendingIntent.getBroadcast(this, ACTION_PREWAKE.hashCode(), intent, flags)
+        }
+    }
+
+    /**
      * 只有用户主动关闭（EXIT、退出应用）才置 true，
      * onDestroy 据此决定要不要把 NEXTWAKE 闹钟一起取消。
      */
     var cancelNextWakeOnDestroy = false
 
     fun cancelNextWakeAlarm() {
+        val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
         nextWakePendingIntent?.let {
-            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
             alarmManager.cancel(it)
             print2LogView("已取消下次唤醒")
         }
         nextWakePendingIntent = null
+        preWakePendingIntent?.let {
+            alarmManager.cancel(it)
+            print2LogView("已取消预唤醒")
+        }
+        preWakePendingIntent = null
     }
 
     /**
@@ -647,6 +689,8 @@ class MeService : Service() {
         val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
         nextWakePendingIntent?.let { alarmManager.cancel(it) }
         nextWakePendingIntent = null
+        preWakePendingIntent?.let { alarmManager.cancel(it) }
+        preWakePendingIntent = null
         if (ms <= 0L) {
             return
         }
@@ -680,6 +724,38 @@ class MeService : Service() {
                 alarmManager.set(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)
             }
             print2LogView("精确闹钟被拒绝: ${e.message}")
+        }
+        schedulePreWake(ms, alarmManager)
+    }
+
+    /**
+     * 在原闹钟前 30 秒排一个只唤醒、不发 wake 的闹钟。
+     * 不延期原闹钟：WiFi 没连上也照常响，只是歌单可能走默认铃声。
+     */
+    private fun schedulePreWake(ms: Long, alarmManager: AlarmManager) {
+        if (ms <= 0L || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return
+        }
+        val preTrigger = ms - PRE_WAKE_LEAD_MS
+        if (preTrigger <= System.currentTimeMillis() + 1000L) {
+            print2LogView("距下次唤醒不足 30 秒，跳过预唤醒")
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            !alarmManager.canScheduleExactAlarms()
+        ) {
+            print2LogView("没有精确闹钟权限，跳过预唤醒")
+            return
+        }
+        val pendingIntent = createPreWakePendingIntent()
+        preWakePendingIntent = pendingIntent
+        try {
+            alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(preTrigger, null), pendingIntent)
+            val fmt = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
+            print2LogView("预唤醒 " + fmt.format(Date(preTrigger)))
+        } catch (e: SecurityException) {
+            preWakePendingIntent = null
+            print2LogView("预唤醒被拒绝: ${e.message}")
         }
     }
 
@@ -1201,6 +1277,7 @@ class MeService : Service() {
             cancelNextWakeAlarm()
         } else {
             nextWakePendingIntent = null
+            preWakePendingIntent = null
         }
         me = null
         super.onDestroy()

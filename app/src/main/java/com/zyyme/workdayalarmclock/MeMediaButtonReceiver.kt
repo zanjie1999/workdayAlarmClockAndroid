@@ -59,9 +59,17 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
                     service.toGo("wake")
                 } else {
                     // APP被系统杀掉了，重新启动服务，Go会跑一遍定时器
-                    startWakeService(ctx)
+                    startWakeService(ctx, MeService.ACTION_WAKE)
                 }
                 Log.d("logView MediaButton", "ACTION_WAKE running=${service != null}")
+            }
+            MeService.ACTION_PREWAKE -> {
+                val ctx = context ?: return
+                MeService.acquireNextWakeLock(ctx)
+                if (MeService.me == null) {
+                    startWakeService(ctx, MeService.ACTION_PREWAKE)
+                }
+                Log.d("logView MediaButton", "ACTION_PREWAKE running=${MeService.me != null}")
             }
             else -> {
                 Log.d("logView MediaButton", "未知action $action")
@@ -74,17 +82,17 @@ class MeMediaButtonReceiver : BroadcastReceiver() {
      * 闹钟到点时如果服务已经不在了，用这个把 MeService 拉起来。
      * Go 启动后会自己跑一次定时器，这里不用再补 wake。
      */
-    private fun startWakeService(context: Context) {
-        val intent = Intent(context, MeService::class.java).setAction(MeService.ACTION_WAKE)
+    private fun startWakeService(context: Context, action: String) {
+        val intent = Intent(context, MeService::class.java).setAction(action)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
                 context.startService(intent)
             }
-            Log.d("logView MediaButton", "ACTION_WAKE 服务不在，已请求启动")
+            Log.d("logView MediaButton", "$action 服务不在，已请求启动")
         } catch (e: Exception) {
-            Log.d("logView MediaButton", "ACTION_WAKE 启动服务失败 $e")
+            Log.d("logView MediaButton", "$action 启动服务失败 $e")
         }
     }
 }
