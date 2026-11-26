@@ -140,7 +140,7 @@ class MeService : Service() {
         /** 小智启用时，DPAD Center 单击延后这么久执行，用来等第二击 */
         private const val XIAOZHI_DOUBLE_CLICK_WINDOW_MS = 300L
         /** 蓝牙音响一次按键只发一个 PLAY 或 PAUSE，两击间隔比实体键大，双击窗口单独放宽 */
-        private const val BLUETOOTH_DOUBLE_CLICK_WINDOW_MS = 500L
+        private const val BLUETOOTH_DOUBLE_CLICK_WINDOW_MS = 600L
         // 在线播放与歌词请求共用，部分 CDN 会拒绝 MediaPlayer 默认的 stagefright UA
         private const val HTTP_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
 
