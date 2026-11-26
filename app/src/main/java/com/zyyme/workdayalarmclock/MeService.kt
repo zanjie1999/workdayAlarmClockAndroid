@@ -2833,7 +2833,7 @@ class MeService : Service() {
                 bluetoothSingleClickRunnable = null
                 bluetoothToggleKeyCode = keyCode
                 print2LogView("双击 唤醒小智")
-                XiaozhiAssistant.start()
+                XiaozhiAssistant.start(chime = true)
                 return true
             }
             bluetoothToggleKeyCode = keyCode
@@ -3009,7 +3009,7 @@ class MeService : Service() {
                 // 只有播放键/确认键能用的设备靠这个唤醒；未启用小智时保持原来的无动作
                 if (MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)) {
                     print2LogView("四击 唤醒小智")
-                    XiaozhiAssistant.start()
+                    XiaozhiAssistant.start(chime = true)
                 }
             }
         }

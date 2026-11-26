@@ -248,14 +248,19 @@ object XiaozhiAssistant {
      *
      * @param hint 可选的补充文本，目前只有 Go 管道会传，预留给"AI 打开待办"这类带参数的唤起。
      */
-    fun start(hint: String? = null): Boolean {
+    fun start(hint: String? = null, chime: Boolean = false): Boolean {
         if (!config.enabled) return false
         val ctx = appContext ?: return false
         if (!hasRecordPermission(ctx)) {
             status("需要麦克风权限")
             return false
         }
-        post { onTrigger(hint) }
+        post {
+            // 按键唤醒没有语音唤醒那条提示音，这里补上。
+            // 必须放在 onTrigger 之前：切了通话链路再放就走 SCO 了，又小又闷
+            if (chime) XiaozhiChime.play(appContext) { message -> log(message) }
+            onTrigger(hint)
+        }
         return true
     }
 
