@@ -66,6 +66,21 @@ class MeMediaPlaybackManager(
         mediaSession?.setSessionActivity(sessionActivityPendingIntent)
 
         mediaSession?.setCallback(object : MediaSessionCompat.Callback() {
+            /**
+             * 蓝牙音响的按键先到这里。独立的 PLAY / PAUSE 交给宿主做双击判定（窗口比实体键宽），
+             * 返回 true 后框架不再按默认逻辑回调 onPlay / onPause；其它键保持原样。
+             */
+            override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
+                val keyEvent = mediaButtonEvent?.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent
+                if (keyEvent != null &&
+                    (keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY || keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE)
+                ) {
+                    MeService.me?.keyHandleBluetoothToggle(keyEvent.keyCode, keyEvent.action == KeyEvent.ACTION_DOWN)
+                    return true
+                }
+                return super.onMediaButtonEvent(mediaButtonEvent)
+            }
+
             override fun onPlay() {
                 print2LogView("onPlay called")
                 MeService.me?.keyHandleAction(KeyEvent.KEYCODE_MEDIA_PLAY)

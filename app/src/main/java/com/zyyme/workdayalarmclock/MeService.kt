@@ -139,6 +139,8 @@ class MeService : Service() {
         private const val VOICE_DUCK_VOLUME = 0.3f
         /** 小智启用时，DPAD Center 单击延后这么久执行，用来等第二击 */
         private const val XIAOZHI_DOUBLE_CLICK_WINDOW_MS = 300L
+        /** 蓝牙音响一次按键只发一个 PLAY 或 PAUSE，两击间隔比实体键大，双击窗口单独放宽 */
+        private const val BLUETOOTH_DOUBLE_CLICK_WINDOW_MS = 500L
         // 在线播放与歌词请求共用，部分 CDN 会拒绝 MediaPlayer 默认的 stagefright UA
         private const val HTTP_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
 
@@ -280,6 +282,11 @@ class MeService : Service() {
     private val centerClickGate = DoubleClickGate(XIAOZHI_DOUBLE_CLICK_WINDOW_MS)
     private var centerSingleClickRunnable: Runnable? = null
     private var clickWindowRunnable: Runnable? = null
+
+    /** 蓝牙音响 PLAY / PAUSE 的单击/双击消歧，窗口比实体键宽 */
+    private val bluetoothClickGate = DoubleClickGate(BLUETOOTH_DOUBLE_CLICK_WINDOW_MS)
+    private var bluetoothSingleClickRunnable: Runnable? = null
+    private var bluetoothToggleKeyCode = 0
 
     // 实体上一首/下一首媒体键长按快退/快进状态
     private var mediaTrackKeyCode = 0
@@ -2537,6 +2544,10 @@ class MeService : Service() {
         if (cameraHttpServer?.handleSensorKeyEvent(keyCode, isDown) == true) {
             return true
         }
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY || keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE) {
+            // 蓝牙音响一次按键只发一个码，双击要跨 PLAY / PAUSE 配对
+            return keyHandleBluetoothToggle(keyCode, isDown)
+        }
         if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY
             || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             return handleMediaPlayKey(keyCode, isDown)
@@ -2791,6 +2802,58 @@ class MeService : Service() {
             }
         }
         keyHandleAction(keyCode)
+        return true
+    }
+
+    /**
+     * 蓝牙音响/耳机发来的独立 PLAY / PAUSE（不是 PLAY_PAUSE）：
+     * 双击唤醒小智。这类设备一次按键只发一个码，两击间隔也比实体键大，
+     * 所以用单独的 [BLUETOOTH_DOUBLE_CLICK_WINDOW_MS] 窗口配对。
+     * 小智没启用时原样走 [keyHandle]，行为和以前完全一致。
+     */
+    fun keyHandleBluetoothToggle(keyCode: Int, isDown: Boolean): Boolean {
+        if (!MeSettings.isEnabled(this, MeSettings.KEY_XIAOZHI)) {
+            // 小智没开：保持原来的处理，PLAY 走长按/单击，PAUSE 按下即响应
+            return if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) {
+                handleMediaPlayKey(keyCode, isDown)
+            } else {
+                if (isDown) keyHandleAction(keyCode) else false
+            }
+        }
+        if (isDown) {
+            // 部分设备会重复发送 ACTION_DOWN，保持同一次按键状态即可
+            if (bluetoothToggleKeyCode == keyCode) return true
+            if (bluetoothClickGate.onDown(
+                    System.currentTimeMillis(),
+                    true
+                ) == DoubleClickGate.DownResult.DOUBLE
+            ) {
+                // 第一击排队的单击要作废
+                bluetoothSingleClickRunnable?.let { multiClickHandler.removeCallbacks(it) }
+                bluetoothSingleClickRunnable = null
+                bluetoothToggleKeyCode = keyCode
+                print2LogView("双击 唤醒小智")
+                XiaozhiAssistant.start()
+                return true
+            }
+            bluetoothToggleKeyCode = keyCode
+            return true
+        }
+        if (bluetoothToggleKeyCode != keyCode) return true
+        bluetoothToggleKeyCode = 0
+        if (bluetoothClickGate.onUp(
+                System.currentTimeMillis(),
+                true,
+                false
+            ) == DoubleClickGate.UpResult.DEFER
+        ) {
+            val runnable = Runnable {
+                bluetoothSingleClickRunnable = null
+                if (bluetoothClickGate.consumeSingle()) keyHandleAction(keyCode)
+            }
+            bluetoothSingleClickRunnable = runnable
+            multiClickHandler.postDelayed(runnable, BLUETOOTH_DOUBLE_CLICK_WINDOW_MS)
+        }
         return true
     }
 
