@@ -3081,7 +3081,7 @@ class MeService : Service() {
         lastNextWakeRefreshAt = now
         acquireNextWakeLock(applicationContext)
         toGo("wake")
-        print2LogView("界面恢复，补一次唤醒检查")
+//        print2LogView("界面恢复，补一次唤醒检查")
     }
 
     @Synchronized

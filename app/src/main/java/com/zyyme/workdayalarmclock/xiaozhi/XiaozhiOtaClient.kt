@@ -64,7 +64,7 @@ class XiaozhiOtaClient(
     fun fetch(bodyJson: String): Result {
         return try {
             val (code, text) = post(otaUrl, bodyJson)
-            log("OTA 响应 HTTP $code ${text.take(600)}")
+//            log("OTA 响应 HTTP $code ${text.take(600)}")
             interpret(code, text)
         } catch (e: Exception) {
             log("OTA 请求失败：${e.message}")
@@ -174,7 +174,7 @@ class XiaozhiOtaClient(
             return Result.NeedActivation(activation.code, activation.message, activation.challenge)
         }
         if (ws != null) {
-            log("websocket token=${ws.token.ifEmpty { "(空)" }}")
+//            log("websocket token=${ws.token.ifEmpty { "(空)" }}")
             return Result.Ok(ws.url, ws.token)
         }
         return if (httpCode in 200..299) {
