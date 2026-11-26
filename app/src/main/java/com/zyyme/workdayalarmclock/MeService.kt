@@ -751,8 +751,8 @@ class MeService : Service() {
         preWakePendingIntent = pendingIntent
         try {
             alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(preTrigger, null), pendingIntent)
-            val fmt = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
-            print2LogView("预唤醒 " + fmt.format(Date(preTrigger)))
+//            val fmt = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
+//            print2LogView("预唤醒 " + fmt.format(Date(preTrigger)))
         } catch (e: SecurityException) {
             preWakePendingIntent = null
             print2LogView("预唤醒被拒绝: ${e.message}")

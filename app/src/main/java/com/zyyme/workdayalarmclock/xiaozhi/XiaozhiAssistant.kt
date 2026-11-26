@@ -147,9 +147,8 @@ object XiaozhiAssistant {
      */
     private var previousAudioMode = AudioManager.MODE_INVALID
 
-    /** 外放是我们强制打开时就记下原值，结束时还原 */
-    private var previousSpeakerphoneOn = false
-    private var speakerphoneOwned = false
+    /** 蓝牙 SCO 是我们请求的就负责停掉；只有降噪开（走通话链路）时才会为 true */
+    private var bluetoothScoOwned = false
 
     /**
      * 本轮说完就收场、不再续听。
@@ -899,10 +898,13 @@ object XiaozhiAssistant {
         val ctx = appContext ?: return
         if (!hasRecordPermission(ctx)) {
             log("语音唤醒：没有麦克风权限")
+            // 待机起不来就没有接手的人了，会话留下的通话链路不能一直挂着
+            restoreAudioMode()
             return
         }
         if (!VoiceWakeBridge.isPluginInstalled(ctx)) {
             log("语音唤醒：插件未安装")
+            restoreAudioMode()
             return
         }
         val keywords = MeSettings.getXiaozhiWakeKeywords(ctx)
@@ -922,13 +924,14 @@ object XiaozhiAssistant {
         )
         if (!started) {
             log("语音唤醒：引擎加载失败 ${VoiceWakeBridge.errorMessage()}")
+            restoreAudioMode()
             return
         }
         host?.ensureForegroundMicType()
         // 待机降噪开关：开了走 VOICE_COMMUNICATION（AEC 能把外放音乐当回声消掉），
         // 这个音源必须先切到通话模式才生效
         val idleDenoise = MeSettings.isXiaozhiWakeDenoise(ctx)
-        if (idleDenoise) enterVoiceAudioMode()
+        if (idleDenoise) enterVoiceAudioMode(useBluetoothMic = true)
         // 只要现在确实处在通话模式，退出时就必须负责还原——哪怕进来之前就已经是了。
         // 不这么做的话：上一次没还原干净 → 这次 enterVoiceAudioMode 看到已是通话模式就
         // 直接 return、previousAudioMode 保持 INVALID → 再也没有机会还原，
@@ -977,7 +980,16 @@ object XiaozhiAssistant {
         // 早先写在 if (current != null) 里面，实例提前变 null 时模式就永远卡住了。
         if (idleVoiceMode) {
             idleVoiceMode = false
-            restoreAudioMode()
+            // 会话马上要接手（它的降噪也开着）就先别还：还了 SCO 得重新协商，
+            // 200~800ms 里上行还是手机麦，唤醒后第一句开头会缺一截。
+            // 必须确认链路真的还在手上，否则这句日志会和后面的重新进入自相矛盾
+            if (sessionActive && config.micDenoise &&
+                previousAudioMode != AudioManager.MODE_INVALID
+            ) {
+                log("通话链路交给会话")
+            } else {
+                restoreAudioMode()
+            }
         }
         if (releaseEngine) {
             idleSignature = null
@@ -1046,7 +1058,7 @@ object XiaozhiAssistant {
         host?.ensureForegroundMicType()
         host?.claimMicrophone()
         // 降噪开关决定走哪条链路：开=语音通话（必须先切 mode 才生效），关=录像链路不碰 mode
-        if (config.micDenoise) enterVoiceAudioMode()
+        if (config.micDenoise) enterVoiceAudioMode(useBluetoothMic = true)
         // 语音唤醒开着：会话期间也要把 PCM 扇给引擎，这样播报中喊唤醒词能打断
         if (wakeEnabled) ensureWakeEngine()
         val wakeSink: ((ShortArray, Int) -> Unit)? = if (wakeEnabled) {
@@ -1078,7 +1090,7 @@ object XiaozhiAssistant {
         sendAudio = false
         val current = capture
         if (current == null) {
-            restoreAudioMode()
+            releaseVoiceLink()
             return
         }
         // 说话打断 / 语音唤醒：THINKING/SPEAKING 期间只摘编码管线，AudioRecord 和通话模式都留着。
@@ -1091,7 +1103,7 @@ object XiaozhiAssistant {
         }
         capture = null
         // 先还模式再停采：麦克风关掉之后没有任何理由继续占着通话模式
-        restoreAudioMode()
+        releaseVoiceLink()
         current.stop()
         log("停止录音")
     }
@@ -1123,9 +1135,12 @@ object XiaozhiAssistant {
      * 录音期间切到通话音频模式：这是 `AudioSource.VOICE_COMMUNICATION` 真正生效的前提，
      * 系统语音助手也是这么做的。HAL 只有在通话模式下才会把输出（含媒体那一路）当 AEC 参考。
      *
+     * [useBluetoothMic] 为 true 时顺便把上行切到蓝牙麦：降噪开着就是要靠设备侧处理，
+     * 蓝牙音响/耳机的麦自带降噪和回声消除，比手机麦更合适。
+     *
      * 全局状态，必须成对还原；别人已经处在通话模式（比如正在打电话）就一点都不碰。
      */
-    private fun enterVoiceAudioMode() {
+    private fun enterVoiceAudioMode(useBluetoothMic: Boolean) {
         if (previousAudioMode != AudioManager.MODE_INVALID) return
         val manager = audioManager() ?: return
         val original = manager.mode
@@ -1142,8 +1157,30 @@ object XiaozhiAssistant {
             log("切换音频模式失败：${e.message}")
             return
         }
-        // 通话模式下媒体默认可能走听筒，明确要求外放；顺序不能反，mode 不对时 set 会抛异常
+        // 通话模式不开免提就掉到听筒，实测必须开；顺序不能反，mode 不对时 set 会抛异常
         enableSpeakerphone(manager)
+        if (useBluetoothMic) startBluetoothSco(manager)
+    }
+
+    /**
+     * 退出通话链路。释放前只看一件事：待机监听的降噪开关还开着吗？
+     * 开着就说明它马上要接手，这时候还回去纯属白拆一次——SCO 重新协商要 200~800ms，
+     * 期间上行还是手机麦，唤醒后第一句开头会缺一截。
+     *
+     * 不能拿 sessionActive 当判据：静默超时、服务端 bye 这些路径是状态机先进 IDLE、
+     * StopCapture 先于 finishSession 执行，那时候 sessionActive 还是 true，
+     * 一判断就会把链路提前还掉（日志里就是"SCO 停了 → 待机起来又请求一次"）。
+     *
+     * 真不用了才还原：关掉语音唤醒、待机降噪关掉，都会走到 restoreAudioMode。
+     */
+    private fun releaseVoiceLink() {
+        val ctx = appContext
+        val idleTakesOver = wakeEnabled && ctx != null && MeSettings.isXiaozhiWakeDenoise(ctx)
+        if (idleTakesOver && previousAudioMode != AudioManager.MODE_INVALID) {
+            log("通话链路留给待机监听")
+            return
+        }
+        restoreAudioMode()
     }
 
     private fun restoreAudioMode() {
@@ -1151,8 +1188,8 @@ object XiaozhiAssistant {
         if (original == AudioManager.MODE_INVALID) return
         previousAudioMode = AudioManager.MODE_INVALID
         val manager = audioManager() ?: return
-        // 先把外放还原，再退 mode：退出通话模式之后 setSpeakerphoneOn 就没意义了
-        restoreSpeakerphone(manager)
+        // 先停 SCO 再退 mode：蓝牙链路还挂着的时候切 mode 会白折腾一次路由
+        stopBluetoothSco(manager)
         try {
             manager.mode = original
             log("音频模式还原 -> ${audioModeName(original)}")
@@ -1161,29 +1198,54 @@ object XiaozhiAssistant {
         }
     }
 
+    /**
+     * 把上行切到蓝牙麦。蓝牙音响/耳机的麦克风走的是 HFP 的 SCO 链路，
+     * SCO 不建立，系统根本不会把它当输入设备（A2DP 那一路只有输出、没有麦）。
+     *
+     * 这里用已废弃的 `startBluetoothSco()`：它在 12/13/14 上仍然是有效实现，只是标了 deprecated，
+     * 且只要 `MODIFY_AUDIO_SETTINGS` 普通权限；新 API `setCommunicationDevice()` 得先枚举蓝牙设备，
+     * 而 Android 12+ 枚举蓝牙要 `BLUETOOTH_CONNECT` 运行时权限，代价不值得。
+     *
+     * 代价：SCO 是通话链路，蓝牙音响的音乐（A2DP）会被挂起，播报也变成通话音质。
+     */
     @Suppress("DEPRECATION")
-    private fun enableSpeakerphone(manager: AudioManager) {
-        if (speakerphoneOwned) return
+    private fun startBluetoothSco(manager: AudioManager) {
+        if (bluetoothScoOwned) return
         try {
-            previousSpeakerphoneOn = manager.isSpeakerphoneOn
-            speakerphoneOwned = true
-            manager.isSpeakerphoneOn = true
-            log("强制外放 on（原 ${previousSpeakerphoneOn}）")
+            manager.startBluetoothSco()
+            manager.isBluetoothScoOn = true
+            bluetoothScoOwned = true
+//            log("请求蓝牙 SCO（上行切到蓝牙麦）")
         } catch (e: Exception) {
-            speakerphoneOwned = false
-            log("设置外放失败：${e.message}")
+            log("请求蓝牙 SCO 失败：${e.message}")
         }
     }
 
     @Suppress("DEPRECATION")
-    private fun restoreSpeakerphone(manager: AudioManager) {
-        if (!speakerphoneOwned) return
-        speakerphoneOwned = false
+    private fun stopBluetoothSco(manager: AudioManager) {
+        if (!bluetoothScoOwned) return
+        bluetoothScoOwned = false
         try {
-            manager.isSpeakerphoneOn = previousSpeakerphoneOn
-            log("外放还原 ${previousSpeakerphoneOn}")
+            manager.stopBluetoothSco()
+            manager.isBluetoothScoOn = false
+//            log("停止蓝牙 SCO")
         } catch (e: Exception) {
-            log("还原外放失败：${e.message}")
+            log("停止蓝牙 SCO 失败：${e.message}")
+        }
+    }
+
+    /**
+     * 通话模式下必须开免提，否则声音走听筒。
+     * 只开不还：退出时会先把 mode 退回 NORMAL，这个状态对普通播放就没影响了；
+     * 下次进来本来也是要重新开成 true。
+     */
+    @Suppress("DEPRECATION")
+    private fun enableSpeakerphone(manager: AudioManager) {
+        try {
+            manager.isSpeakerphoneOn = true
+//            log("强制外放 on")
+        } catch (e: Exception) {
+            log("设置外放失败：${e.message}")
         }
     }
 
