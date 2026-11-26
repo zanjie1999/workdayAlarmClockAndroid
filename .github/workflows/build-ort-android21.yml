@@ -1,0 +1,211 @@
+name: Build onnxruntime for Android API 21
+
+# 用途：自己编一份 libonnxruntime.so，给 voicewake 插件用。
+#
+# 为什么需要自己编：
+#   1. k2-fsa 预编译的 1.28.x 是用 --android_api 27 编的（他们的 workflow 里写着），
+#      所以引用了 __write_chk / __fwrite_chk（API 24）和 __register_atfork /
+#      __gnu_strerror_r（API 23），Android 5/6 上 dlopen 必失败。
+#   2. 官方 Maven 的 1.28.0 符号干净，但它导出的是 OrtGetApiBase@@VERS_1.28.0，
+#      而 sherpa 的 so 是按 OrtGetApiBase@VERS_1.28.2 引用的，Android 6 的 linker
+#      直接拒绝绑定（实测：两边版本名补丁成一致也不管用）。
+#   => 必须用 1.28.2 源码 + android-21 重编，产物天然是 VERS_1.28.2，ABI 完全对得上。
+#
+# 关于源码地址：
+#   github.com/microsoft/onnxruntime 目前返回 404（Actions 里报 "Repository not found"），
+#   所以默认走 GitCode 镜像（已确认该镜像有 v1.28.2 tag，VERSION_NUMBER=1.28.2）。
+#   如果哪天 GitHub 恢复了，把 repo_url 换回 https://github.com/microsoft/onnxruntime.git。
+#
+# 跑完下载 3 个 artifact，各含一个 libonnxruntime.so，直接覆盖到
+# voicewake/src/main/jniLibs/{armeabi-v7a,arm64-v8a,x86}/libonnxruntime.so。
+#
+# 脚本最后会自动校验两件必须成立的事，不满足直接失败：
+#   1. 产物里没有 LIBC_N / LIBC_P 符号（否则 Android 5/6 仍然 dlopen 失败）
+#   2. OrtGetApiBase 导出成 OrtGetApiBase@@VERS_1.28.2（否则 sherpa 的 so 绑不上）
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_url:
+        description: 'onnxruntime 源码仓库地址'
+        required: true
+        default: 'https://gitcode.com/microsoft/onnxruntime.git'
+      ref:
+        description: 'tag / 分支（必须是 1.28.2，符号版本名 VERS_<版本> 由它决定）'
+        required: true
+        default: 'v1.28.2'
+      api_level:
+        description: '目标 Android API level'
+        required: true
+        default: '21'
+      ndk_version:
+        description: 'NDK 版本（k2-fsa 那份 1.28.2 就是 NDK r27 编的）'
+        required: true
+        default: 'r27c'
+
+concurrency:
+  group: ort-android21-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build ${{ matrix.abi }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        abi:
+          - armeabi-v7a
+          - arm64-v8a
+          - x86
+
+    steps:
+      - name: 拉取 onnxruntime 源码
+        run: |
+          set -e
+          clone() {
+            rm -rf ort
+            git clone --depth 1 --branch "${{ inputs.ref }}" "$1" ort
+          }
+          if ! clone "${{ inputs.repo_url }}"; then
+            echo "::warning::主地址失败，回退到 github.com"
+            clone "https://github.com/microsoft/onnxruntime.git"
+          fi
+          # ORT 有三个子模块（onnx / libprotobuf-mutator / emsdk），编 .so 只需要 onnx
+          cd ort
+          git submodule update --init --depth 1 cmake/external/onnx
+          git log -1 --format='commit %H  %cd'
+          ls cmake/external/onnx/CMakeLists.txt
+
+      - name: 校验版本号
+        run: |
+          v=$(tr -d '\r\n' < ort/VERSION_NUMBER)
+          echo "VERSION_NUMBER=$v"
+          echo "ORT_VERSION=$v" >> "$GITHUB_ENV"
+          # 这个值会变成 so 里的符号版本名 VERS_<版本>，必须和 sherpa 期望的一致
+          if [ "$v" != "1.28.2" ]; then
+            echo "::error::VERSION_NUMBER=$v，产物会是 VERS_$v，sherpa 的 so 需要 VERS_1.28.2"
+            exit 1
+          fi
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装构建依赖
+        run: |
+          python --version
+          python -m pip install --upgrade pip
+          # cmake 用 pip 的固定版本，避开 runner 自带的 4.x（ORT 这版不认）
+          python -m pip install "cmake==3.31.6" ninja numpy packaging flatbuffers protobuf sympy setuptools wheel
+          which cmake python ninja
+          cmake --version
+          ninja --version
+
+      - name: 准备 NDK
+        run: |
+          set -e
+          ndk="${{ inputs.ndk_version }}"
+          dest="$RUNNER_TEMP/android-ndk-$ndk"
+          url="https://dl.google.com/android/repository/android-ndk-$ndk-linux.zip"
+          echo "下载 $url"
+          curl -fsSL -o "$RUNNER_TEMP/ndk.zip" "$url"
+          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+          ls "$dest/source.properties" >/dev/null
+          echo "NDK_PATH=$dest" >> "$GITHUB_ENV"
+          cat "$dest/source.properties"
+
+      - name: 编译 libonnxruntime.so
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE/ort"
+
+          # build.py 里 --android_sdk_path 是必填的（缺了直接抛 BuildError）
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -d "$sdk" ]; then
+            echo "::error::找不到 Android SDK：$sdk"
+            exit 1
+          fi
+          echo "SDK=$sdk"
+
+          args=(
+            --build_dir "$GITHUB_WORKSPACE/build"
+            --android
+            --android_abi "${{ matrix.abi }}"
+            --android_api "${{ inputs.api_level }}"
+            --android_ndk_path "$NDK_PATH"
+            --android_sdk_path "$sdk"
+            --build_shared_lib
+            --config Release
+            --cmake_generator Ninja
+            --parallel
+            --skip_tests
+            --compile_no_warning_as_error
+            --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+          )
+
+          echo "build.py ${args[*]}"
+          python tools/ci_build/build.py "${args[@]}"
+
+      - name: 校验产物（关键）
+        run: |
+          set -e
+          so=$(find "$GITHUB_WORKSPACE/build" -name libonnxruntime.so -type f | head -1)
+          if [ -z "$so" ]; then
+            echo "::error::没找到 libonnxruntime.so，构建目录如下："
+            find "$GITHUB_WORKSPACE/build" -maxdepth 3 -type d | head -30
+            exit 1
+          fi
+          echo "产物: $so"
+          ls -l "$so"
+          sha256sum "$so"
+
+          readelf="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+
+          echo "=== NEEDED ==="
+          "$readelf" -d "$so" | grep NEEDED || true
+
+          echo "=== 高版本 libc 符号检查（LIBC_N / LIBC_P）==="
+          if "$readelf" -V "$so" | grep -qE "LIBC_N|LIBC_P"; then
+            echo "::error::产物仍引用了 API 版本高于 ${{ inputs.api_level }} 的 libc 符号，Android 5/6 上会 dlopen 失败"
+            "$readelf" --dyn-syms -W "$so" | grep -E "LIBC_N|LIBC_P" || true
+            exit 1
+          fi
+          echo "OK: 无 LIBC_N / LIBC_P"
+
+          echo "=== 符号版本定义 ==="
+          "$readelf" -V "$so" | grep -E "Name: VERS" || true
+
+          echo "=== OrtGetApiBase 导出 ==="
+          "$readelf" --dyn-syms -W "$so" | grep -w OrtGetApiBase || true
+
+          if ! "$readelf" --dyn-syms -W "$so" | grep -q "OrtGetApiBase@@VERS_$ORT_VERSION"; then
+            echo "::error::OrtGetApiBase 没有导出成 OrtGetApiBase@@VERS_$ORT_VERSION，sherpa 的 so 将无法绑定"
+            exit 1
+          fi
+          echo "OK: OrtGetApiBase@@VERS_$ORT_VERSION"
+
+          mkdir -p "$GITHUB_WORKSPACE/dist/${{ matrix.abi }}"
+          cp "$so" "$GITHUB_WORKSPACE/dist/${{ matrix.abi }}/libonnxruntime.so"
+
+      - name: 汇总
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.abi }}"
+            echo ""
+            echo "- API level: \`${{ inputs.api_level }}\`"
+            echo "- ORT: \`${{ inputs.ref }}\`"
+            echo "- 结果: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传产物
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-android${{ inputs.api_level }}-${{ matrix.abi }}
+          path: dist/${{ matrix.abi }}/libonnxruntime.so
+          if-no-files-found: error
+          retention-days: 30

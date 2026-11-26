@@ -2552,7 +2552,7 @@ class MeService : Service() {
             // 照照乐
             KeyEvent.KEYCODE_ZENKAKU_HANKAKU,
             if (isBonjour) KeyEvent.KEYCODE_VOLUME_MUTE else 0,
-            if (ysLedStatus()) 0 else KeyEvent.KEYCODE_FOCUS,
+            if (Build.MODEL == "S14G") 0 else KeyEvent.KEYCODE_FOCUS,
             // 国美云
             KeyEvent.KEYCODE_F11
         ) || (keyCode == KeyEvent.KEYCODE_POWER &&
